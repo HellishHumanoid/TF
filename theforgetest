@@ -1394,7 +1394,7 @@ if qot then
     -- Example: "https://pastebin.com/raw/XXXXXXXX"
     local SCRIPT_URL = "https://your-raw-script-url-here"
 
-    if SCRIPT_URL ~= "https://your-raw-script-url-here" then
+    if SCRIPT_URL ~= "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgetest" then
         qot(string.format([[
             loadstring(game:HttpGet("%s"))()
         ]], SCRIPT_URL))
