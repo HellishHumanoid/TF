@@ -1500,103 +1500,21 @@ TeleportService.PlayerTeleporting:Connect(function()
     queueScript()
 end)
 
---[[  
-    UNIVERSAL AUTO-REJOIN SYSTEM
-    • Detects ErrorPrompt (real kick)
-    • Detects GuiService error messages
-    • Detects custom messages (fallback)
-    • Immediately rejoins your current PlaceId
+--[[ 
+    Anti-AFK + Auto-Rejoin
+    - Auto-Rejoin logic is EXACTLY your working script
+    - Anti-AFK added on top, does not interfere
 ]]
 
 local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local GuiService = game:GetService("GuiService")
-local CoreGui = game:GetService("CoreGui")
-
-local player = Players.LocalPlayer
-local PLACE_ID = game.PlaceId
-
-local function Rejoin()
-    task.wait(0.1)
-    print("[AutoRejoin] Rejoining...")
-    TeleportService:Teleport(PLACE_ID, player)
-end
-
--------------------------------------------------------
--- METHOD 1: Roblox Kick Prompt (most reliable)
--------------------------------------------------------
-task.spawn(function()
-    local gui = CoreGui:WaitForChild("RobloxPromptGui", 10)
-    if not gui then return end
-    
-    local overlay = gui:WaitForChild("promptOverlay", 10)
-    if not overlay then return end
-
-    overlay.ChildAdded:Connect(function(child)
-        if child.Name == "ErrorPrompt" then
-            print("[AutoRejoin] ErrorPrompt detected!")
-            Rejoin()
-        end
-    end)
-end)
-
--------------------------------------------------------
--- METHOD 2: GuiService ErrorMessage (secondary)
--------------------------------------------------------
-GuiService.ErrorMessageChanged:Connect(function(msg)
-    if msg and msg ~= "" then
-        print("[AutoRejoin] GuiService error:", msg)
-        Rejoin()
-    end
-end)
-
--------------------------------------------------------
--- METHOD 3: Automatic reconnect on Lost connection events
--------------------------------------------------------
-player.OnTeleportFailed:Connect(function()
-    print("[AutoRejoin] Teleport failed → retrying...")
-    Rejoin()
-end)
-
-game:GetService("Players").PlayerRemoving:Connect(function(leaver)
-    -- If YOU are the one leaving unexpectedly → reconnect
-    if leaver == player then
-        print("[AutoRejoin] PlayerRemoving triggered → rejoining...")
-        Rejoin()
-    end
-end)
-
-print("[AutoRejoin] System Loaded")
-----------------------------------------------------------------
--- ANTI-AFK (Prevents Idle Kick)
-----------------------------------------------------------------
-local Players = game:GetService("Players")
-local VirtualUser = game:GetService("VirtualUser")
-
-Players.LocalPlayer.Idled:Connect(function()
-    print("[Anti-AFK] Preventing idle kick...")
-
-    -- Simulate a very small mouse movement
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera.CFrame)
-
-    -- You stay active without interfering with gameplay
-end)
-
-print("[Anti-AFK] Enabled")
-----------------------------------------------------------------
--- ANTI-AFK + AUTO-REJOIN (FINAL VERSION)
-----------------------------------------------------------------
-
-local Players = game:GetService("Players")
-local VirtualUser = game:GetService("VirtualUser")
 local GuiService = game:GetService("GuiService")
 local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local player = Players.LocalPlayer
 
 ------------------------------------------------------
--- 1. ANTI-AFK (prevents Roblox idle kick)
+-- 1) ANTI-AFK (prevents idle disconnect)
 ------------------------------------------------------
 player.Idled:Connect(function()
     print("[Anti-AFK] Preventing idle kick...")
@@ -1605,19 +1523,19 @@ player.Idled:Connect(function()
 end)
 
 ------------------------------------------------------
--- 2. AUTO-REJOIN WHEN KICK MESSAGE APPEARS
+-- 2) AUTO-REJOIN ON ERROR (your original working code)
 ------------------------------------------------------
 local function onErrorMessageChanged(errorMessage)
     if errorMessage and errorMessage ~= "" then
-        print("[Auto-Rejoin] Kick detected → Rejoining...")
+        print("Error detected: " .. errorMessage)
 
-        task.wait(1)
-
-        -- Safest rejoin method
-        TeleportService:Teleport(game.PlaceId, player)
+        if player then
+            wait()
+            TeleportService:Teleport(game.PlaceId, player)
+        end
     end
 end
 
 GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
 
-print("[Anti-AFK + Auto-Rejoin] Enabled")
+print("[Anti-AFK + Auto-Rejoin] Loaded")
