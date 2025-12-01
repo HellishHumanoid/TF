@@ -381,89 +381,8 @@ local function stopNoclip()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- UTILITY FUNCTIONS
+-- UTILITY FUNCTIONS (UPDATED)
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local function getAllMobs()
-    local mobs = {}
-    
-    for _, child in pairs(Living:GetChildren()) do
-        for _, mobData in pairs(config.mobTypes) do
-            if mobData.enabled and string.find(child.Name, mobData.pattern) then
-                local humanoid = child:FindFirstChild("Humanoid")
-                local rootPart = child:FindFirstChild("HumanoidRootPart")
-                
-                if humanoid and rootPart and humanoid.Health > 0 then
-                    table.insert(mobs, child)
-                    break
-                end
-            end
-        end
-    end
-    
-    return mobs
-end
-
-local function getClosestMob()
-    local character = LocalPlayer.Character
-    if not character then return nil end
-    
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return nil end
-    
-    local mobs = getAllMobs()
-    local closestMob = nil
-    local closestDistance = config.farmDistance
-    
-    for _, mob in pairs(mobs) do
-        local mobRoot = mob:FindFirstChild("HumanoidRootPart")
-        if mobRoot then
-            local distance = (rootPart.Position - mobRoot.Position).Magnitude
-            if distance < closestDistance then
-                closestMob = mob
-                closestDistance = distance
-            end
-        end
-    end
-    
-    return closestMob
-end
-
-local function getLockPosition(mob)
-    local mobRoot = mob:FindFirstChild("HumanoidRootPart")
-    if not mobRoot then return nil end
-    
-    local distance = config.behindDistance
-    local verticalDist = config.verticalDistance
-    local mobPos = mobRoot.Position
-    local targetPos
-    
-    if config.lockPosition == "Back" then
-        local behindOffset = -mobRoot.CFrame.LookVector * distance
-        targetPos = mobPos + behindOffset
-        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
-        
-    elseif config.lockPosition == "Front" then
-        local frontOffset = mobRoot.CFrame.LookVector * distance
-        targetPos = mobPos + frontOffset
-        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
-        
-    elseif config.lockPosition == "Above" then
-        targetPos = mobPos + Vector3.new(0, verticalDist, 0)
-        
-    elseif config.lockPosition == "Below" then
-        targetPos = mobPos + Vector3.new(0, -verticalDist, 0)
-        if targetPos.Y < mobPos.Y - 20 then
-            targetPos = Vector3.new(targetPos.X, mobPos.Y - 20, targetPos.Z)
-        end
-    else
-        local behindOffset = -mobRoot.CFrame.LookVector * distance
-        targetPos = mobPos + behindOffset
-        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
-    end
-    
-    return targetPos
-end
 
 local function setupPhysicsMovement()
     local character = LocalPlayer.Character
@@ -472,17 +391,22 @@ local function setupPhysicsMovement()
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     if not rootPart then return false end
     
-    if config.bodyVelocity then
+    -- Clean up old instances
+    if config.bodyVelocity and config.bodyVelocity.Parent then
         config.bodyVelocity:Destroy()
     end
-    if config.bodyGyro then
+    if config.bodyGyro and config.bodyGyro.Parent then
         config.bodyGyro:Destroy()
     end
+    
+    -- Wait a frame to ensure cleanup
+    task.wait()
     
     local bv = Instance.new("BodyVelocity")
     bv.Name = "FarmVelocity"
     bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
     bv.Velocity = Vector3.new(0, 0, 0)
+    bv.P = 1250
     bv.Parent = rootPart
     config.bodyVelocity = bv
     
@@ -507,7 +431,15 @@ local function hoverToPosition(targetPos, mob)
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     local mobRoot = mob:FindFirstChild("HumanoidRootPart")
     
-    if not rootPart or not mobRoot or not config.bodyVelocity or not config.bodyGyro then
+    if not rootPart or not mobRoot then return end
+    
+    -- CRITICAL FIX: Check if physics objects still exist and recreate if needed
+    if not config.bodyVelocity or not config.bodyVelocity.Parent then
+        setupPhysicsMovement()
+        return
+    end
+    if not config.bodyGyro or not config.bodyGyro.Parent then
+        setupPhysicsMovement()
         return
     end
     
@@ -545,7 +477,7 @@ local function hoverToPosition(targetPos, mob)
             local oldForce = config.bodyVelocity.MaxForce
             config.bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
             task.wait(0.05)
-            if config.bodyVelocity then
+            if config.bodyVelocity and config.bodyVelocity.Parent then
                 config.bodyVelocity.MaxForce = oldForce
             end
             config.lastUnlockTime = currentTime
@@ -839,11 +771,25 @@ MainTab:CreateButton({
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN FARM LOOP
+-- MAIN FARM LOOP (FIXED)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 farmLoop = RunService.Heartbeat:Connect(function()
     if not config.enabled then return end
+    
+    -- Verify physics setup every frame
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    
+    -- CRITICAL FIX: Recreate physics if missing
+    if not config.bodyVelocity or not config.bodyVelocity.Parent or 
+       not config.bodyGyro or not config.bodyGyro.Parent then
+        setupPhysicsMovement()
+        return
+    end
     
     local needNewMob = false
     
@@ -863,10 +809,6 @@ farmLoop = RunService.Heartbeat:Connect(function()
             print("🎯 New target:", newMob.Name)
             config.currentMob = newMob
             config.lastUnlockTime = tick()
-            
-            if not config.bodyVelocity or not config.bodyGyro then
-                setupPhysicsMovement()
-            end
         else
             config.currentMob = nil
         end
