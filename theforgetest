@@ -114,25 +114,50 @@ local connections = {
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- WORLD 2 AUTO-JOIN SETTINGS & FUNCTIONS
+--  - World detection via workspace.Proximity:
+--      • "Platinum Pickaxe" = WORLD 1
+--      • "Cobalt Pickaxe"   = WORLD 2
+--  - Auto-Join ONLY runs in World 1
+--  - Waits for character before doing anything
 -- ══════════════════════════════════════════════════════════════════════════
 
-local LocalPlayer = players
+local LocalPlayer = player
 
+-- World detection based on Proximity contents
 local function getCurrentWorld()
     local prox = workspace:FindFirstChild("Proximity")
     if prox then
-        local cobalt = prox:FindFirstChild("Cobalt Pickaxe")
-        if cobalt then
+        if prox:FindFirstChild("Platinum Pickaxe") then
+            return 1
+        elseif prox:FindFirstChild("Cobalt Pickaxe") then
             return 2
         end
     end
-    return 1
+    return 1 -- fallback default
 end
 
+local currentWorld = getCurrentWorld()
+print("[World2] Current World (initial guess): " .. tostring(currentWorld))
+
 -- Auto-Join Settings
-local autoRejoinEnabled  = true -- ALWAYS ON
-local rejoinDelay        = 2
+local autoRejoinEnabled   = true -- ALWAYS ON (but only in World 1)
+local rejoinDelay         = 2
 local portalSpawnLocation = Vector3.new(-259.75701904296875, 17.749414443969727, 95.05717468261719)
+
+-- Ensure character + HRP exist before we try to move/teleport
+local function WaitForCharacter()
+    local lp = LocalPlayer
+    local char = lp.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        return char
+    end
+
+    char = lp.Character or lp.CharacterAdded:Wait()
+    if not char then return nil end
+
+    char:WaitForChild("HumanoidRootPart", 10)
+    return char
+end
 
 -- Tween character to position (for auto-join flow)
 local function W2_TweenToPosition(position)
@@ -255,7 +280,7 @@ local function W2_FindSpawnedPortal()
     return nil
 end
 
--- Interact with portal by pressing E
+-- Interact with portal by pressing E (fast version)
 local function W2_InteractWithPortal(portal)
     if not portal then return false end
 
@@ -292,7 +317,7 @@ local function W2_InteractWithPortal(portal)
     return true
 end
 
--- Select Forgotten Kingdom & Teleport
+-- Select Forgotten Kingdom & Teleport (fast clicks)
 local function W2_SelectWorldInPortalGUI()
     local playerGui = LocalPlayer:WaitForChild("PlayerGui")
     local mainGui = playerGui:WaitForChild("Main", 5)
@@ -338,8 +363,7 @@ end
 
 -- Main Auto-Join function
 local function executeAutoRejoin()
-
-    -- HARD STOP: NEVER run Auto-Join in World 2
+    -- NEVER run Auto-Join outside World 1
     if getCurrentWorld() ~= 1 then
         print("[World2] Auto-Join BLOCKED (you are NOT in World 1).")
         return
@@ -351,15 +375,23 @@ local function executeAutoRejoin()
     end
 
     print("[World2] Starting Auto-Join sequence...")
+
+    -- Make sure the character actually exists before doing anything
+    local char = WaitForCharacter()
+    if not char then
+        warn("[World2] Character failed to load — Auto-Join cancelled.")
+        return
+    end
+
+    -- Optional delay (controlled by Rayfield slider)
     task.wait(rejoinDelay)
 
-    -- Only auto-join when actually in World 1
+    -- Re-check world after load / delay
     local worldNow = getCurrentWorld()
     if worldNow ~= 1 then
         print("[World2] Not in World 1 anymore (world=" .. tostring(worldNow) .. "), aborting Auto-Join.")
         return
     end
-
 
     print("[World2] Step 1: Moving to portal spawn location...")
     if not W2_TweenToPosition(portalSpawnLocation) then
@@ -401,25 +433,46 @@ local function executeAutoRejoin()
     print("[World2] Auto-Join sequence completed!")
 end
 
--- Auto-Join World 2 on join if currently in World 1
+-- AUTO-START: detect world via Proximity and run Auto-Join ONLY in World 1
 task.spawn(function()
-    if getCurrentWorld() == 1 then
-        print("[World2] Auto-Join World 2 is active (World 1 detected).")
+    print("[World2] Waiting for Proximity world identifiers...")
+
+    local prox = workspace:WaitForChild("Proximity", 15)
+    if not prox then
+        warn("[World2] Proximity folder not found. Assuming World 1 → Auto-Join.")
         executeAutoRejoin()
-    else
-        print("[World2] Already in World 2 or unknown world, Auto-Join does nothing.")
+        return
     end
+
+    local function handleWorldDetection()
+        local w = getCurrentWorld()
+        if w == 1 then
+            print("[World2] Detected Platinum Pickaxe → World 1 → Auto-Join starting...")
+            executeAutoRejoin()
+        else
+            print("[World2] Detected Cobalt Pickaxe / World 2 → Auto-Join disabled.")
+        end
+    end
+
+    -- Immediate check in case things are already loaded
+    handleWorldDetection()
+
+    -- Also listen for late-loading identifiers
+    prox.ChildAdded:Connect(function(child)
+        if child.Name == "Platinum Pickaxe" or child.Name == "Cobalt Pickaxe" then
+            handleWorldDetection()
+        end
+    end)
 end)
 
--- Hook disconnection prompts for auto rejoin (safety)
+-- Hook disconnection prompts for auto rejoin (World 1 ONLY, safety)
 pcall(function()
     game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
         if child.Name == "ErrorPrompt" and autoRejoinEnabled then
-            
             if getCurrentWorld() == 1 then
                 executeAutoRejoin()
             else
-                print("[World2] ErrorPrompt ignored (already in World 2)")
+                print("[World2] ErrorPrompt detected, but you are in World 2. Auto-Join blocked.")
             end
         end
     end)
@@ -428,19 +481,14 @@ end)
 pcall(function()
     GuiService.ErrorMessageChanged:Connect(function()
         if autoRejoinEnabled then
-            
             if getCurrentWorld() == 1 then
                 executeAutoRejoin()
             else
-                print("[World2] GUI error ignored (already in World 2)")
+                print("[World2] GUI error detected, but you are in World 2. Auto-Join blocked.")
             end
         end
     end)
 end)
-
--- ══════════════════════════════════════════════════════════════════════════
--- RAYFIELD UI (sirius.menu)
--- ══════════════════════════════════════════════════════════════════════════
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
@@ -1355,4 +1403,40 @@ print("Use 'World 2' tab in Rayfield to view Auto-Join settings (always on in Wo
 print("Press F1 or toggle in Rayfield to start farming!")
 print("═══════════════════════════════════════════════════════")
 
--- (Teleport queue block removed; recommended to run via your GitHub RAW loader)
+-- ══════════════════════════════════════════════════════════════════════════
+-- AUTO RE-EXECUTE ON SERVER HOP / TELEPORT
+-- ══════════════════════════════════════════════════════════════════════════
+
+local ScriptURL = "https://your-github-url-here"  -- <-- REPLACE THIS
+
+local function queueScript()
+    local code = 'loadstring(game:HttpGet("' .. ScriptURL .. '"))()'
+
+    if queue_on_teleport then
+        queue_on_teleport(code)
+    elseif syn and syn.queue_on_teleport then
+        syn.queue_on_teleport(code)
+    elseif fluxus and fluxus.queue_on_teleport then
+        fluxus.queue_on_teleport(code)
+    elseif KRNL_LOADED and queue_on_teleport then
+        queue_on_teleport(code)
+    elseif getgenv().queue_on_teleport then
+        getgenv().queue_on_teleport(code)
+    else
+        warn("[MobFarm] queue_on_teleport is not supported in this executor!")
+    end
+end
+
+-- Run as soon as script loads
+queueScript()
+
+-- Handle teleport events
+local TeleportService = game:GetService("TeleportService")
+
+TeleportService.LocalPlayerArriving:Connect(function()
+    queueScript()
+end)
+
+TeleportService.PlayerTeleporting:Connect(function()
+    queueScript()
+end)
