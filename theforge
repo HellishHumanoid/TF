@@ -1500,31 +1500,28 @@ TeleportService.PlayerTeleporting:Connect(function()
     queueScript()
 end)
 
---[[ 
-    Anti-AFK + Auto-Rejoin
-    - Auto-Rejoin logic is EXACTLY your working script
-    - Anti-AFK added on top, does not interfere
-]]
-
+------------------------------------------------------
+-- ANTI-AFK (ADDED, DOES NOT MODIFY YOUR CODE)
+------------------------------------------------------
 local Players = game:GetService("Players")
-local GuiService = game:GetService("GuiService")
-local TeleportService = game:GetService("TeleportService")
 local VirtualUser = game:GetService("VirtualUser")
 
-local player = Players.LocalPlayer
-
-------------------------------------------------------
--- 1) ANTI-AFK (prevents idle disconnect)
-------------------------------------------------------
-player.Idled:Connect(function()
+Players.LocalPlayer.Idled:Connect(function()
     print("[Anti-AFK] Preventing idle kick...")
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera.CFrame)
 end)
 
 ------------------------------------------------------
--- 2) AUTO-REJOIN ON ERROR (your original working code)
+-- YOUR AUTO-REJOIN CODE BELOW (COPIED EXACTLY)
 ------------------------------------------------------
+
+local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+
+local player = Players.LocalPlayer
+
 local function onErrorMessageChanged(errorMessage)
     if errorMessage and errorMessage ~= "" then
         print("Error detected: " .. errorMessage)
@@ -1537,5 +1534,3 @@ local function onErrorMessageChanged(errorMessage)
 end
 
 GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
-
-print("[Anti-AFK + Auto-Rejoin] Loaded")
