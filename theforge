@@ -1500,28 +1500,31 @@ TeleportService.PlayerTeleporting:Connect(function()
     queueScript()
 end)
 
-------------------------------------------------------
--- ANTI-AFK (ADDED, DOES NOT MODIFY YOUR CODE)
-------------------------------------------------------
+-- ✅ ONE CLEAN COMBINED SCRIPT: ANTI-AFK + YOUR AUTO-REJOIN
+
 local Players = game:GetService("Players")
-local VirtualUser = game:GetService("VirtualUser")
-
-Players.LocalPlayer.Idled:Connect(function()
-    print("[Anti-AFK] Preventing idle kick...")
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera.CFrame)
-end)
-
-------------------------------------------------------
--- YOUR AUTO-REJOIN CODE BELOW (COPIED EXACTLY)
-------------------------------------------------------
-
 local GuiService = game:GetService("GuiService")
-local Players = game:GetService("Players")
 local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local player = Players.LocalPlayer
 
+------------------------------------------------------
+-- 1) ANTI-AFK (does NOT touch your rejoin logic)
+------------------------------------------------------
+player.Idled:Connect(function()
+    print("[Anti-AFK] Preventing idle kick...")
+
+    -- pcall so Anti-AFK can NEVER break the rest
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+    end)
+end)
+
+------------------------------------------------------
+-- 2) YOUR ORIGINAL AUTO-REJOIN (UNCHANGED IN LOGIC)
+------------------------------------------------------
 local function onErrorMessageChanged(errorMessage)
     if errorMessage and errorMessage ~= "" then
         print("Error detected: " .. errorMessage)
@@ -1534,3 +1537,5 @@ local function onErrorMessageChanged(errorMessage)
 end
 
 GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
+
+print("[Anti-AFK + Auto-Rejoin] Loaded")
