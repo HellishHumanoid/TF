@@ -403,6 +403,10 @@ end
 
 -- Main Auto-Join function
 local function executeAutoRejoin()
+
+    print("[World2] Forced wait: 10 seconds before starting auto-join...")
+    task.wait(10)
+
     -- NEVER run Auto-Join outside World 1
     if getCurrentWorld() ~= 1 then
         print("[World2] Auto-Join BLOCKED (you are NOT in World 1).")
