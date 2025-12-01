@@ -1,39 +1,28 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
     MOB FARM v4.7d - HOVER + RAYFIELD UI + SAFE CLICKER + WORLD 2 AUTO-JOIN
+    + MULTI-MOB PRIORITY TARGETING (MULTI-SELECT UI)
     ═══════════════════════════════════════════════════════════════════════════
 
-    CHANGES IN 4.7d:
-    • Auto-Rejoin World 2 renamed to Auto-Join World 2
-    • Auto-Join World 2 is ALWAYS ON when you are in World 1
-    • It automatically runs the full step-by-step portal sequence to World 2
-    • Portal detection now picks ONLY the closest valid PortalTheForge in workspace.Debris
-      (tries to avoid other players' portals by distance / owner checks)
-
-    FEATURES:
-    • Hover-based mob farm with BodyVelocity + BodyGyro
-    • Rayfield UI (sirius.menu) for full control
-    • Safe executor clicker using mouse1click() (no UI / GUI interference)
-    • Simplified startup: only moves to center position (startPos2)
-    • Auto re-center if teleported away from center
-    • Integrated Auto-Join World 2 system in a separate Rayfield tab
+    MULTI-MOB CHANGES:
+    • You can now select MULTIPLE mobs at once in the Rayfield dropdown.
+    • Priority is based on the ORDER of mobList (top = highest priority).
+    • The farm will always target the closest mob among the highest-priority
+      types currently selected and alive.
+    • DELETE key now forces SINGLE-TARGET mode on the cycled mob for quick focus.
 
     CONTROLS (Mob Farm):
     F1  = Toggle farm on/off
     F2  = Cycle position (Back → Front → Above → Below)
     F3  = Increase speed (+10)
     F4  = Decrease speed (-10)
-    DEL = Change mob target
+    DEL = Change mob target (single-target quick swap)
     F5  = Vertical Distance +1
     F6  = Vertical Distance -1
     F8  = DESTROY SCRIPT
-
-    NOTE:
-    - Requires exploit with mouse1click() support (Xeno has this).
-    - World 2 Auto-Join logic is accessed via "World 2" tab in Rayfield but is always enabled in World 1.
 ]]
 
-wait(10) -- Ensure game is mostly loaded
+wait(5) -- Ensure game is mostly loaded
 
 -- Services
 local Players              = game:GetService("Players")
@@ -75,7 +64,8 @@ local settings = {
     bodyGyro = nil,
     inAggro = false,
 
-    selectedMob = 1, -- Current mob index
+    selectedMob = 1, -- primary mob index (for quick single-target + recenter)
+    selectedMobIndexes = nil, -- [index] = true when that mob type is selected in UI
 
     -- Center of the map (farming position)
     startPos1 = Vector3.new(-265.38, 273.18, -49.28), -- kept but unused for startup
@@ -91,7 +81,7 @@ local settings = {
     returningToCenter = false,
 }
 
--- Mob list - can cycle through with DELETE or dropdown
+-- Mob list - PRIORITY ORDER: index 1 = highest priority
 local mobList = {
     {name = "Reaper",                  pattern = "^Reaper"},
     {name = "Blazing Slime",           pattern = "^BlazingSlime"},
@@ -104,6 +94,42 @@ local mobList = {
     {name = "Bomber",                  pattern = "^Bomber"}
 }
 
+-- ══════════════════════════════════════════════════════════════════════════
+-- MULTI-MOB SELECTION HELPERS (PRIORITY = ORDER IN mobList)
+-- ══════════════════════════════════════════════════════════════════════════
+
+local function initSelectedMobs()
+    settings.selectedMobIndexes = {}
+    -- Default: only highest-priority mob (index 1) selected
+    for i = 1, #mobList do
+        settings.selectedMobIndexes[i] = (i == (settings.selectedMob or 1))
+    end
+    settings.selectedMob = settings.selectedMob or 1
+    settings.lastMobType = settings.selectedMob
+end
+
+local function isMobTypeSelected(index)
+    if settings.selectedMobIndexes == nil then
+        -- Fallback: legacy behavior (single target)
+        return index == (settings.selectedMob or 1)
+    end
+    return settings.selectedMobIndexes[index] == true
+end
+
+local function getPrimarySelectedMobIndex()
+    if settings.selectedMobIndexes then
+        for i = 1, #mobList do
+            if settings.selectedMobIndexes[i] then
+                return i
+            end
+        end
+    end
+    return settings.selectedMob or 1
+end
+
+-- Initialize selection on script load
+initSelectedMobs()
+
 -- Connection storage
 local connections = {
     noclip   = nil,
@@ -114,11 +140,6 @@ local connections = {
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- WORLD 2 AUTO-JOIN SETTINGS & FUNCTIONS
---  - World detection via workspace.Proximity:
---      • "Platinum Pickaxe" = WORLD 1
---      • "Cobalt Pickaxe"   = WORLD 2
---  - Auto-Join ONLY runs in World 1
---  - Waits for character before doing anything
 -- ══════════════════════════════════════════════════════════════════════════
 
 local TweenService = game:GetService("TweenService")
@@ -302,13 +323,13 @@ local function W2_InteractWithPortal(portal)
 
     task.wait(0.25)
 
--------------------------------------------------------
--- 2) Ultra-fast E-spam (0.005s per press)
--------------------------------------------------------
+    -------------------------------------------------------
+    -- 2) Ultra-fast E-spam (0.005s per press)
+    -------------------------------------------------------
     print("[World2] FAST-SPAMMING E to open portal...")
 
     local start = tick()
-    while tick() - start < 2 do -- runs for 2 seconds, not 3
+    while tick() - start < 2 do -- runs for 2 seconds
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
         task.wait(0.005)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
@@ -329,12 +350,8 @@ local function W2_InteractWithPortal(portal)
 end
 
 --------------------------------------------------------------------
--- NEW: Select Forgotten Kingdom and press Teleport in the GUI
+-- Select Forgotten Kingdom and press Teleport in the GUI
 --------------------------------------------------------------------
---------------------------------------------------------------------
--- FIXED: Select Forgotten Kingdom properly and click Teleport
---------------------------------------------------------------------
--- Select Forgotten Kingdom in the Teleport GUI
 function W2_SelectWorldInPortalGUI()
     print("[World2] Selecting Forgotten Kingdom...")
 
@@ -554,12 +571,16 @@ pcall(function()
     end)
 end)
 
+-- ══════════════════════════════════════════════════════════════════════════
+-- RAYFIELD UI SETUP
+-- ══════════════════════════════════════════════════════════════════════════
+
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Window = Rayfield:CreateWindow({
     Name = "Mob Farm v4.7d",
     LoadingTitle = "Mob Farm",
-    LoadingSubtitle = "Hover + World 2 Auto-Join",
+    LoadingSubtitle = "Hover + World 2 Auto-Join + Multi-Mob Priority",
     ConfigurationSaving = {
         Enabled = false,
     },
@@ -632,23 +653,51 @@ do
         end,
     })
 
+    -- MULTI-SELECT TARGET MOB DROPDOWN (priority = order in mobList)
     mobDropdown = MainTab:CreateDropdown({
-        Name = "Target Mob",
+        Name = "Target Mobs (priority = list order)",
         Options = mobNames,
-        CurrentOption = mobList[settings.selectedMob].name,
-        MultipleOptions = false,
-        Flag = "TargetMob",
-        Callback = function(Option)
-            local chosen = (typeof(Option) == "table") and Option[1] or Option
+        CurrentOption = { mobList[getPrimarySelectedMobIndex()].name },
+        MultipleOptions = true,
+        Flag = "TargetMobs",
+        Callback = function(Options)
+            local selectedNames = {}
+
+            if typeof(Options) == "table" then
+                selectedNames = Options
+            elseif typeof(Options) == "string" then
+                selectedNames = { Options }
+            end
+
+            settings.selectedMobIndexes = {}
+
+            -- Mark selected indices based on names
             for i, mob in ipairs(mobList) do
-                if mob.name == chosen then
-                    settings.selectedMob = i
-                    settings.currentMob = nil
-                    settings.lastMobType = settings.selectedMob
-                    print("👾 Target Mob: " .. mob.name)
-                    break
+                for _, name in ipairs(selectedNames) do
+                    if name == mob.name then
+                        settings.selectedMobIndexes[i] = true
+                        break
+                    end
                 end
             end
+
+            -- Ensure at least one mob is selected
+            local primary = getPrimarySelectedMobIndex()
+            settings.selectedMob = primary
+            settings.currentMob = nil
+            settings.lastMobType = primary
+
+            -- Debug print
+            local chosen = {}
+            for i, mob in ipairs(mobList) do
+                if isMobTypeSelected(i) then
+                    table.insert(chosen, mob.name)
+                end
+            end
+            if #chosen == 0 then
+                table.insert(chosen, mobList[settings.selectedMob].name)
+            end
+            print("👾 Target Mobs (by priority): " .. table.concat(chosen, ", "))
         end,
     })
 
@@ -668,7 +717,7 @@ do
             "F2 = Change position\n" ..
             "F3 = Speed +10\n" ..
             "F4 = Speed -10\n" ..
-            "DELETE = Change mob target\n" ..
+            "DELETE = Change mob target (single-target focus)\n" ..
             "F5 = Vertical Distance +1\n" ..
             "F6 = Vertical Distance -1\n" ..
             "F8 = Destroy script",
@@ -768,25 +817,35 @@ local function noclipOff()
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
--- MOB FUNCTIONS
+-- MOB FUNCTIONS (MULTI-MOB PRIORITY AWARE)
 -- ══════════════════════════════════════════════════════════════════════════
 
 local function findMobs()
-    local mobs = {}
-    local currentMobData = mobList[settings.selectedMob]
+    local results = {}
 
-    for _, child in pairs(living:GetChildren()) do
-        if string.find(child.Name, currentMobData.pattern) then
-            local hum = child:FindFirstChild("Humanoid")
-            local hrp = child:FindFirstChild("HumanoidRootPart")
+    -- Go through mob types in PRIORITY ORDER (list order)
+    for index, mobData in ipairs(mobList) do
+        if isMobTypeSelected(index) then
+            local pattern = mobData.pattern
 
-            if hum and hrp and hum.Health > 0 then
-                table.insert(mobs, child)
+            for _, child in ipairs(living:GetChildren()) do
+                if string.find(child.Name, pattern) then
+                    local hum = child:FindFirstChild("Humanoid")
+                    local hrp = child:FindFirstChild("HumanoidRootPart")
+
+                    if hum and hrp and hum.Health > 0 then
+                        table.insert(results, {
+                            mob = child,
+                            hrp = hrp,
+                            priority = index,
+                        })
+                    end
+                end
             end
         end
     end
 
-    return mobs
+    return results
 end
 
 local function getClosest()
@@ -796,21 +855,29 @@ local function getClosest()
     local hrp = char:FindFirstChild("HumanoidRootPart")
     if not hrp then return nil end
 
-    local closest = nil
-    local closestDist = settings.maxDist
+    local bestMob = nil
+    local bestPriority = math.huge
+    local bestDist = settings.maxDist or 500
 
-    for _, mob in pairs(findMobs()) do
-        local mHrp = mob:FindFirstChild("HumanoidRootPart")
-        if mHrp then
-            local dist = (hrp.Position - mHrp.Position).Magnitude
-            if dist < closestDist then
-                closest = mob
-                closestDist = dist
-            end
+    local list = findMobs()
+
+    for _, entry in ipairs(list) do
+        local mob = entry.mob
+        local mHrp = entry.hrp
+        local prio = entry.priority
+
+        local dist = (hrp.Position - mHrp.Position).Magnitude
+
+        -- First sort by PRIORITY (lower index = more important),
+        -- then by DISTANCE among same priority.
+        if prio < bestPriority or (prio == bestPriority and dist < bestDist) then
+            bestMob = mob
+            bestPriority = prio
+            bestDist = dist
         end
     end
 
-    return closest
+    return bestMob
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
@@ -1023,14 +1090,14 @@ local function startHover()
             if settings.startupComplete then
                 if not settings.currentMob or not settings.currentMob.Parent then
                     local distFromCenter = (pos - settings.startPos2).Magnitude
-                    local mobChanged = settings.selectedMob ~= settings.lastMobType
+                    local mobChanged = getPrimarySelectedMobIndex() ~= settings.lastMobType
 
                     if distFromCenter > settings.maxDistanceFromCenter or mobChanged then
                         if not settings.returningToCenter then
                             settings.returningToCenter = true
                             if mobChanged then
-                                print("🔄 Mob changed! Returning to center...")
-                                settings.lastMobType = settings.selectedMob
+                                print("🔄 Mob selection changed! Returning to center...")
+                                settings.lastMobType = getPrimarySelectedMobIndex()
                             else
                                 print("🔄 Too far from center! Returning...")
                             end
@@ -1074,7 +1141,7 @@ local function startHover()
                     settings.bodyVel.Velocity = Vector3.new(0, 0, 0)
                     settings.startupComplete = true
                     settings.returningToCenter = false
-                    settings.lastMobType = settings.selectedMob
+                    settings.lastMobType = getPrimarySelectedMobIndex()
                     print("✅ Reached center! Farming begins.")
                     task.wait(0.5)
                     return
@@ -1226,10 +1293,24 @@ toggleFarm = function()
     end
 
     if settings.enabled then
-        local currentMobData = mobList[settings.selectedMob]
+        -- Build readable list of selected mobs in priority order
+        local targetNames = {}
+        for i, mob in ipairs(mobList) do
+            if isMobTypeSelected(i) then
+                table.insert(targetNames, mob.name)
+            end
+        end
+        if #targetNames == 0 then
+            -- Safety: if nothing selected, select primary
+            settings.selectedMobIndexes = settings.selectedMobIndexes or {}
+            settings.selectedMob = settings.selectedMob or 1
+            settings.selectedMobIndexes[settings.selectedMob] = true
+            targetNames = { mobList[settings.selectedMob].name }
+        end
+
         print("═══════════════════════════════════════")
         print("✅ FARM ON")
-        print("Target: " .. currentMobData.name)
+        print("Targets (priority): " .. table.concat(targetNames, ", "))
         print("Position: " .. settings.position)
         print("Speed: " .. settings.speed)
         print("Vertical Distance: " .. settings.vertDist)
@@ -1237,7 +1318,7 @@ toggleFarm = function()
 
         settings.startupComplete   = false
         settings.returningToCenter = false
-        settings.lastMobType       = settings.selectedMob
+        settings.lastMobType       = getPrimarySelectedMobIndex()
 
         noclipOn()
         startMobFinder()
@@ -1318,14 +1399,19 @@ cycleMob = function()
     end
 
     local currentMobData = mobList[settings.selectedMob]
-    print("👾 Target Mob: " .. currentMobData.name)
+
+    -- When cycling via keybind, we switch to SINGLE-target mode
+    settings.selectedMobIndexes = {}
+    settings.selectedMobIndexes[settings.selectedMob] = true
+
+    print("👾 Target Mob (single-target mode via Delete): " .. currentMobData.name)
 
     settings.currentMob = nil
     settings.lastMobType = settings.selectedMob
 
     if mobDropdown then
         pcall(function()
-            mobDropdown:Set(currentMobData.name)
+            mobDropdown:Set({ currentMobData.name }) -- multi-select expects table
         end)
     end
 end
@@ -1450,18 +1536,18 @@ end)
 -- ══════════════════════════════════════════════════════════════════════════
 
 print("═══════════════════════════════════════════════════════")
-print("MOB FARM v4.7d LOADED! (HOVER + RAYFIELD + SAFE CLICKER + WORLD 2 AUTO-JOIN)")
+print("MOB FARM v4.7d LOADED! (HOVER + RAYFIELD + SAFE CLICKER + WORLD 2 AUTO-JOIN + MULTI-MOB PRIORITY)")
 print("═══════════════════════════════════════════════════════")
 print("F1 = Toggle farm")
 print("F2 = Change position")
 print("F3 = Speed +10")
 print("F4 = Speed -10")
-print("DELETE = Change mob target")
+print("DELETE = Change mob target (single-target focus)")
 print("F5 = Vertical Distance +1")
 print("F6 = Vertical Distance -1")
 print("F8 = DESTROY SCRIPT")
 print("═══════════════════════════════════════════════════════")
-print("Default Mob: Reaper (use DELETE or UI dropdown to change)")
+print("Default Targets: Reaper (use DELETE for single-target, or UI dropdown for multi-target with priority).")
 print("Click interval: 0.20 seconds via mouse1click()")
 print("Use 'World 2' tab in Rayfield to view Auto-Join settings (always on in World 1).")
 print("Press F1 or toggle in Rayfield to start farming!")
