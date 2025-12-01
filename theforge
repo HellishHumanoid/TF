@@ -1,13 +1,14 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
-    MOB FARM v4.2 - FAST HOVER + NOCLIP + AUTO WORLD 2 JOIN
+    MOB FARM v4.3 - FAST HOVER + NOCLIP + AUTO WORLD 2 TELEPORT
     ═══════════════════════════════════════════════════════════════════════════
     
     FEATURES:
     • Much faster hovering with increased speed limits
     • NOCLIP enabled - pass through walls and terrain
     • Physics-based movement (BodyVelocity + BodyGyro)
-    • AUTO WORLD 2 JOIN - Automatically teleports to World 2 on startup in World 1
+    • AUTO-TELEPORT to World 2 on startup (World 1 only)
+    • Automatic portal placement and interaction
     • Safe for anti-cheat systems
     
     ═══════════════════════════════════════════════════════════════════════════
@@ -20,7 +21,6 @@ local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local GuiService = game:GetService("GuiService")
-local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local Living = workspace:WaitForChild("Living")
@@ -37,7 +37,7 @@ local function getCurrentWorld()
     elseif currentJobId == WORLD2_JOBID then
         return 2
     else
-        return 1 -- Default to World 1
+        return 1
     end
 end
 
@@ -56,15 +56,15 @@ _G.MobFarmConfig = {
     unlockInterval = 0.3,
     lastUnlockTime = 0,
     
-    -- Auto World 2
-    autoWorld2Enabled = true,
-    autoWorld2Executed = false,
-    
     -- State
     currentMob = nil,
     bodyVelocity = nil,
     bodyGyro = nil,
     noclipLoop = nil,
+    
+    -- Auto-rejoin
+    autoRejoinEnabled = true,
+    autoTeleportOnStart = true,
     
     -- Mob types
     mobTypes = {
@@ -83,18 +83,7 @@ _G.MobFarmConfig = {
 local config = _G.MobFarmConfig
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ANTI-AFK
--- ═══════════════════════════════════════════════════════════════════════════
-
-LocalPlayer.Idled:Connect(function()
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
-    end)
-end)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- AUTO WORLD 2 JOIN FUNCTIONS
+-- AUTO WORLD 2 TELEPORT SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local function tweenToPosition(position)
@@ -115,6 +104,7 @@ local function findPortalTool()
     if backpack then
         for _, tool in pairs(backpack:GetChildren()) do
             if tool:IsA("Tool") and string.find(tool.Name:lower(), "portal") then
+                print("✅ Found PortalTool in backpack:", tool.Name)
                 return tool
             end
         end
@@ -123,11 +113,13 @@ local function findPortalTool()
     if character then
         for _, tool in pairs(character:GetChildren()) do
             if tool:IsA("Tool") and string.find(tool.Name:lower(), "portal") then
+                print("✅ Found PortalTool in character:", tool.Name)
                 return tool
             end
         end
     end
     
+    warn("❌ PortalTool not found")
     return nil
 end
 
@@ -142,7 +134,7 @@ local function autoPlacePortal(position)
     
     local portalTool = findPortalTool()
     if not portalTool then
-        warn("❌ PortalTool not found! Make sure you have it in inventory.")
+        warn("❌ Please make sure you have a PortalTool in your inventory!")
         return nil
     end
     
@@ -166,7 +158,7 @@ local function autoPlacePortal(position)
     if debris then
         for _, child in pairs(debris:GetChildren()) do
             if string.find(child.Name, "Portal") then
-                print("✅ Portal placed successfully")
+                print("✅ Portal placed successfully:", child.Name)
                 return child
             end
         end
@@ -210,6 +202,9 @@ local function interactWithPortal(portal)
     local character = LocalPlayer.Character
     if not character then return false end
     
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return false end
+    
     local portalPosition = portal:GetPivot().Position
     tweenToPosition(portalPosition + Vector3.new(0, 0, 3))
     wait(0.5)
@@ -228,6 +223,8 @@ local function interactWithPortal(portal)
                 if screen then
                     local teleportFrame = screen:FindFirstChild("Teleport")
                     if teleportFrame and teleportFrame.Visible then
+                        print("✅ Portal GUI opened")
+                        wait(0.5)
                         return true
                     end
                 end
@@ -239,44 +236,46 @@ local function interactWithPortal(portal)
 end
 
 local function selectWorldInPortalGUI()
+    print("🎮 Selecting Forgotten Kingdom...")
+    
     local playerGui = LocalPlayer:WaitForChild("PlayerGui")
     wait(1)
-    
+
     local mainGui = playerGui:WaitForChild("Main", 10)
     if not mainGui then return false end
-    
+
     local screen = mainGui:WaitForChild("Screen", 10)
     if not screen then return false end
-    
+
     local teleportGui = screen:WaitForChild("Teleport", 10)
     if not teleportGui then return false end
-    
+
     local waitTime = 0
     while not teleportGui.Visible and waitTime < 5 do
         wait(0.1)
         waitTime = waitTime + 0.1
     end
-    
+
     if not teleportGui.Visible then return false end
-    
+
     local teleportList = teleportGui:WaitForChild("List", 5)
     local infoFrame = teleportGui:WaitForChild("InfoFrame", 5)
-    
+
     if not teleportList then return false end
-    
+
     local forgottenKingdomEntry = teleportList:FindFirstChild("Forgotten Kingdom")
     local teleportButton = infoFrame:FindFirstChild("Teleport")
-    
+
     if not forgottenKingdomEntry or not teleportButton then return false end
-    
+
     GuiService.SelectedObject = forgottenKingdomEntry
     wait(0.1)
-    
+
     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
     wait(0.02)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
     wait(0.1)
-    
+
     VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Right, false, game)
     wait(0.02)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Right, false, game)
@@ -286,12 +285,12 @@ local function selectWorldInPortalGUI()
     wait(0.02)
     VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Down, false, game)
     wait(0.05)
-    
+
     if GuiService.SelectedObject ~= teleportButton then
         GuiService.SelectedObject = teleportButton
         wait(0.2)
     end
-    
+
     for i = 1, 5 do
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
         wait(0.05)
@@ -299,23 +298,21 @@ local function selectWorldInPortalGUI()
         wait(0.2)
         
         if not teleportGui.Parent or not teleportGui.Visible then
+            print("✨ Teleport successful!")
             return true
         end
     end
-    
-    return true
+
+    return false
 end
 
-local function executeAutoWorld2Join()
-    if config.autoWorld2Executed then return end
-    config.autoWorld2Executed = true
-    
+local function executeAutoTeleport()
     print("═══════════════════════════════════════════════════")
-    print("🚀 AUTO WORLD 2 JOIN - Starting...")
+    print("🔄 Starting Auto-Teleport to World 2...")
     print("═══════════════════════════════════════════════════")
-    
+
     wait(2)
-    
+
     local portal = autoPlacePortal(PORTAL_PLACEMENT_POSITION)
     
     if not portal then
@@ -323,21 +320,23 @@ local function executeAutoWorld2Join()
     end
     
     if not portal then
-        warn("❌ Failed to find or place portal")
+        warn("❌ Failed to place or find portal")
         return
     end
-    
+
     if not interactWithPortal(portal) then
         warn("❌ Failed to interact with portal")
         return
     end
-    
+
     if not selectWorldInPortalGUI() then
         warn("❌ Failed to select world")
         return
     end
-    
-    print("✅ Auto World 2 join completed!")
+
+    print("═══════════════════════════════════════════════════")
+    print("✅ Auto-Teleport completed!")
+    print("═══════════════════════════════════════════════════")
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -376,6 +375,8 @@ local function stopNoclip()
                 end
             end
         end
+        
+        print("🔒 Noclip disabled")
     end
 end
 
@@ -495,6 +496,7 @@ local function setupPhysicsMovement()
     
     rootPart.Anchored = false
     
+    print("✅ Physics movement setup")
     return true
 end
 
@@ -569,6 +571,8 @@ local function cleanupPhysicsMovement()
             rootPart.Velocity = Vector3.new(0, 0, 0)
         end
     end
+    
+    print("🧹 Physics cleaned up")
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -588,6 +592,7 @@ local function autoEquipWeapon()
     if weaponInChar and weaponInChar:IsA("Tool") then
         if not humanoid:FindFirstChild("Weapon") then
             humanoid:EquipTool(weaponInChar)
+            print("⚔️ Equipped Weapon")
         end
         return true
     end
@@ -597,6 +602,7 @@ local function autoEquipWeapon()
         local weapon = backpack:FindFirstChild("Weapon")
         if weapon and weapon:IsA("Tool") then
             humanoid:EquipTool(weapon)
+            print("⚔️ Auto-equipped Weapon")
             return true
         end
     end
@@ -621,12 +627,15 @@ local function startAutoClicker()
         
         task.wait(0.1)
     end)
+    
+    print("🖱️ Auto-clicker started")
 end
 
 local function stopAutoClicker()
     if clickerLoop then
         clickerLoop:Disconnect()
         clickerLoop = nil
+        print("🖱️ Auto-clicker stopped")
     end
 end
 
@@ -637,12 +646,12 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Mob Farm v4.2 - Fast + Noclip + Auto World 2",
+    Name = "Mob Farm v4.3 - Fast + Noclip + Auto World 2",
     LoadingTitle = "Loading Mob Farm",
     LoadingSubtitle = "Fast Hover + Noclip + Auto World 2!",
     ConfigurationSaving = {
         Enabled = true,
-        FolderName = "MobFarmV42",
+        FolderName = "MobFarmV43",
         FileName = "Config"
     },
     Discord = {Enabled = false},
@@ -739,6 +748,7 @@ MainTab:CreateDropdown({
         else
             config.lockPosition = Option
         end
+        print("🎯 Lock position:", config.lockPosition)
     end,
 })
 
@@ -776,40 +786,31 @@ MainTab:CreateSlider({
 })
 
 -- World 2 Tab
-World2Tab:CreateParagraph({
-    Title = "🌍 Auto World 2 Join",
-    Content = "In World 1, this script will automatically:\n• Place a portal at the configured position\n• Open the portal menu\n• Select Forgotten Kingdom\n• Teleport you to World 2\n\nMake sure you have a PortalTool in your inventory!"
-})
-
-World2Tab:CreateToggle({
-    Name = "Enable Auto World 2 Join",
-    CurrentValue = true,
-    Flag = "AutoWorld2Toggle",
-    Callback = function(Value)
-        config.autoWorld2Enabled = Value
-    end,
-})
-
-World2Tab:CreateButton({
-    Name = "Test World 2 Join Now",
-    Callback = function()
-        if currentWorld == 1 then
-            config.autoWorld2Executed = false
-            executeAutoWorld2Join()
-        else
-            print("⚠️ Already in World 2!")
-        end
-    end,
-})
-
-World2Tab:CreateParagraph({
-    Title = "Current World",
-    Content = "You are currently in World " .. currentWorld
-})
+if currentWorld == 1 then
+    World2Tab:CreateParagraph({
+        Title = "🌍 World 1 Detected",
+        Content = "You are currently in World 1. The script will automatically teleport you to World 2 (Forgotten Kingdom) in a few seconds!\n\n✅ Make sure you have a PortalTool in your inventory!"
+    })
+    
+    World2Tab:CreateButton({
+        Name = "🚀 Teleport to World 2 Now",
+        Callback = function()
+            print("🚀 Manual teleport triggered")
+            task.spawn(executeAutoTeleport)
+        end,
+    })
+else
+    World2Tab:CreateParagraph({
+        Title = "✅ World 2 (Forgotten Kingdom)",
+        Content = "You are already in World 2! Start farming by toggling the farm in the Main tab."
+    })
+end
 
 MainTab:CreateButton({
     Name = "🗑️ Destroy GUI",
     Callback = function()
+        print("🗑️ DESTROYING MOB FARM...")
+        
         config.enabled = false
         stopAutoClicker()
         stopNoclip()
@@ -832,6 +833,8 @@ MainTab:CreateButton({
         
         _G.MobFarmConfig = nil
         Rayfield:Destroy()
+        
+        print("✅ GUI Destroyed!")
     end,
 })
 
@@ -857,6 +860,7 @@ farmLoop = RunService.Heartbeat:Connect(function()
         local newMob = getClosestMob()
         
         if newMob then
+            print("🎯 New target:", newMob.Name)
             config.currentMob = newMob
             config.lastUnlockTime = tick()
             
