@@ -1584,3 +1584,40 @@ Players.LocalPlayer.Idled:Connect(function()
 end)
 
 print("[Anti-AFK] Enabled")
+----------------------------------------------------------------
+-- ANTI-AFK + AUTO-REJOIN (FINAL VERSION)
+----------------------------------------------------------------
+
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+local GuiService = game:GetService("GuiService")
+local TeleportService = game:GetService("TeleportService")
+
+local player = Players.LocalPlayer
+
+------------------------------------------------------
+-- 1. ANTI-AFK (prevents Roblox idle kick)
+------------------------------------------------------
+player.Idled:Connect(function()
+    print("[Anti-AFK] Preventing idle kick...")
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera.CFrame)
+end)
+
+------------------------------------------------------
+-- 2. AUTO-REJOIN WHEN KICK MESSAGE APPEARS
+------------------------------------------------------
+local function onErrorMessageChanged(errorMessage)
+    if errorMessage and errorMessage ~= "" then
+        print("[Auto-Rejoin] Kick detected → Rejoining...")
+
+        task.wait(1)
+
+        -- Safest rejoin method
+        TeleportService:Teleport(game.PlaceId, player)
+    end
+end
+
+GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
+
+print("[Anti-AFK + Auto-Rejoin] Enabled")
