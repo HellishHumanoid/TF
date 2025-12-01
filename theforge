@@ -60,7 +60,7 @@ local destroyScript
 -- ══════════════════════════════════════════════════════════════════════════
 
 local settings = {
-    enabled = false,
+    enabled = true,
     position = "Above",
     speed = 100,
     lockDist = 20,
@@ -1539,3 +1539,37 @@ end
 GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
 
 print("[Anti-AFK + Auto-Rejoin] Loaded")
+
+-- 🔵 GUI PRE-LOADER (SAFE ANYWHERE IN SCRIPT)
+task.spawn(function()
+    local pg = nil
+
+    -- Wait for PlayerGui to exist
+    repeat
+        pg = LocalPlayer:FindFirstChild("PlayerGui")
+        task.wait(0.1)
+    until pg
+
+    -- Wait for Main folder
+    local main = nil
+    repeat
+        main = pg:FindFirstChild("Main")
+        task.wait(0.1)
+    until main
+
+    -- Wait for Screen folder
+    local screen = nil
+    repeat
+        screen = main:FindFirstChild("Screen")
+        task.wait(0.1)
+    until screen
+
+    -- Wait for Teleport GUI (even if invisible)
+    local tele = nil
+    repeat
+        tele = screen:FindFirstChild("Teleport")
+        task.wait(0.1)
+    until tele
+
+    print("[World2] GUI completely loaded and ready.")
+end)
