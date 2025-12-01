@@ -280,7 +280,7 @@ local function W2_FindSpawnedPortal()
     return nil
 end
 
--- Interact with portal by pressing E (fast version)
+-- Interact with portal by pressing E (auto-detect entry direction)
 local function W2_InteractWithPortal(portal)
     if not portal then return false end
 
@@ -290,30 +290,65 @@ local function W2_InteractWithPortal(portal)
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
 
-    -- Move right in front of portal
-    W2_TweenToPosition(portal:GetPivot().Position + Vector3.new(0, 0, 3))
-    task.wait(0.2)
+    ------------------------------------------------------------
+    -- Detect REAL entry part of the portal
+    ------------------------------------------------------------
+    local entryPart = portal:FindFirstChild("Hitbox")
+                   or portal:FindFirstChild("PromptPart")
+                   or portal:FindFirstChildWhichIsA("BasePart")
 
-    print("[World2] Rapid E-press to trigger portal...")
+    if not entryPart then
+        warn("[World2] Portal entry part not found!")
+        return false
+    end
 
-    -- Spam E until GUI appears
-    local startTime = tick()
-    while tick() - startTime < 3 do
+    ------------------------------------------------------------
+    -- NEW: Auto-detect the correct side to stand on
+    -- We detect the direction FROM portal → player
+    -- This is ALWAYS the proper entry direction.
+    ------------------------------------------------------------
+    local portalPos = entryPart.Position
+    local playerPos = hrp.Position
+
+    -- Vector pointing from portal toward the player
+    local approachDirection = (playerPos - portalPos).Unit
+
+    -- Step 2 studs outward from the portal toward the player
+    local entryPos = portalPos + (approachDirection * 2)
+
+    print("[World2] Tweening to portal entry:", entryPos)
+
+    ------------------------------------------------------------
+    -- Tween player to the correct entry point
+    ------------------------------------------------------------
+    W2_TweenToPosition(entryPos)
+    task.wait(0.25)
+
+    ------------------------------------------------------------
+    -- Press E repeatedly until the GUI appears
+    ------------------------------------------------------------
+    print("[World2] Attempting to open Portal GUI...")
+
+    local start = tick()
+    while tick() - start < 2 do
+        -- Spam E key
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
         task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
         task.wait(0.05)
 
+        -- Check if portal GUI appeared
         local gui = LocalPlayer.PlayerGui:FindFirstChild("Main")
-        if gui and gui:FindFirstChild("Screen") and gui.Screen:FindFirstChild("Teleport") then
-            if gui.Screen.Teleport.Visible then
-                print("[World2] Portal GUI detected instantly!")
+        if gui and gui:FindFirstChild("Screen") then
+            local teleFrame = gui.Screen:FindFirstChild("Teleport")
+            if teleFrame and teleFrame.Visible then
+                print("[World2] Portal GUI opened successfully!")
                 return true
             end
         end
     end
 
-    print("[World2] GUI did not appear, but continuing...")
+    warn("[World2] Portal GUI did not open (continuing anyway)")
     return true
 end
 
@@ -1439,4 +1474,54 @@ end)
 
 TeleportService.PlayerTeleporting:Connect(function()
     queueScript()
+end)
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- ANTI-AFK + AUTO-REJOIN (ANY KICK / DISCONNECT)
+-- ══════════════════════════════════════════════════════════════════════════
+
+local Players        = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser    = game:GetService("VirtualUser")
+local LocalPlayer    = Players.LocalPlayer
+
+-- 🟦 ANTI-AFK: prevents idle kicks
+LocalPlayer.Idled:Connect(function()
+    print("[MobFarm] Anti-AFK: doing virtual movement")
+    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    task.wait(1)
+    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+end)
+
+-- 🟥 Central rejoin helper
+local function AutoRejoin()
+    task.spawn(function()
+        task.wait(1)
+        print("[MobFarm] Auto-Rejoin: teleporting back to place", game.PlaceId)
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+end
+
+-- 🟧 METHOD 1: Any Roblox ErrorPrompt → Rejoin
+pcall(function()
+    local CoreGui = game:GetService("CoreGui")
+
+    CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+        if child.Name == "ErrorPrompt" then
+            task.wait(0.5) -- let the text populate
+
+            local textLabel = child:FindFirstChildWhichIsA("TextLabel", true)
+            local msg = textLabel and textLabel.Text or "<no message>"
+            print("[MobFarm] ErrorPrompt detected:", msg)
+
+            -- Rejoin on ANY kick / disconnect prompt
+            AutoRejoin()
+        end
+    end)
+end)
+
+-- 🟩 METHOD 2: Teleport failure → Rejoin
+TeleportService.LocalPlayerTeleportFailed:Connect(function(_, result)
+    print("[MobFarm] Teleport failed (" .. tostring(result) .. ") → Auto-Rejoin")
+    AutoRejoin()
 end)
