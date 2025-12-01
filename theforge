@@ -1,14 +1,13 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
-    MOB FARM v4.2 - FAST HOVER + NOCLIP SYSTEM
+    MOB FARM v4.2 - FAST HOVER + NOCLIP + AUTO WORLD 2 JOIN
     ═══════════════════════════════════════════════════════════════════════════
     
     FEATURES:
     • Much faster hovering with increased speed limits
     • NOCLIP enabled - pass through walls and terrain
     • Physics-based movement (BodyVelocity + BodyGyro)
-    • Gradual acceleration/deceleration
-    • Natural hovering with slight bobbing
+    • AUTO WORLD 2 JOIN - Automatically teleports to World 2 on startup in World 1
     • Safe for anti-cheat systems
     
     ═══════════════════════════════════════════════════════════════════════════
@@ -18,9 +17,31 @@
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local Living = workspace:WaitForChild("Living")
+
+-- World Detection
+local WORLD1_JOBID = "61c99586-ab42-47aa-9380-ad1384a01528"
+local WORLD2_JOBID = "3ae23189-431b-40a7-afbb-bbae83587e4c"
+local PORTAL_PLACEMENT_POSITION = Vector3.new(-254.76, 17.65, 102.65)
+
+local function getCurrentWorld()
+    local currentJobId = game.JobId
+    if currentJobId == WORLD1_JOBID then
+        return 1
+    elseif currentJobId == WORLD2_JOBID then
+        return 2
+    else
+        return 1 -- Default to World 1
+    end
+end
+
+local currentWorld = getCurrentWorld()
 
 -- Global Config
 _G.MobFarmConfig = {
@@ -29,11 +50,15 @@ _G.MobFarmConfig = {
     behindDistance = 12,
     verticalDistance = 15,
     farmDistance = 500,
-    hoverSpeed = 80,  -- Increased from 25 to 80!
-    acceleration = 40, -- Increased from 15 to 40!
+    hoverSpeed = 80,
+    acceleration = 40,
     lockPosition = "Back",
     unlockInterval = 0.3,
     lastUnlockTime = 0,
+    
+    -- Auto World 2
+    autoWorld2Enabled = true,
+    autoWorld2Executed = false,
     
     -- State
     currentMob = nil,
@@ -58,6 +83,264 @@ _G.MobFarmConfig = {
 local config = _G.MobFarmConfig
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- ANTI-AFK
+-- ═══════════════════════════════════════════════════════════════════════════
+
+LocalPlayer.Idled:Connect(function()
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera and workspace.CurrentCamera.CFrame or CFrame.new())
+    end)
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTO WORLD 2 JOIN FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function tweenToPosition(position)
+    local character = LocalPlayer.Character
+    if not character then return false end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return false end
+    
+    humanoidRootPart.CFrame = CFrame.new(position)
+    return true
+end
+
+local function findPortalTool()
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    local character = LocalPlayer.Character
+    
+    if backpack then
+        for _, tool in pairs(backpack:GetChildren()) do
+            if tool:IsA("Tool") and string.find(tool.Name:lower(), "portal") then
+                return tool
+            end
+        end
+    end
+    
+    if character then
+        for _, tool in pairs(character:GetChildren()) do
+            if tool:IsA("Tool") and string.find(tool.Name:lower(), "portal") then
+                return tool
+            end
+        end
+    end
+    
+    return nil
+end
+
+local function autoPlacePortal(position)
+    print("🔧 Auto-placing portal at position:", position)
+    
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    
+    local humanoid = character:FindFirstChild("Humanoid")
+    if not humanoid then return nil end
+    
+    local portalTool = findPortalTool()
+    if not portalTool then
+        warn("❌ PortalTool not found! Make sure you have it in inventory.")
+        return nil
+    end
+    
+    if portalTool.Parent ~= character then
+        humanoid:EquipTool(portalTool)
+        wait(0.5)
+    end
+    
+    tweenToPosition(position)
+    wait(0.5)
+    
+    portalTool:Activate()
+    wait(0.3)
+    
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    wait(1)
+    
+    local debris = workspace:FindFirstChild("Debris")
+    if debris then
+        for _, child in pairs(debris:GetChildren()) do
+            if string.find(child.Name, "Portal") then
+                print("✅ Portal placed successfully")
+                return child
+            end
+        end
+    end
+    
+    return nil
+end
+
+local function findClosestPortal()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not humanoidRootPart then return nil end
+    
+    local playerPos = humanoidRootPart.Position
+    local closestPortal = nil
+    local closestDistance = math.huge
+    
+    local debris = workspace:FindFirstChild("Debris")
+    if debris then
+        for _, child in pairs(debris:GetChildren()) do
+            if string.find(child.Name, "Portal") then
+                local portalPos = child:GetPivot().Position
+                local distance = (playerPos - portalPos).Magnitude
+                
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPortal = child
+                end
+            end
+        end
+    end
+    
+    return closestPortal
+end
+
+local function interactWithPortal(portal)
+    if not portal then return false end
+    
+    local character = LocalPlayer.Character
+    if not character then return false end
+    
+    local portalPosition = portal:GetPivot().Position
+    tweenToPosition(portalPosition + Vector3.new(0, 0, 3))
+    wait(0.5)
+    
+    for i = 1, 5 do
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        wait(0.3)
+        
+        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+        if playerGui then
+            local mainGui = playerGui:FindFirstChild("Main")
+            if mainGui then
+                local screen = mainGui:FindFirstChild("Screen")
+                if screen then
+                    local teleportFrame = screen:FindFirstChild("Teleport")
+                    if teleportFrame and teleportFrame.Visible then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    
+    return true
+end
+
+local function selectWorldInPortalGUI()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    wait(1)
+    
+    local mainGui = playerGui:WaitForChild("Main", 10)
+    if not mainGui then return false end
+    
+    local screen = mainGui:WaitForChild("Screen", 10)
+    if not screen then return false end
+    
+    local teleportGui = screen:WaitForChild("Teleport", 10)
+    if not teleportGui then return false end
+    
+    local waitTime = 0
+    while not teleportGui.Visible and waitTime < 5 do
+        wait(0.1)
+        waitTime = waitTime + 0.1
+    end
+    
+    if not teleportGui.Visible then return false end
+    
+    local teleportList = teleportGui:WaitForChild("List", 5)
+    local infoFrame = teleportGui:WaitForChild("InfoFrame", 5)
+    
+    if not teleportList then return false end
+    
+    local forgottenKingdomEntry = teleportList:FindFirstChild("Forgotten Kingdom")
+    local teleportButton = infoFrame:FindFirstChild("Teleport")
+    
+    if not forgottenKingdomEntry or not teleportButton then return false end
+    
+    GuiService.SelectedObject = forgottenKingdomEntry
+    wait(0.1)
+    
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+    wait(0.02)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+    wait(0.1)
+    
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Right, false, game)
+    wait(0.02)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Right, false, game)
+    wait(0.05)
+    
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Down, false, game)
+    wait(0.02)
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Down, false, game)
+    wait(0.05)
+    
+    if GuiService.SelectedObject ~= teleportButton then
+        GuiService.SelectedObject = teleportButton
+        wait(0.2)
+    end
+    
+    for i = 1, 5 do
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+        wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+        wait(0.2)
+        
+        if not teleportGui.Parent or not teleportGui.Visible then
+            return true
+        end
+    end
+    
+    return true
+end
+
+local function executeAutoWorld2Join()
+    if config.autoWorld2Executed then return end
+    config.autoWorld2Executed = true
+    
+    print("═══════════════════════════════════════════════════")
+    print("🚀 AUTO WORLD 2 JOIN - Starting...")
+    print("═══════════════════════════════════════════════════")
+    
+    wait(2)
+    
+    local portal = autoPlacePortal(PORTAL_PLACEMENT_POSITION)
+    
+    if not portal then
+        portal = findClosestPortal()
+    end
+    
+    if not portal then
+        warn("❌ Failed to find or place portal")
+        return
+    end
+    
+    if not interactWithPortal(portal) then
+        warn("❌ Failed to interact with portal")
+        return
+    end
+    
+    if not selectWorldInPortalGUI() then
+        warn("❌ Failed to select world")
+        return
+    end
+    
+    print("✅ Auto World 2 join completed!")
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- NOCLIP SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -70,7 +353,6 @@ local function startNoclip()
         local character = LocalPlayer.Character
         if not character then return end
         
-        -- Disable collision for all body parts
         for _, part in pairs(character:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.CanCollide = false
@@ -78,7 +360,7 @@ local function startNoclip()
         end
     end)
     
-    print("✅ Noclip enabled - can pass through walls!")
+    print("✅ Noclip enabled")
 end
 
 local function stopNoclip()
@@ -86,7 +368,6 @@ local function stopNoclip()
         config.noclipLoop:Disconnect()
         config.noclipLoop = nil
         
-        -- Re-enable collision
         local character = LocalPlayer.Character
         if character then
             for _, part in pairs(character:GetDescendants()) do
@@ -95,8 +376,6 @@ local function stopNoclip()
                 end
             end
         end
-        
-        print("🔒 Noclip disabled")
     end
 end
 
@@ -185,7 +464,6 @@ local function getLockPosition(mob)
     return targetPos
 end
 
--- Create physics-based movement objects
 local function setupPhysicsMovement()
     local character = LocalPlayer.Character
     if not character then return false end
@@ -193,7 +471,6 @@ local function setupPhysicsMovement()
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     if not rootPart then return false end
     
-    -- Clean up existing objects
     if config.bodyVelocity then
         config.bodyVelocity:Destroy()
     end
@@ -201,30 +478,26 @@ local function setupPhysicsMovement()
         config.bodyGyro:Destroy()
     end
     
-    -- Create BodyVelocity for smooth movement (INCREASED FORCE!)
     local bv = Instance.new("BodyVelocity")
     bv.Name = "FarmVelocity"
-    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)  -- Increased from 4000 to 9e9!
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
     bv.Velocity = Vector3.new(0, 0, 0)
     bv.Parent = rootPart
     config.bodyVelocity = bv
     
-    -- Create BodyGyro for rotation
     local bg = Instance.new("BodyGyro")
     bg.Name = "FarmGyro"
     bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    bg.P = 10000  -- Increased from 3000 for faster rotation
+    bg.P = 10000
     bg.D = 500
     bg.Parent = rootPart
     config.bodyGyro = bg
     
     rootPart.Anchored = false
     
-    print("✅ Physics movement setup complete (FAST MODE!)")
     return true
 end
 
--- Fast hover movement using BodyVelocity
 local function hoverToPosition(targetPos, mob)
     local character = LocalPlayer.Character
     if not character then return end
@@ -240,14 +513,11 @@ local function hoverToPosition(targetPos, mob)
     local direction = (targetPos - currentPos)
     local distance = direction.Magnitude
     
-    -- Add slight bobbing effect for more natural movement
     local bobbing = math.sin(tick() * 2) * 0.3
     local bobbedTarget = targetPos + Vector3.new(0, bobbing, 0)
     direction = (bobbedTarget - currentPos)
     
-    -- Calculate velocity with FAST acceleration
-    -- When far away, use max speed. When close, slow down proportionally
-    local speedMultiplier = math.min(distance / 10, 1) -- Slow down when within 10 studs
+    local speedMultiplier = math.min(distance / 10, 1)
     local targetSpeed = config.hoverSpeed * speedMultiplier
     
     local desiredVelocity
@@ -257,23 +527,19 @@ local function hoverToPosition(targetPos, mob)
         desiredVelocity = Vector3.new(0, 0, 0)
     end
     
-    -- Faster interpolation for snappier movement
     local currentVelocity = config.bodyVelocity.Velocity
-    local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)  -- Increased from 0.3 to 0.5
+    local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)
     
     config.bodyVelocity.Velocity = newVelocity
     
-    -- Always look at mob
     local lookAtPos = mobRoot.Position
     local lookCFrame = CFrame.new(currentPos, lookAtPos)
     config.bodyGyro.CFrame = lookCFrame
     
-    -- Periodic unlock for Above/Below to allow hits
     if config.lockPosition == "Above" or config.lockPosition == "Below" then
         local currentTime = tick()
         
         if currentTime - config.lastUnlockTime >= config.unlockInterval then
-            -- Brief unlock
             local oldForce = config.bodyVelocity.MaxForce
             config.bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
             task.wait(0.05)
@@ -285,7 +551,6 @@ local function hoverToPosition(targetPos, mob)
     end
 end
 
--- Cleanup physics objects
 local function cleanupPhysicsMovement()
     if config.bodyVelocity then
         config.bodyVelocity:Destroy()
@@ -304,8 +569,6 @@ local function cleanupPhysicsMovement()
             rootPart.Velocity = Vector3.new(0, 0, 0)
         end
     end
-    
-    print("🧹 Physics objects cleaned up")
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -325,7 +588,6 @@ local function autoEquipWeapon()
     if weaponInChar and weaponInChar:IsA("Tool") then
         if not humanoid:FindFirstChild("Weapon") then
             humanoid:EquipTool(weaponInChar)
-            print("⚔️ Equipped Weapon")
         end
         return true
     end
@@ -335,7 +597,6 @@ local function autoEquipWeapon()
         local weapon = backpack:FindFirstChild("Weapon")
         if weapon and weapon:IsA("Tool") then
             humanoid:EquipTool(weapon)
-            print("⚔️ Auto-equipped Weapon")
             return true
         end
     end
@@ -360,15 +621,12 @@ local function startAutoClicker()
         
         task.wait(0.1)
     end)
-    
-    print("🖱️ Auto-clicker started")
 end
 
 local function stopAutoClicker()
     if clickerLoop then
         clickerLoop:Disconnect()
         clickerLoop = nil
-        print("🖱️ Auto-clicker stopped")
     end
 end
 
@@ -379,9 +637,9 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Mob Farm v4.2 - Fast + Noclip",
+    Name = "Mob Farm v4.2 - Fast + Noclip + Auto World 2",
     LoadingTitle = "Loading Mob Farm",
-    LoadingSubtitle = "Fast Hover + Noclip!",
+    LoadingSubtitle = "Fast Hover + Noclip + Auto World 2!",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "MobFarmV42",
@@ -392,6 +650,7 @@ local Window = Rayfield:CreateWindow({
 })
 
 local MainTab = Window:CreateTab("Main", 4483362458)
+local World2Tab = Window:CreateTab("World 2", 4483362458)
 
 local farmLoop = nil
 local keybindConnection = nil
@@ -408,7 +667,7 @@ local EnableToggle = MainTab:CreateToggle({
             setupPhysicsMovement()
             startNoclip()
             startAutoClicker()
-            print("✅ Farm ENABLED - Fast hover + Noclip!")
+            print("✅ Farm ENABLED")
         else
             stopAutoClicker()
             stopNoclip()
@@ -480,7 +739,6 @@ MainTab:CreateDropdown({
         else
             config.lockPosition = Option
         end
-        print("🎯 Lock position:", config.lockPosition)
     end,
 })
 
@@ -492,7 +750,6 @@ MainTab:CreateSlider({
     Flag = "HoverSpeed",
     Callback = function(Value) 
         config.hoverSpeed = Value 
-        print("🚀 Hover speed:", Value)
     end,
 })
 
@@ -504,7 +761,6 @@ MainTab:CreateSlider({
     Flag = "Acceleration",
     Callback = function(Value) 
         config.acceleration = Value 
-        print("⚡ Acceleration:", Value)
     end,
 })
 
@@ -519,16 +775,41 @@ MainTab:CreateSlider({
     end,
 })
 
-MainTab:CreateParagraph({
-    Title = "✅ FAST HOVER + NOCLIP!",
-    Content = "🚀 SPEED UPGRADES:\n• 3x faster hover speed (80 studs/sec)\n• 2.5x faster acceleration\n• Increased force for instant response\n• Faster rotation/turning\n\n👻 NOCLIP FEATURES:\n• Pass through walls freely\n• No collision with terrain\n• Smooth movement everywhere\n• Auto re-enables on respawn\n\n🛡️ STILL SAFE:\n• Physics-based movement\n• No instant teleports\n• Natural acceleration\n• Anti-cheat friendly\n\n⚙️ SETTINGS:\n• Hover Speed: 20-150 studs/sec\n• Acceleration: 10-80\n• Higher = faster & snappier!"
+-- World 2 Tab
+World2Tab:CreateParagraph({
+    Title = "🌍 Auto World 2 Join",
+    Content = "In World 1, this script will automatically:\n• Place a portal at the configured position\n• Open the portal menu\n• Select Forgotten Kingdom\n• Teleport you to World 2\n\nMake sure you have a PortalTool in your inventory!"
+})
+
+World2Tab:CreateToggle({
+    Name = "Enable Auto World 2 Join",
+    CurrentValue = true,
+    Flag = "AutoWorld2Toggle",
+    Callback = function(Value)
+        config.autoWorld2Enabled = Value
+    end,
+})
+
+World2Tab:CreateButton({
+    Name = "Test World 2 Join Now",
+    Callback = function()
+        if currentWorld == 1 then
+            config.autoWorld2Executed = false
+            executeAutoWorld2Join()
+        else
+            print("⚠️ Already in World 2!")
+        end
+    end,
+})
+
+World2Tab:CreateParagraph({
+    Title = "Current World",
+    Content = "You are currently in World " .. currentWorld
 })
 
 MainTab:CreateButton({
     Name = "🗑️ Destroy GUI",
     Callback = function()
-        print("🗑️ DESTROYING MOB FARM...")
-        
         config.enabled = false
         stopAutoClicker()
         stopNoclip()
@@ -550,10 +831,7 @@ MainTab:CreateButton({
         end
         
         _G.MobFarmConfig = nil
-        
         Rayfield:Destroy()
-        
-        print("✅ GUI Destroyed!")
     end,
 })
 
@@ -564,7 +842,6 @@ MainTab:CreateButton({
 farmLoop = RunService.Heartbeat:Connect(function()
     if not config.enabled then return end
     
-    -- Check if current mob is still valid
     local needNewMob = false
     
     if not config.currentMob or not config.currentMob.Parent then
@@ -576,16 +853,13 @@ farmLoop = RunService.Heartbeat:Connect(function()
         end
     end
     
-    -- Get new mob if needed
     if needNewMob then
         local newMob = getClosestMob()
         
         if newMob then
-            print("🎯 New target:", newMob.Name)
             config.currentMob = newMob
             config.lastUnlockTime = tick()
             
-            -- Ensure physics objects exist
             if not config.bodyVelocity or not config.bodyGyro then
                 setupPhysicsMovement()
             end
@@ -596,7 +870,6 @@ farmLoop = RunService.Heartbeat:Connect(function()
         return
     end
     
-    -- Hover to position
     if config.currentMob then
         local lockPos = getLockPosition(config.currentMob)
         if lockPos then
