@@ -1442,7 +1442,7 @@ print("════════════════════════�
 -- AUTO RE-EXECUTE ON SERVER HOP / TELEPORT
 -- ══════════════════════════════════════════════════════════════════════════
 
-local ScriptURL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgetest"  -- <-- REPLACE THIS
+local ScriptURL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforge"  -- <-- REPLACE THIS
 
 local function queueScript()
     local code = 'loadstring(game:HttpGet("' .. ScriptURL .. '"))()'
