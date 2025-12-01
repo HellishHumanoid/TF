@@ -1476,52 +1476,91 @@ TeleportService.PlayerTeleporting:Connect(function()
     queueScript()
 end)
 
--- ══════════════════════════════════════════════════════════════════════════
--- ANTI-AFK + AUTO-REJOIN (ANY KICK / DISCONNECT)
--- ══════════════════════════════════════════════════════════════════════════
+-- ============================================================
+-- ANTI-AFK (WORKS ON ALL EXECUTORS)
+-- ============================================================
 
-local Players        = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local VirtualUser    = game:GetService("VirtualUser")
-local LocalPlayer    = Players.LocalPlayer
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
 
--- 🟦 ANTI-AFK: prevents idle kicks
 LocalPlayer.Idled:Connect(function()
-    print("[MobFarm] Anti-AFK: doing virtual movement")
-    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    print("[MobFarm] Anti-AFK: Simulating activity.")
+    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
     task.wait(1)
-    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
 end)
 
--- 🟥 Central rejoin helper
-local function AutoRejoin()
-    task.spawn(function()
-        task.wait(1)
-        print("[MobFarm] Auto-Rejoin: teleporting back to place", game.PlaceId)
-        TeleportService:Teleport(game.PlaceId, LocalPlayer)
-    end)
+
+
+-- ============================================================
+-- UNIVERSAL AUTO-REJOIN (WORKS EVEN ON LocalPlayer:Kick())
+-- ============================================================
+
+local TeleportService = game:GetService("TeleportService")
+
+local alreadyTrying = false
+
+local function UniversalRejoin()
+    if alreadyTrying then return end
+    alreadyTrying = true
+
+    task.wait(0.5)
+    print("[MobFarm] Rejoining server...")
+
+    -- Keep retrying until Roblox teleports successfully
+    while true do
+        pcall(function()
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end)
+        task.wait(2)
+    end
 end
 
--- 🟧 METHOD 1: Any Roblox ErrorPrompt → Rejoin
-pcall(function()
-    local CoreGui = game:GetService("CoreGui")
 
-    CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-        if child.Name == "ErrorPrompt" then
-            task.wait(0.5) -- let the text populate
+-- ============================================================
+-- METHOD 1 — Teleport failure (includes many disconnect types)
+-- ============================================================
 
-            local textLabel = child:FindFirstChildWhichIsA("TextLabel", true)
-            local msg = textLabel and textLabel.Text or "<no message>"
-            print("[MobFarm] ErrorPrompt detected:", msg)
+TeleportService.LocalPlayerTeleportFailed:Connect(function()
+    UniversalRejoin()
+end)
 
-            -- Rejoin on ANY kick / disconnect prompt
-            AutoRejoin()
+
+-- ============================================================
+-- METHOD 2 — Character removed NOT due to normal respawn
+--           (fires BEFORE kick UI shows)
+-- ============================================================
+
+LocalPlayer.CharacterRemoving:Connect(function()
+    task.spawn(function()
+        task.wait(0.1)
+        if not LocalPlayer.Character then
+            UniversalRejoin()
         end
     end)
 end)
 
--- 🟩 METHOD 2: Teleport failure → Rejoin
-TeleportService.LocalPlayerTeleportFailed:Connect(function(_, result)
-    print("[MobFarm] Teleport failed (" .. tostring(result) .. ") → Auto-Rejoin")
-    AutoRejoin()
+
+-- ============================================================
+-- METHOD 3 — Replication lost / internal drop
+-- ============================================================
+
+LocalPlayer.OnTeleport:Connect(function(state)
+    if state == Enum.TeleportState.Failed then
+        UniversalRejoin()
+    end
+end)
+
+
+-- ============================================================
+-- METHOD 4 — Heartbeat failsafe
+-- ============================================================
+
+task.spawn(function()
+    while task.wait(1) do
+        if not game:IsLoaded() then
+            UniversalRejoin()
+        end
+    end
 end)
