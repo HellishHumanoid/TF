@@ -1392,7 +1392,7 @@ local qot = queue_on_teleport
 if qot then
     -- TODO: Replace the URL below with the raw URL where this FULL script is hosted.
     -- Example: "https://pastebin.com/raw/XXXXXXXX"
-    local SCRIPT_URL = "https://your-raw-script-url-here"
+    local SCRIPT_URL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgetest"
 
     if SCRIPT_URL ~= "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgetest" then
         qot(string.format([[
