@@ -121,6 +121,10 @@ local connections = {
 --  - Waits for character before doing anything
 -- ══════════════════════════════════════════════════════════════════════════
 
+local TweenService = game:GetService("TweenService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService")
+
 local LocalPlayer = player
 
 -- World detection based on Proximity contents
@@ -159,7 +163,7 @@ local function WaitForCharacter()
     return char
 end
 
--- Tween character to position (for auto-join flow)
+-- Tween character to a world-space position (for auto-join flow)
 local function W2_TweenToPosition(position)
     local character = LocalPlayer.Character
     if not character then return false end
@@ -181,6 +185,20 @@ local function W2_TweenToPosition(position)
     tween.Completed:Wait()
 
     return true
+end
+
+--------------------------------------------------------------------
+-- Move the player 3 studs forward from their current position
+--------------------------------------------------------------------
+local function W2_MovePlayerForward3Studs()
+    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    if not char then return false end
+
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local targetPos = hrp.Position + hrp.CFrame.LookVector * 3
+    return W2_TweenToPosition(targetPos)
 end
 
 -- Equip portal tool
@@ -254,7 +272,7 @@ local function W2_FindSpawnedPortal()
     return nil
 end
 
--- Interact with portal by pressing E (auto-detect entry direction)
+-- Interact with portal by pressing E (only uses player-forward offset)
 local function W2_InteractWithPortal(portal)
     if not portal then
         warn("[World2] No portal — cannot interact.")
@@ -274,50 +292,113 @@ local function W2_InteractWithPortal(portal)
     task.wait(2)
 
     -------------------------------------------------------
-    -- 1) Find the REAL entry point → MidSection
+    -- 1) Move player 3 studs forward from current position
     -------------------------------------------------------
-    local mid = portal:FindFirstChild("MidSection")
-
-    if not mid then
-        warn("[World2] MidSection missing — portal still not fully loaded.")
-        return false
-    end
-
-    -------------------------------------------------------
-    -- 2) Calculate EXACT center-facing entry position
-    -------------------------------------------------------
-    local entryPos = mid.Position + (mid.CFrame.LookVector * 3)
-
-    print("[World2] Moving to portal entry:", entryPos)
-
-    if not W2_TweenToPosition(entryPos) then
-        warn("[World2] Tween failed — cannot interact with portal.")
+    print("[World2] Moving player 3 studs forward from current position...")
+    if not W2_MovePlayerForward3Studs() then
+        warn("[World2] Failed to move player forward.")
         return false
     end
 
     task.wait(0.25)
 
-    -------------------------------------------------------
-    -- 3) Mash E until GUI opens
-    -------------------------------------------------------
-    local start = tick()
-    while tick() - start < 3 do
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-        task.wait(0.05)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-        task.wait(0.05)
+-------------------------------------------------------
+-- 2) Ultra-fast E-spam (0.005s per press)
+-------------------------------------------------------
+    print("[World2] FAST-SPAMMING E to open portal...")
 
+    local start = tick()
+    while tick() - start < 2 do -- runs for 2 seconds, not 3
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.005)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        task.wait(0.005)
+
+        -- instantly check if teleport GUI opened
         local gui = LocalPlayer.PlayerGui:FindFirstChild("Main")
         if gui and gui:FindFirstChild("Screen") and gui.Screen:FindFirstChild("Teleport") then
             if gui.Screen.Teleport.Visible then
-                print("[World2] Portal GUI opened!")
+                print("[World2] Portal GUI OPENED!")
                 return true
             end
         end
     end
 
-    warn("[World2] Portal GUI never opened after E spam.")
+    warn("[World2] Portal GUI did not open fast enough.")
     return false
+end
+
+--------------------------------------------------------------------
+-- NEW: Select Forgotten Kingdom and press Teleport in the GUI
+--------------------------------------------------------------------
+--------------------------------------------------------------------
+-- FIXED: Select Forgotten Kingdom properly and click Teleport
+--------------------------------------------------------------------
+-- Select Forgotten Kingdom in the Teleport GUI
+function W2_SelectWorldInPortalGUI()
+    print("[World2] Selecting Forgotten Kingdom...")
+
+    local gui = LocalPlayer:WaitForChild("PlayerGui")
+    local main = gui:WaitForChild("Main")
+    local screen = main:WaitForChild("Screen")
+    local teleport = screen:WaitForChild("Teleport")
+
+    local list = teleport:WaitForChild("List")
+    local fkButton = list:FindFirstChild("Forgotten Kingdom")
+
+    if not fkButton then
+        warn("[World2] Forgotten Kingdom button not found!")
+        return false
+    end
+
+    print("[World2] Clicking Forgotten Kingdom button...")
+
+    -- Spam activation on the FK button (Navigation UI + click spam)
+    for i = 1, 10 do
+        pcall(function()
+            fkButton:Activate()
+        end)
+
+        -- Try UI navigation system
+        pcall(function()
+            GuiService.SelectedObject = fkButton
+            task.wait(0.05)
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+        end)
+
+        task.wait(0.1)
+    end
+
+    task.wait(0.5)
+
+    -- Now click the Teleport button
+    local infoFrame = teleport:WaitForChild("InfoFrame")
+    local teleportButton = infoFrame:FindFirstChild("Teleport")
+
+    if not teleportButton then
+        warn("[World2] Teleport button not found!")
+        return false
+    end
+
+    print("[World2] Clicking Teleport button...")
+
+    for i = 1, 20 do
+        pcall(function()
+            teleportButton:Activate()
+        end)
+
+        pcall(function()
+            GuiService.SelectedObject = teleportButton
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+        end)
+
+        task.wait(0.05)
+    end
+
+    print("[World2] Teleport sequence attempted.")
+    return true
 end
 
 -- Main Auto-Join function
@@ -352,11 +433,25 @@ local function executeAutoRejoin()
         return
     end
 
-    print("[World2] Step 1: Moving to portal spawn location...")
-    if not W2_TweenToPosition(portalSpawnLocation) then
-        warn("[World2] Failed to move to portal location")
-        return
+    print("[World2] Step 1: Moving to portal spawn location (FORCE TELEPORT)...")
+
+    local charNow = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    local hrp = charNow:WaitForChild("HumanoidRootPart")
+
+    -- Remove hover forces
+    for _, obj in ipairs(hrp:GetChildren()) do
+        if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") then
+            obj:Destroy()
+        end
     end
+
+    -- Force unanchor
+    hrp.Anchored = false
+
+    -- HARD TELEPORT (always works)
+    hrp.CFrame = CFrame.new(portalSpawnLocation)
+
+    task.wait(0.3)
 
     print("[World2] Step 2: Equipping portal...")
     if not W2_EquipPortal() then
@@ -380,7 +475,7 @@ local function executeAutoRejoin()
     end
 
     -- DO NOT MOVE BEFORE THIS POINT
-    print("[World2] Portal detected → proceeding to center entry path")
+    print("[World2] Portal detected → proceeding to interaction")
 
     print("[World2] Step 5: Interacting with portal...")
     if not W2_InteractWithPortal(spawnedPortal) then
@@ -1405,133 +1500,87 @@ TeleportService.PlayerTeleporting:Connect(function()
     queueScript()
 end)
 
--- ============================================================
--- ANTI-AFK (WORKS ON ALL EXECUTORS)
--- ============================================================
+--[[  
+    UNIVERSAL AUTO-REJOIN SYSTEM
+    • Detects ErrorPrompt (real kick)
+    • Detects GuiService error messages
+    • Detects custom messages (fallback)
+    • Immediately rejoins your current PlaceId
+]]
 
 local Players = game:GetService("Players")
-local VirtualUser = game:GetService("VirtualUser")
-local LocalPlayer = Players.LocalPlayer
-
-LocalPlayer.Idled:Connect(function()
-    print("[MobFarm] Anti-AFK: Simulating activity.")
-    VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    task.wait(1)
-    VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-end)
-
-
-
---====================================================================
--- 🔰 ANTI-KICK + ANTI-AFK + UNIVERSAL AUTO-REJOIN SYSTEM
--- Paste this block at the very BOTTOM of your script
---====================================================================
-
-local Players = game:GetService("Players")
-local VirtualUser = game:GetService("VirtualUser")
 local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
+local CoreGui = game:GetService("CoreGui")
 
-local LocalPlayer = Players.LocalPlayer
+local player = Players.LocalPlayer
+local PLACE_ID = game.PlaceId
 
---========================================================
--- 🔹 ANTI-AFK
---========================================================
-LocalPlayer.Idled:Connect(function()
-    pcall(function()
-        VirtualUser:Button2Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame)
-    end)
-    print("[ANTI-AFK] Prevented idle kick.")
-end)
-
---========================================================
--- 🔹 ANTI-KICK (Blocks external .Kick() attempts)
---========================================================
-
--- Prevent external scripts from kicking you
-local oldKick
-oldKick = hookmetamethod(LocalPlayer, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-
-    if tostring(self) == "LocalPlayer"
-        and method == "Kick" then
-
-        print("[ANTI-KICK] Blocked kick attempt:", ...)
-
-        -- Pretend the kick succeeded (prevents retry spam)
-        return
-    end
-
-    return oldKick(self, ...)
-end)
-
--- Also block Player:Kick() called directly
-LocalPlayer.Kick = function(...)
-    print("[ANTI-KICK] Kick() blocked.")
-    return
+local function Rejoin()
+    task.wait(0.1)
+    print("[AutoRejoin] Rejoining...")
+    TeleportService:Teleport(PLACE_ID, player)
 end
 
---========================================================
--- 🔹 AUTO-REJOIN (Handles ALL real disconnections)
---========================================================
+-------------------------------------------------------
+-- METHOD 1: Roblox Kick Prompt (most reliable)
+-------------------------------------------------------
+task.spawn(function()
+    local gui = CoreGui:WaitForChild("RobloxPromptGui", 10)
+    if not gui then return end
+    
+    local overlay = gui:WaitForChild("promptOverlay", 10)
+    if not overlay then return end
 
-local rejoining = false
-
-local function AutoRejoin()
-    if rejoining then return end
-    rejoining = true
-
-    print("[AUTO-REJOIN] Attempting to rejoin server...")
-
-    task.wait(1)
-
-    while true do
-        pcall(function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end)
-        task.wait(2)
-    end
-end
-
--- GUI error → rejoin (covers 267, 277, server shutdown, etc.)
-GuiService.ErrorMessageChanged:Connect(function(msg)
-    if msg and msg ~= "" then
-        print("[AUTO-REJOIN] Detected kick message:", msg)
-        AutoRejoin()
-    end
-end)
-
--- Teleport failed → rejoin
-TeleportService.LocalPlayerTeleportFailed:Connect(function()
-    print("[AUTO-REJOIN] Teleport failure detected.")
-    AutoRejoin()
-end)
-
--- Roblox Prompt UI (ErrorPrompt) → rejoin
-pcall(function()
-    game.CoreGui.RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+    overlay.ChildAdded:Connect(function(child)
         if child.Name == "ErrorPrompt" then
-            task.wait(.5)
-
-            local label = child:FindFirstChildWhichIsA("TextLabel", true)
-            if label then
-                local text = label.Text or ""
-                print("[AUTO-REJOIN] ErrorPrompt detected:", text)
-            end
-
-            AutoRejoin()
+            print("[AutoRejoin] ErrorPrompt detected!")
+            Rejoin()
         end
     end)
 end)
 
--- Catch internal disconnect states
-LocalPlayer.OnTeleport:Connect(function(state)
-    if state == Enum.TeleportState.Failed then
-        print("[AUTO-REJOIN] Teleport state failed.")
-        AutoRejoin()
+-------------------------------------------------------
+-- METHOD 2: GuiService ErrorMessage (secondary)
+-------------------------------------------------------
+GuiService.ErrorMessageChanged:Connect(function(msg)
+    if msg and msg ~= "" then
+        print("[AutoRejoin] GuiService error:", msg)
+        Rejoin()
     end
 end)
 
-print("✅ Anti-Kick + Anti-AFK + Auto-Rejoin system is now active.")
+-------------------------------------------------------
+-- METHOD 3: Automatic reconnect on Lost connection events
+-------------------------------------------------------
+player.OnTeleportFailed:Connect(function()
+    print("[AutoRejoin] Teleport failed → retrying...")
+    Rejoin()
+end)
+
+game:GetService("Players").PlayerRemoving:Connect(function(leaver)
+    -- If YOU are the one leaving unexpectedly → reconnect
+    if leaver == player then
+        print("[AutoRejoin] PlayerRemoving triggered → rejoining...")
+        Rejoin()
+    end
+end)
+
+print("[AutoRejoin] System Loaded")
+----------------------------------------------------------------
+-- ANTI-AFK (Prevents Idle Kick)
+----------------------------------------------------------------
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+
+Players.LocalPlayer.Idled:Connect(function()
+    print("[Anti-AFK] Preventing idle kick...")
+
+    -- Simulate a very small mouse movement
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new(), workspace.CurrentCamera.CFrame)
+
+    -- You stay active without interfering with gameplay
+end)
+
+print("[Anti-AFK] Enabled")
