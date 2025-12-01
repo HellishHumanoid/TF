@@ -579,7 +579,7 @@ do
 
     farmToggle = MainTab:CreateToggle({
         Name = "🤖 Farm Enabled (F1)",
-        CurrentValue = false,
+        CurrentValue = true,
         Flag = "FarmEnabled",
         Callback = function(Value)
             if Value ~= settings.enabled then
