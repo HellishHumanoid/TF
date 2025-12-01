@@ -33,7 +33,7 @@
     - World 2 Auto-Join logic is accessed via "World 2" tab in Rayfield but is always enabled in World 1.
 ]]
 
-wait(1) -- Ensure game is mostly loaded
+wait(10) -- Ensure game is mostly loaded
 
 -- Services
 local Players              = game:GetService("Players")
