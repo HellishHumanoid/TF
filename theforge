@@ -22,7 +22,7 @@
     F8  = DESTROY SCRIPT
 ]]
 
-wait(5) -- Ensure game is mostly loaded
+wait(10) -- Ensure game is mostly loaded
 
 -- Services
 local Players              = game:GetService("Players")
@@ -35,6 +35,8 @@ local GuiService           = game:GetService("GuiService")
 
 local player = Players.LocalPlayer
 local living = workspace:WaitForChild("Living")
+
+local Remotes = {}
 
 -- Forward declarations for mob farm control (used by UI callbacks later)
 local toggleFarm
@@ -1024,36 +1026,52 @@ local function autoEquipWeapon()
     end
 end
 
+
 local function startClicker()
     if connections.clicker then return end
+    task.spawn(function() task.wait(0.5); autoEquipWeapon() end)
+    if not Remotes.ToolActivated then
+        Remotes.ToolActivated = GetServiceRemote("ToolService","RF","ToolActivated")
+    end
+    connections.clicker = RunService.Heartbeat:Connect(function()
+        if not settings.enabled then return end
+        autoEquipWeapon()
+        pcall(function() Remotes.ToolActivated:InvokeServer("Weapon") end)
+    end)
+end
+
 
     task.spawn(function()
         task.wait(0.5)
         autoEquipWeapon()
     end)
 
+    -- Prepare remote once
+    if not Remotes.ToolActivated then
+        Remotes.ToolActivated = GetServiceRemote("ToolService", "RF", "ToolActivated")
+    end
+
     connections.clicker = RunService.Heartbeat:Connect(function()
         if not settings.enabled then return end
 
         autoEquipWeapon()
 
+        -- Server-side weapon activation
         pcall(function()
-            if typeof(mouse1click) == "function" then
-                mouse1click()
-            end
+            Remotes.ToolActivated:InvokeServer("Weapon")
         end)
 
-        task.wait(0.20) -- 0.20 seconds per click
+        task.wait(0.20) -- 0.20 seconds per hit
     end)
 
-    print("🖱️ Safe clicker started (mouse1click, 0.20s interval)")
+    print("🔫 Server-based auto-hit started (ToolActivated remote, 0.20s interval)")
 end
 
 local function stopClicker()
     if connections.clicker then
         connections.clicker:Disconnect()
         connections.clicker = nil
-        print("🖱️ Safe clicker stopped")
+        print("🛑 Server auto-hit stopped")
     end
 end
 
@@ -1548,7 +1566,7 @@ print("F6 = Vertical Distance -1")
 print("F8 = DESTROY SCRIPT")
 print("═══════════════════════════════════════════════════════")
 print("Default Targets: Reaper (use DELETE for single-target, or UI dropdown for multi-target with priority).")
-print("Click interval: 0.20 seconds via mouse1click()")
+print("Click interval: 0.20 seconds via ToolActivated remote")
 print("Use 'World 2' tab in Rayfield to view Auto-Join settings (always on in World 1).")
 print("Press F1 or toggle in Rayfield to start farming!")
 print("═══════════════════════════════════════════════════════")
@@ -1631,6 +1649,41 @@ GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
 
 print("[Anti-AFK + Auto-Rejoin] Loaded")
 
+---------------------------------------------------------------------
+-- 🟢 AUTO-START FARM WHEN ENTERING WORLD 2
+---------------------------------------------------------------------
+task.spawn(function()
+    -- small delay to let things load
+    task.wait(5)
+
+    local lastWorld = getCurrentWorld()
+
+    while true do
+        task.wait(2)
+
+        local world = getCurrentWorld()
+
+        -- Detect transition into World 2
+        if world == 2 and lastWorld ~= 2 then
+            print("[AutoStart] Entered World 2 → starting farm...")
+
+            local char = player.Character or player.CharacterAdded:Wait()
+            if char then
+                char:WaitForChild("HumanoidRootPart", 10)
+            end
+
+            task.wait(1)
+
+            if not destroyed and not settings.enabled then
+                toggleFarm()
+            end
+        end
+
+        lastWorld = world
+    end
+end)
+
+
 -- 🔵 GUI PRE-LOADER (SAFE ANYWHERE IN SCRIPT)
 task.spawn(function()
     local pg = nil
@@ -1663,4 +1716,29 @@ task.spawn(function()
     until tele
 
     print("[World2] GUI completely loaded and ready.")
+end)
+
+---------------------------------------------------------------------
+-- 🟢 FIXED AUTO-START FARM WHEN ENTERING WORLD 2
+---------------------------------------------------------------------
+task.spawn(function()
+    local prox = workspace:WaitForChild("Proximity", 30)
+    local function checkW2()
+        local world = getCurrentWorld()
+        if world == 2 then
+            print("[AutoStart] Detected World 2 → starting farm...")
+            local char = player.Character or player.CharacterAdded:Wait()
+            if char then char:WaitForChild("HumanoidRootPart", 15) end
+            task.wait(1)
+            if not destroyed and not settings.enabled then
+                toggleFarm()
+            end
+        end
+    end
+    task.spawn(checkW2)
+    prox.ChildAdded:Connect(function(child)
+        if child.Name == "Cobalt Pickaxe" then
+            task.spawn(checkW2)
+        end
+    end)
 end)
