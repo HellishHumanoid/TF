@@ -268,42 +268,37 @@ local function W2_InteractWithPortal(portal)
     if not hrp then return false end
 
     -------------------------------------------------------
-    -- Detect the real entry part
+    -- 0) WAIT FOR PORTAL TO COMPLETELY BUILD (2 seconds)
     -------------------------------------------------------
-    local entryPart = portal:FindFirstChild("Hitbox")
-        or portal:FindFirstChild("PromptPart")
-        or portal:FindFirstChildWhichIsA("BasePart")
+    print("[World2] Waiting 2 seconds for portal to fully build...")
+    task.wait(2)
 
-    if not entryPart then
-        warn("[World2] Portal entry part missing — aborting.")
+    -------------------------------------------------------
+    -- 1) Find the REAL entry point → MidSection
+    -------------------------------------------------------
+    local mid = portal:FindFirstChild("MidSection")
+
+    if not mid then
+        warn("[World2] MidSection missing — portal still not fully loaded.")
         return false
     end
 
--------------------------------------------------------
--- Use the portal's REAL forward direction
--------------------------------------------------------
-local portalPos = entryPart.Position
+    -------------------------------------------------------
+    -- 2) Calculate EXACT center-facing entry position
+    -------------------------------------------------------
+    local entryPos = mid.Position + (mid.CFrame.LookVector * 3)
 
--- Forward direction of the portal (pointing outward)
-local direction = entryPart.CFrame.LookVector
+    print("[World2] Moving to portal entry:", entryPos)
 
--- Final entry position (3 studs in front of the portal)
-local entryPos = portalPos + direction * 3
+    if not W2_TweenToPosition(entryPos) then
+        warn("[World2] Tween failed — cannot interact with portal.")
+        return false
+    end
 
-print("[World2] Tweening to:", entryPos)
-
--------------------------------------------------------
--- Tween to the REAL front of the portal
--------------------------------------------------------
-if not W2_TweenToPosition(entryPos) then
-    warn("[World2] Tween failed — aborting interaction.")
-    return false
-end
-
-task.wait(0.2)
+    task.wait(0.25)
 
     -------------------------------------------------------
-    -- Press E to open the GUI
+    -- 3) Mash E until GUI opens
     -------------------------------------------------------
     local start = tick()
     while tick() - start < 3 do
@@ -321,52 +316,8 @@ task.wait(0.2)
         end
     end
 
-    warn("[World2] Portal GUI never opened.")
+    warn("[World2] Portal GUI never opened after E spam.")
     return false
-end
-
--- Select Forgotten Kingdom & Teleport (fast clicks)
-local function W2_SelectWorldInPortalGUI()
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-    local mainGui = playerGui:WaitForChild("Main", 5)
-    if not mainGui then
-        warn("[World2] Main GUI not found")
-        return false
-    end
-
-    local screen = mainGui:WaitForChild("Screen", 5)
-    local teleportFrame = screen:WaitForChild("Teleport", 5)
-
-    -- Wait until GUI becomes visible, BUT check rapidly (no long waits)
-    local startTime = tick()
-    while tick() - startTime < 3 do
-        if teleportFrame.Visible then
-            break
-        end
-        task.wait(0.05)
-    end
-
-    print("[World2] Clicking Forgotten Kingdom immediately...")
-
-    local fkX, fkY = 599, 398
-    VirtualInputManager:SendMouseButtonEvent(fkX, fkY, 0, true, game, 0)
-    task.wait(0.03)
-    VirtualInputManager:SendMouseButtonEvent(fkX, fkY, 0, false, game, 0)
-
-    -- VERY fast wait instead of 4 seconds
-    task.wait(0.7)
-
-    print("[World2] Clicking Teleport...")
-
-    local tpX, tpY = 1110, 614
-    for i = 1, 10 do
-        VirtualInputManager:SendMouseButtonEvent(tpX, tpY, 0, true, game, 0)
-        task.wait(0.02)
-        VirtualInputManager:SendMouseButtonEvent(tpX, tpY, 0, false, game, 0)
-        task.wait(0.05)
-    end
-
-    return true
 end
 
 -- Main Auto-Join function
@@ -419,12 +370,17 @@ local function executeAutoRejoin()
         return
     end
 
-    print("[World2] Step 4: Finding spawned portal...")
+    print("[World2] Step 4: Searching for portal...")
     local spawnedPortal = W2_FindSpawnedPortal()
+
+    -- ABORT if portal doesn't exist
     if not spawnedPortal then
-        warn("[World2] Failed to find spawned portal")
+        warn("[World2] No portal spawned. Auto-Join aborted.")
         return
     end
+
+    -- DO NOT MOVE BEFORE THIS POINT
+    print("[World2] Portal detected → proceeding to center entry path")
 
     print("[World2] Step 5: Interacting with portal...")
     if not W2_InteractWithPortal(spawnedPortal) then
