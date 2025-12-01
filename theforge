@@ -1,1553 +1,643 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
-    MOB FARM v4.7d - HOVER + RAYFIELD UI + SAFE CLICKER + WORLD 2 AUTO-JOIN
-    + MULTI-MOB PRIORITY TARGETING (MULTI-SELECT UI)
+    MOB FARM v4.2 - FAST HOVER + NOCLIP SYSTEM
     ═══════════════════════════════════════════════════════════════════════════
-
-    MULTI-MOB CHANGES:
-    • You can now select MULTIPLE mobs at once in the Rayfield dropdown.
-    • Priority is based on the ORDER of mobList (top = highest priority).
-    • The farm will always target the closest mob among the highest-priority
-      types currently selected and alive.
-    • DELETE key now forces SINGLE-TARGET mode on the cycled mob for quick focus.
-
-    CONTROLS (Mob Farm):
-    F1  = Toggle farm on/off
-    F2  = Cycle position (Back → Front → Above → Below)
-    F3  = Increase speed (+10)
-    F4  = Decrease speed (-10)
-    DEL = Change mob target (single-target quick swap)
-    F5  = Vertical Distance +1
-    F6  = Vertical Distance -1
-    F8  = DESTROY SCRIPT
+    
+    FEATURES:
+    • Much faster hovering with increased speed limits
+    • NOCLIP enabled - pass through walls and terrain
+    • Physics-based movement (BodyVelocity + BodyGyro)
+    • Gradual acceleration/deceleration
+    • Natural hovering with slight bobbing
+    • Safe for anti-cheat systems
+    
+    ═══════════════════════════════════════════════════════════════════════════
 ]]
 
-wait(10) -- Ensure game is mostly loaded
-
 -- Services
-local Players              = game:GetService("Players")
-local RunService           = game:GetService("RunService")
-local UserInputService     = game:GetService("UserInputService")
-local TweenService         = game:GetService("TweenService")
-local VirtualInputManager  = game:GetService("VirtualInputManager")
-local VirtualUser          = game:GetService("VirtualUser")
-local GuiService           = game:GetService("GuiService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
-local player = Players.LocalPlayer
-local living = workspace:WaitForChild("Living")
+local LocalPlayer = Players.LocalPlayer
+local Living = workspace:WaitForChild("Living")
 
-local Remotes = {}
-
--- Forward declarations for mob farm control (used by UI callbacks later)
-local toggleFarm
-local cyclePos
-local changeSpeed
-local changeVertDist
-local cycleMob
-local destroyScript
-
--- ══════════════════════════════════════════════════════════════════════════
--- MOB FARM SETTINGS
--- ══════════════════════════════════════════════════════════════════════════
-
-local settings = {
-    enabled = true,
-    position = "Above",
-    speed = 100,
-    lockDist = 20,
-    vertDist = 8,
-    maxDist = 500,
-    unlockTime = 0.3,
-    unlockDist = 10, -- Distance from mob at which to unlock (for Above/Below)
-    lastUnlock = 0,
-
+-- Global Config
+_G.MobFarmConfig = {
+    -- Settings
+    enabled = false,
+    behindDistance = 12,
+    verticalDistance = 15,
+    farmDistance = 500,
+    hoverSpeed = 80,  -- Increased from 25 to 80!
+    acceleration = 40, -- Increased from 15 to 40!
+    lockPosition = "Back",
+    unlockInterval = 0.3,
+    lastUnlockTime = 0,
+    
+    -- State
     currentMob = nil,
-    bodyVel = nil,
+    bodyVelocity = nil,
     bodyGyro = nil,
-    inAggro = false,
-
-    selectedMob = 1, -- primary mob index (for quick single-target + recenter)
-    selectedMobIndexes = nil, -- [index] = true when that mob type is selected in UI
-
-    -- Center of the map (farming position)
-    startPos1 = Vector3.new(-265.38, 273.18, -49.28), -- kept but unused for startup
-    startPos2 = Vector3.new(480.50, 273.18, -49.28),  -- CENTER OF MAP
-    travelSpeed = 100,
-
-    -- Startup state
-    startupComplete = false,
-
-    -- Teleport detection / recenter
-    maxDistanceFromCenter = 200, -- If player is more than this distance from center, return to center
-    lastMobType = 1,
-    returningToCenter = false,
+    noclipLoop = nil,
+    
+    -- Mob types
+    mobTypes = {
+        {name = "Slime", pattern = "Slime", enabled = true},
+        {name = "Blazing Slime", pattern = "BlazingSlime", enabled = true},
+        {name = "Reaper", pattern = "Reaper", enabled = true},
+        {name = "Elite Deathaxe Skeleton", pattern = "EliteDeathaxeSkeleton", enabled = true},
+        {name = "Elite Rogue Skeleton", pattern = "EliteRogueSkeleton", enabled = true},
+        {name = "Deathaxe Skeleton", pattern = "DeathaxeSkeleton", enabled = true},
+        {name = "Axe Skeleton", pattern = "AxeSkeleton", enabled = true},
+        {name = "Skeleton Rogue", pattern = "SkeletonRogue", enabled = true},
+        {name = "Bomber", pattern = "Bomber", enabled = true},
+    }
 }
 
--- Mob list - PRIORITY ORDER: index 1 = highest priority
-local mobList = {
-    {name = "Reaper",                  pattern = "^Reaper"},
-    {name = "Blazing Slime",           pattern = "^BlazingSlime"},
-    {name = "Slime",                   pattern = "^Slime"},
-    {name = "Elite Deathaxe Skeleton", pattern = "^EliteDeathaxeSkeleton"},
-    {name = "Elite Rogue Skeleton",    pattern = "^EliteRogueSkeleton"},
-    {name = "Deathaxe Skeleton",       pattern = "^DeathaxeSkeleton"},
-    {name = "Axe Skeleton",            pattern = "^AxeSkeleton"},
-    {name = "Skeleton Rogue",          pattern = "^SkeletonRogue"},
-    {name = "Bomber",                  pattern = "^Bomber"}
-}
+local config = _G.MobFarmConfig
 
--- ══════════════════════════════════════════════════════════════════════════
--- MULTI-MOB SELECTION HELPERS (PRIORITY = ORDER IN mobList)
--- ══════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NOCLIP SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
 
-local function initSelectedMobs()
-    settings.selectedMobIndexes = {}
-    -- Default: only highest-priority mob (index 1) selected
-    for i = 1, #mobList do
-        settings.selectedMobIndexes[i] = (i == (settings.selectedMob or 1))
-    end
-    settings.selectedMob = settings.selectedMob or 1
-    settings.lastMobType = settings.selectedMob
+local function startNoclip()
+    if config.noclipLoop then return end
+    
+    config.noclipLoop = RunService.Stepped:Connect(function()
+        if not config.enabled then return end
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        -- Disable collision for all body parts
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
+    
+    print("✅ Noclip enabled - can pass through walls!")
 end
 
-local function isMobTypeSelected(index)
-    if settings.selectedMobIndexes == nil then
-        -- Fallback: legacy behavior (single target)
-        return index == (settings.selectedMob or 1)
+local function stopNoclip()
+    if config.noclipLoop then
+        config.noclipLoop:Disconnect()
+        config.noclipLoop = nil
+        
+        -- Re-enable collision
+        local character = LocalPlayer.Character
+        if character then
+            for _, part in pairs(character:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    part.CanCollide = true
+                end
+            end
+        end
+        
+        print("🔒 Noclip disabled")
     end
-    return settings.selectedMobIndexes[index] == true
 end
 
-local function getPrimarySelectedMobIndex()
-    if settings.selectedMobIndexes then
-        for i = 1, #mobList do
-            if settings.selectedMobIndexes[i] then
-                return i
+-- ═══════════════════════════════════════════════════════════════════════════
+-- UTILITY FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function getAllMobs()
+    local mobs = {}
+    
+    for _, child in pairs(Living:GetChildren()) do
+        for _, mobData in pairs(config.mobTypes) do
+            if mobData.enabled and string.find(child.Name, mobData.pattern) then
+                local humanoid = child:FindFirstChild("Humanoid")
+                local rootPart = child:FindFirstChild("HumanoidRootPart")
+                
+                if humanoid and rootPart and humanoid.Health > 0 then
+                    table.insert(mobs, child)
+                    break
+                end
             end
         end
     end
-    return settings.selectedMob or 1
+    
+    return mobs
 end
 
--- Initialize selection on script load
-initSelectedMobs()
-
--- Connection storage
-local connections = {
-    noclip   = nil,
-    hover    = nil,
-    mobFinder= nil,
-    clicker  = nil, -- safe clicker using mouse1click
-}
-
--- ══════════════════════════════════════════════════════════════════════════
--- WORLD 2 AUTO-JOIN SETTINGS & FUNCTIONS
--- ══════════════════════════════════════════════════════════════════════════
-
-local TweenService = game:GetService("TweenService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local GuiService = game:GetService("GuiService")
-
-local LocalPlayer = player
-
--- World detection based on Proximity contents
-local function getCurrentWorld()
-    local prox = workspace:FindFirstChild("Proximity")
-    if prox then
-        if prox:FindFirstChild("Platinum Pickaxe") then
-            return 1
-        elseif prox:FindFirstChild("Cobalt Pickaxe") then
-            return 2
+local function getClosestMob()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return nil end
+    
+    local mobs = getAllMobs()
+    local closestMob = nil
+    local closestDistance = config.farmDistance
+    
+    for _, mob in pairs(mobs) do
+        local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+        if mobRoot then
+            local distance = (rootPart.Position - mobRoot.Position).Magnitude
+            if distance < closestDistance then
+                closestMob = mob
+                closestDistance = distance
+            end
         end
     end
-    return 1 -- fallback default
+    
+    return closestMob
 end
 
-local currentWorld = getCurrentWorld()
-print("[World2] Current World (initial guess): " .. tostring(currentWorld))
-
--- Auto-Join Settings
-local autoRejoinEnabled   = true -- ALWAYS ON (but only in World 1)
-local rejoinDelay         = 2
-local portalSpawnLocation = Vector3.new(-259.75701904296875, 17.749414443969727, 95.05717468261719)
-
--- Ensure character + HRP exist before we try to move/teleport
-local function WaitForCharacter()
-    local lp = LocalPlayer
-    local char = lp.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        return char
+local function getLockPosition(mob)
+    local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+    if not mobRoot then return nil end
+    
+    local distance = config.behindDistance
+    local verticalDist = config.verticalDistance
+    local mobPos = mobRoot.Position
+    local targetPos
+    
+    if config.lockPosition == "Back" then
+        local behindOffset = -mobRoot.CFrame.LookVector * distance
+        targetPos = mobPos + behindOffset
+        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+        
+    elseif config.lockPosition == "Front" then
+        local frontOffset = mobRoot.CFrame.LookVector * distance
+        targetPos = mobPos + frontOffset
+        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+        
+    elseif config.lockPosition == "Above" then
+        targetPos = mobPos + Vector3.new(0, verticalDist, 0)
+        
+    elseif config.lockPosition == "Below" then
+        targetPos = mobPos + Vector3.new(0, -verticalDist, 0)
+        if targetPos.Y < mobPos.Y - 20 then
+            targetPos = Vector3.new(targetPos.X, mobPos.Y - 20, targetPos.Z)
+        end
+    else
+        local behindOffset = -mobRoot.CFrame.LookVector * distance
+        targetPos = mobPos + behindOffset
+        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
     end
-
-    char = lp.Character or lp.CharacterAdded:Wait()
-    if not char then return nil end
-
-    char:WaitForChild("HumanoidRootPart", 10)
-    return char
+    
+    return targetPos
 end
 
--- Tween character to a world-space position (for auto-join flow)
-local function W2_TweenToPosition(position)
+-- Create physics-based movement objects
+local function setupPhysicsMovement()
     local character = LocalPlayer.Character
     if not character then return false end
-
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return false end
-
-    local distance = (humanoidRootPart.Position - position).Magnitude
-    local duration = distance / 50 -- faster speed
-
-    local tweenInfo = TweenInfo.new(
-        duration,
-        Enum.EasingStyle.Sine,
-        Enum.EasingDirection.InOut
-    )
-
-    local tween = TweenService:Create(humanoidRootPart, tweenInfo, {CFrame = CFrame.new(position)})
-    tween:Play()
-    tween.Completed:Wait()
-
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return false end
+    
+    -- Clean up existing objects
+    if config.bodyVelocity then
+        config.bodyVelocity:Destroy()
+    end
+    if config.bodyGyro then
+        config.bodyGyro:Destroy()
+    end
+    
+    -- Create BodyVelocity for smooth movement (INCREASED FORCE!)
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "FarmVelocity"
+    bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)  -- Increased from 4000 to 9e9!
+    bv.Velocity = Vector3.new(0, 0, 0)
+    bv.Parent = rootPart
+    config.bodyVelocity = bv
+    
+    -- Create BodyGyro for rotation
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "FarmGyro"
+    bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    bg.P = 10000  -- Increased from 3000 for faster rotation
+    bg.D = 500
+    bg.Parent = rootPart
+    config.bodyGyro = bg
+    
+    rootPart.Anchored = false
+    
+    print("✅ Physics movement setup complete (FAST MODE!)")
     return true
 end
 
---------------------------------------------------------------------
--- Move the player 3 studs forward from their current position
---------------------------------------------------------------------
-local function W2_MovePlayerForward3Studs()
-    local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    if not char then return false end
-
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-
-    local targetPos = hrp.Position + hrp.CFrame.LookVector * 3
-    return W2_TweenToPosition(targetPos)
+-- Fast hover movement using BodyVelocity
+local function hoverToPosition(targetPos, mob)
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+    
+    if not rootPart or not mobRoot or not config.bodyVelocity or not config.bodyGyro then
+        return
+    end
+    
+    local currentPos = rootPart.Position
+    local direction = (targetPos - currentPos)
+    local distance = direction.Magnitude
+    
+    -- Add slight bobbing effect for more natural movement
+    local bobbing = math.sin(tick() * 2) * 0.3
+    local bobbedTarget = targetPos + Vector3.new(0, bobbing, 0)
+    direction = (bobbedTarget - currentPos)
+    
+    -- Calculate velocity with FAST acceleration
+    -- When far away, use max speed. When close, slow down proportionally
+    local speedMultiplier = math.min(distance / 10, 1) -- Slow down when within 10 studs
+    local targetSpeed = config.hoverSpeed * speedMultiplier
+    
+    local desiredVelocity
+    if direction.Magnitude > 0 then
+        desiredVelocity = direction.Unit * math.min(distance * config.acceleration, targetSpeed)
+    else
+        desiredVelocity = Vector3.new(0, 0, 0)
+    end
+    
+    -- Faster interpolation for snappier movement
+    local currentVelocity = config.bodyVelocity.Velocity
+    local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)  -- Increased from 0.3 to 0.5
+    
+    config.bodyVelocity.Velocity = newVelocity
+    
+    -- Always look at mob
+    local lookAtPos = mobRoot.Position
+    local lookCFrame = CFrame.new(currentPos, lookAtPos)
+    config.bodyGyro.CFrame = lookCFrame
+    
+    -- Periodic unlock for Above/Below to allow hits
+    if config.lockPosition == "Above" or config.lockPosition == "Below" then
+        local currentTime = tick()
+        
+        if currentTime - config.lastUnlockTime >= config.unlockInterval then
+            -- Brief unlock
+            local oldForce = config.bodyVelocity.MaxForce
+            config.bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
+            task.wait(0.05)
+            if config.bodyVelocity then
+                config.bodyVelocity.MaxForce = oldForce
+            end
+            config.lastUnlockTime = currentTime
+        end
+    end
 end
 
--- Equip portal tool
-local function W2_EquipPortal()
+-- Cleanup physics objects
+local function cleanupPhysicsMovement()
+    if config.bodyVelocity then
+        config.bodyVelocity:Destroy()
+        config.bodyVelocity = nil
+    end
+    if config.bodyGyro then
+        config.bodyGyro:Destroy()
+        config.bodyGyro = nil
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            rootPart.Anchored = false
+            rootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+    end
+    
+    print("🧹 Physics objects cleaned up")
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTO-CLICKER & WEAPON
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local clickerLoop = nil
+
+local function autoEquipWeapon()
     local character = LocalPlayer.Character
     if not character then return false end
-
+    
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
-
+    
+    local weaponInChar = character:FindFirstChild("Weapon")
+    if weaponInChar and weaponInChar:IsA("Tool") then
+        if not humanoid:FindFirstChild("Weapon") then
+            humanoid:EquipTool(weaponInChar)
+            print("⚔️ Equipped Weapon")
+        end
+        return true
+    end
+    
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if backpack then
-        local portal = backpack:FindFirstChild("PortalTool")
-        if portal then
-            humanoid:EquipTool(portal)
-            task.wait(0.5)
+        local weapon = backpack:FindFirstChild("Weapon")
+        if weapon and weapon:IsA("Tool") then
+            humanoid:EquipTool(weapon)
+            print("⚔️ Auto-equipped Weapon")
             return true
         end
     end
-
-    warn("[World2] PortalTool not found in backpack")
+    
     return false
 end
 
--- Activate portal by clicking
-local function W2_ActivatePortal()
-    local character = LocalPlayer.Character
-    if not character then return false end
-
-    local portal = character:FindFirstChild("PortalTool")
-    if not portal then
-        warn("[World2] PortalTool not equipped")
-        return false
-    end
-
-    -- Use executor mouse1click
-    pcall(function()
-        if typeof(mouse1click) == "function" then
-            mouse1click()
-        end
-    end)
-
-    task.wait(1.5) -- wait for portal to spawn
-    return true
-end
-
--- Find spawned portal in workspace.Debris (closest valid)
-local function W2_FindSpawnedPortal()
-    print("[World2] Waiting for portal to spawn...")
-
-    local maxWait = 10
-    local timer = 0
-    local debris = workspace:FindFirstChild("Debris")
-
-    while timer < maxWait do
-        debris = debris or workspace:FindFirstChild("Debris")
-        if debris then
-            for _, obj in ipairs(debris:GetChildren()) do
-                if obj.Name == "PortalTheForge" then
-                    print("[World2] Portal found:", obj:GetFullName())
-                    return obj
-                end
-            end
-        end
-
-        task.wait(0.25)
-        timer += 0.25
-    end
-
-    warn("[World2] No portal spawned after 10 seconds — aborting sequence.")
-    return nil
-end
-
--- Interact with portal by pressing E (only uses player-forward offset)
-local function W2_InteractWithPortal(portal)
-    if not portal then
-        warn("[World2] No portal — cannot interact.")
-        return false
-    end
-
-    local character = LocalPlayer.Character
-    if not character then return false end
-
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-
-    -------------------------------------------------------
-    -- 0) WAIT FOR PORTAL TO COMPLETELY BUILD (2 seconds)
-    -------------------------------------------------------
-    print("[World2] Waiting 2 seconds for portal to fully build...")
-    task.wait(2)
-
-    -------------------------------------------------------
-    -- 1) Move player 3 studs forward from current position
-    -------------------------------------------------------
-    print("[World2] Moving player 3 studs forward from current position...")
-    if not W2_MovePlayerForward3Studs() then
-        warn("[World2] Failed to move player forward.")
-        return false
-    end
-
-    task.wait(0.25)
-
-    -------------------------------------------------------
-    -- 2) Ultra-fast E-spam (0.005s per press)
-    -------------------------------------------------------
-    print("[World2] FAST-SPAMMING E to open portal...")
-
-    local start = tick()
-    while tick() - start < 2 do -- runs for 2 seconds
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-        task.wait(0.005)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-        task.wait(0.005)
-
-        -- instantly check if teleport GUI opened
-        local gui = LocalPlayer.PlayerGui:FindFirstChild("Main")
-        if gui and gui:FindFirstChild("Screen") and gui.Screen:FindFirstChild("Teleport") then
-            if gui.Screen.Teleport.Visible then
-                print("[World2] Portal GUI OPENED!")
-                return true
-            end
-        end
-    end
-
-    warn("[World2] Portal GUI did not open fast enough.")
-    return false
-end
-
---------------------------------------------------------------------
--- Select Forgotten Kingdom and press Teleport in the GUI
---------------------------------------------------------------------
-function W2_SelectWorldInPortalGUI()
-    print("[World2] Selecting Forgotten Kingdom...")
-
-    local gui = LocalPlayer:WaitForChild("PlayerGui")
-    local main = gui:WaitForChild("Main")
-    local screen = main:WaitForChild("Screen")
-    local teleport = screen:WaitForChild("Teleport")
-
-    local list = teleport:WaitForChild("List")
-    local fkButton = list:FindFirstChild("Forgotten Kingdom")
-
-    if not fkButton then
-        warn("[World2] Forgotten Kingdom button not found!")
-        return false
-    end
-
-    print("[World2] Clicking Forgotten Kingdom button...")
-
-    -- Spam activation on the FK button (Navigation UI + click spam)
-    for i = 1, 10 do
-        pcall(function()
-            fkButton:Activate()
-        end)
-
-        -- Try UI navigation system
-        pcall(function()
-            GuiService.SelectedObject = fkButton
-            task.wait(0.05)
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-        end)
-
-        task.wait(0.1)
-    end
-
-    task.wait(0.5)
-
-    -- Now click the Teleport button
-    local infoFrame = teleport:WaitForChild("InfoFrame")
-    local teleportButton = infoFrame:FindFirstChild("Teleport")
-
-    if not teleportButton then
-        warn("[World2] Teleport button not found!")
-        return false
-    end
-
-    print("[World2] Clicking Teleport button...")
-
-    for i = 1, 20 do
-        pcall(function()
-            teleportButton:Activate()
-        end)
-
-        pcall(function()
-            GuiService.SelectedObject = teleportButton
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-        end)
-
-        task.wait(0.05)
-    end
-
-    print("[World2] Teleport sequence attempted.")
-    return true
-end
-
--- Main Auto-Join function
-local function executeAutoRejoin()
-
-    print("[World2] Forced wait: 10 seconds before starting auto-join...")
-    task.wait(10)
-
-    -- NEVER run Auto-Join outside World 1
-    if getCurrentWorld() ~= 1 then
-        print("[World2] Auto-Join BLOCKED (you are NOT in World 1).")
-        return
-    end
-
-    if not autoRejoinEnabled then
-        print("[World2] Auto-Join is disabled, aborting.")
-        return
-    end
-
-    print("[World2] Starting Auto-Join sequence...")
-
-    -- Make sure the character actually exists before doing anything
-    local char = WaitForCharacter()
-    if not char then
-        warn("[World2] Character failed to load — Auto-Join cancelled.")
-        return
-    end
-
-    -- Optional delay (controlled by Rayfield slider)
-    task.wait(rejoinDelay)
-
-    -- Re-check world after load / delay
-    local worldNow = getCurrentWorld()
-    if worldNow ~= 1 then
-        print("[World2] Not in World 1 anymore (world=" .. tostring(worldNow) .. "), aborting Auto-Join.")
-        return
-    end
-
-
-    print("[World2] Step 1: Moving to portal spawn location (FORCE TELEPORT)...")
-
-    local charNow = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-    local hrp = charNow:WaitForChild("HumanoidRootPart")
-
-    -- Remove hover forces
-    for _, obj in ipairs(hrp:GetChildren()) do
-        if obj:IsA("BodyVelocity") or obj:IsA("BodyGyro") then
-            obj:Destroy()
-        end
-    end
-
-    -- Force unanchor
-    hrp.Anchored = false
-
-    -- HARD TELEPORT (always works)
-    hrp.CFrame = CFrame.new(portalSpawnLocation)
-
-    task.wait(0.3)
-
-    print("[World2] Step 2: Equipping portal...")
-    if not W2_EquipPortal() then
-        warn("[World2] Failed to equip portal")
-        return
-    end
-
-    print("[World2] Step 3: Activating portal...")
-    if not W2_ActivatePortal() then
-        warn("[World2] Failed to activate portal")
-        return
-    end
-
-    print("[World2] Step 4: Searching for portal...")
-    local spawnedPortal = W2_FindSpawnedPortal()
-
-    -- ABORT if portal doesn't exist
-    if not spawnedPortal then
-        warn("[World2] No portal spawned. Auto-Join aborted.")
-        return
-    end
-
-    -- DO NOT MOVE BEFORE THIS POINT
-    print("[World2] Portal detected → proceeding to interaction")
-
-    print("[World2] Step 5: Interacting with portal...")
-    if not W2_InteractWithPortal(spawnedPortal) then
-        warn("[World2] Failed to interact with portal")
-        return
-    end
-
-    print("[World2] Step 6: Selecting Forgotten Kingdom...")
-    if not W2_SelectWorldInPortalGUI() then
-        warn("[World2] Failed to select world in portal GUI")
-        return
-    end
-
-    print("[World2] Auto-Join sequence completed!")
-end
-
--- AUTO-START: detect world via Proximity and run Auto-Join ONLY in World 1
-task.spawn(function()
-    print("[World2] Waiting for Proximity world identifiers...")
-
-    local prox = workspace:WaitForChild("Proximity", 15)
-    if not prox then
-        warn("[World2] Proximity folder not found. Assuming World 1 → Auto-Join.")
-        executeAutoRejoin()
-        return
-    end
-
-    local function handleWorldDetection()
-        local w = getCurrentWorld()
-        if w == 1 then
-            print("[World2] Detected Platinum Pickaxe → World 1 → Auto-Join starting...")
-            executeAutoRejoin()
-        else
-            print("[World2] Detected Cobalt Pickaxe / World 2 → Auto-Join disabled.")
-        end
-    end
-
-    -- Immediate check in case things are already loaded
-    handleWorldDetection()
-
-    -- Also listen for late-loading identifiers
-    prox.ChildAdded:Connect(function(child)
-        if child.Name == "Platinum Pickaxe" or child.Name == "Cobalt Pickaxe" then
-            handleWorldDetection()
-        end
-    end)
-end)
-
--- Hook disconnection prompts for auto rejoin (World 1 ONLY, safety)
-pcall(function()
-    game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-        if child.Name == "ErrorPrompt" and autoRejoinEnabled then
-            if getCurrentWorld() == 1 then
-                executeAutoRejoin()
-            else
-                print("[World2] ErrorPrompt detected, but you are in World 2. Auto-Join blocked.")
-            end
-        end
-    end)
-end)
-
-pcall(function()
-    GuiService.ErrorMessageChanged:Connect(function()
-        if autoRejoinEnabled then
-            if getCurrentWorld() == 1 then
-                executeAutoRejoin()
-            else
-                print("[World2] GUI error detected, but you are in World 2. Auto-Join blocked.")
-            end
-        end
-    end)
-end)
-
--- ══════════════════════════════════════════════════════════════════════════
--- RAYFIELD UI SETUP
--- ══════════════════════════════════════════════════════════════════════════
-
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
-local Window = Rayfield:CreateWindow({
-    Name = "Mob Farm v4.7d",
-    LoadingTitle = "Mob Farm",
-    LoadingSubtitle = "Hover + World 2 Auto-Join + Multi-Mob Priority",
-    ConfigurationSaving = {
-        Enabled = false,
-    },
-    Discord = { Enabled = false },
-    KeySystem = false,
-})
-
--- MAIN TAB (Mob Farm)
-local MainTab = Window:CreateTab("Main", 4483362458)
-
-local farmToggle
-local speedSlider
-local vertSlider
-local posDropdown
-local mobDropdown
-
-do
-    local mobNames = {}
-    for _, mob in ipairs(mobList) do
-        table.insert(mobNames, mob.name)
-    end
-
-    farmToggle = MainTab:CreateToggle({
-        Name = "🤖 Farm Enabled (F1)",
-        CurrentValue = true,
-        Flag = "FarmEnabled",
-        Callback = function(Value)
-            if Value ~= settings.enabled then
-                toggleFarm()
-            end
-        end,
-    })
-
-    speedSlider = MainTab:CreateSlider({
-        Name = "Speed",
-        Range = {10, 100},
-        Increment = 1,
-        CurrentValue = settings.speed,
-        Flag = "FarmSpeed",
-        Callback = function(Value)
-            settings.speed = Value
-            print("⚡ Speed: " .. settings.speed)
-        end,
-    })
-
-    vertSlider = MainTab:CreateSlider({
-        Name = "Vertical Distance (Above/Below)",
-        Range = {5, 50},
-        Increment = 1,
-        CurrentValue = settings.vertDist,
-        Flag = "VertDist",
-        Callback = function(Value)
-            settings.vertDist = Value
-            print("📏 Vertical Distance: " .. settings.vertDist)
-        end,
-    })
-
-    local positions = {"Back", "Front", "Above", "Below"}
-
-    posDropdown = MainTab:CreateDropdown({
-        Name = "Position",
-        Options = positions,
-        CurrentOption = settings.position,
-        MultipleOptions = false,
-        Flag = "FarmPosition",
-        Callback = function(Option)
-            local value = (typeof(Option) == "table") and Option[1] or Option
-            settings.position = value
-            print("🎯 Position: " .. settings.position)
-        end,
-    })
-
-    -- MULTI-SELECT TARGET MOB DROPDOWN (priority = order in mobList)
-    mobDropdown = MainTab:CreateDropdown({
-        Name = "Target Mobs (priority = list order)",
-        Options = mobNames,
-        CurrentOption = { mobList[getPrimarySelectedMobIndex()].name },
-        MultipleOptions = true,
-        Flag = "TargetMobs",
-        Callback = function(Options)
-            local selectedNames = {}
-
-            if typeof(Options) == "table" then
-                selectedNames = Options
-            elseif typeof(Options) == "string" then
-                selectedNames = { Options }
-            end
-
-            settings.selectedMobIndexes = {}
-
-            -- Mark selected indices based on names
-            for i, mob in ipairs(mobList) do
-                for _, name in ipairs(selectedNames) do
-                    if name == mob.name then
-                        settings.selectedMobIndexes[i] = true
-                        break
-                    end
-                end
-            end
-
-            -- Ensure at least one mob is selected
-            local primary = getPrimarySelectedMobIndex()
-            settings.selectedMob = primary
-            settings.currentMob = nil
-            settings.lastMobType = primary
-
-            -- Debug print
-            local chosen = {}
-            for i, mob in ipairs(mobList) do
-                if isMobTypeSelected(i) then
-                    table.insert(chosen, mob.name)
-                end
-            end
-            if #chosen == 0 then
-                table.insert(chosen, mobList[settings.selectedMob].name)
-            end
-            print("👾 Target Mobs (by priority): " .. table.concat(chosen, ", "))
-        end,
-    })
-
-    MainTab:CreateButton({
-        Name = "🗑️ Destroy Script",
-        Callback = function()
-            destroyScript()
-        end,
-    })
-
-    MainTab:CreateSection("Keybinds")
-
-    MainTab:CreateParagraph({
-        Title = "Controls",
-        Content =
-            "F1 = Toggle farm\n" ..
-            "F2 = Change position\n" ..
-            "F3 = Speed +10\n" ..
-            "F4 = Speed -10\n" ..
-            "DELETE = Change mob target (single-target focus)\n" ..
-            "F5 = Vertical Distance +1\n" ..
-            "F6 = Vertical Distance -1\n" ..
-            "F8 = Destroy script",
-    })
-end
-
--- WORLD 2 TAB (Auto-Join)
-local World2Tab = Window:CreateTab("World 2", 4483362458)
-
-do
-    World2Tab:CreateParagraph({
-        Title = "World Status",
-        Content = "Current detected world: " .. tostring(currentWorld) .. "\n" ..
-                  "(1 = World 1, 2 = World 2 / Forgotten Kingdom)",
-    })
-
-    World2Tab:CreateParagraph({
-        Title = "Auto-Join World 2",
-        Content = "Auto-Join World 2 is ALWAYS enabled when you are in World 1.\n" ..
-                  "Whenever you join World 1, the script will automatically run the full\n" ..
-                  "portal sequence to send you to World 2 using the closest portal near you.",
-    })
-
-    World2Tab:CreateSlider({
-        Name = "Rejoin Delay (seconds)",
-        Range = {1, 10},
-        Increment = 1,
-        CurrentValue = rejoinDelay,
-        Flag = "W2_RejoinDelay",
-        Callback = function(Value)
-            rejoinDelay = Value
-            print("[World2] Rejoin Delay: " .. tostring(rejoinDelay))
-        end,
-    })
-
-    World2Tab:CreateButton({
-        Name = "Set Portal Spawn Location (Use current position)",
-        Callback = function()
-            local character = LocalPlayer.Character
-            if character and character:FindFirstChild("HumanoidRootPart") then
-                portalSpawnLocation = character.HumanoidRootPart.Position
-                print("[World2] Portal spawn location set to: " .. tostring(portalSpawnLocation))
-            else
-                warn("[World2] Failed to set portal spawn location (no character/HRP)")
-            end
-        end,
-    })
-
-    World2Tab:CreateButton({
-        Name = "Test Auto-Join Sequence Now",
-        Callback = function()
-            print("[World2] Manual test of auto-join sequence started...")
-            executeAutoRejoin()
-        end,
-    })
-end
-
--- ══════════════════════════════════════════════════════════════════════════
--- NOCLIP
--- ══════════════════════════════════════════════════════════════════════════
-
-local function noclipOn()
-    if connections.noclip then return end
-
-    connections.noclip = RunService.Stepped:Connect(function()
-        if not settings.enabled then
-            connections.noclip:Disconnect()
-            connections.noclip = nil
-            return
-        end
-
-        local char = player.Character
-        if char then
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    v.CanCollide = false
-                end
-            end
-        end
-    end)
-end
-
-local function noclipOff()
-    if connections.noclip then
-        connections.noclip:Disconnect()
-        connections.noclip = nil
-    end
-
-    local char = player.Character
-    if char then
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-                v.CanCollide = true
-            end
-        end
-    end
-end
-
--- ══════════════════════════════════════════════════════════════════════════
--- MOB FUNCTIONS (MULTI-MOB PRIORITY AWARE)
--- ══════════════════════════════════════════════════════════════════════════
-
-local function findMobs()
-    local results = {}
-
-    -- Go through mob types in PRIORITY ORDER (list order)
-    for index, mobData in ipairs(mobList) do
-        if isMobTypeSelected(index) then
-            local pattern = mobData.pattern
-
-            for _, child in ipairs(living:GetChildren()) do
-                if string.find(child.Name, pattern) then
-                    local hum = child:FindFirstChild("Humanoid")
-                    local hrp = child:FindFirstChild("HumanoidRootPart")
-
-                    if hum and hrp and hum.Health > 0 then
-                        table.insert(results, {
-                            mob = child,
-                            hrp = hrp,
-                            priority = index,
-                        })
-                    end
-                end
-            end
-        end
-    end
-
-    return results
-end
-
-local function getClosest()
-    local char = player.Character
-    if not char then return nil end
-
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-
-    local bestMob = nil
-    local bestPriority = math.huge
-    local bestDist = settings.maxDist or 500
-
-    local list = findMobs()
-
-    for _, entry in ipairs(list) do
-        local mob = entry.mob
-        local mHrp = entry.hrp
-        local prio = entry.priority
-
-        local dist = (hrp.Position - mHrp.Position).Magnitude
-
-        -- First sort by PRIORITY (lower index = more important),
-        -- then by DISTANCE among same priority.
-        if prio < bestPriority or (prio == bestPriority and dist < bestDist) then
-            bestMob = mob
-            bestPriority = prio
-            bestDist = dist
-        end
-    end
-
-    return bestMob
-end
-
--- ══════════════════════════════════════════════════════════════════════════
--- POSITION CALCULATION
--- ══════════════════════════════════════════════════════════════════════════
-
-local function calcTarget(mob)
-    local mHrp = mob:FindFirstChild("HumanoidRootPart")
-    if not mHrp then return nil end
-
-    local mPos = mHrp.Position
-    local target
-
-    -- Aggro phase = go to front
-    if settings.inAggro then
-        local front = mHrp.CFrame.LookVector * settings.lockDist
-        target = mPos + front
-        return Vector3.new(target.X, mPos.Y, target.Z)
-    end
-
-    if settings.position == "Back" then
-        local back = -mHrp.CFrame.LookVector * settings.lockDist
-        target = mPos + back
-        return Vector3.new(target.X, mPos.Y, target.Z)
-
-    elseif settings.position == "Front" then
-        local front = mHrp.CFrame.LookVector * settings.lockDist
-        target = mPos + front
-        return Vector3.new(target.X, mPos.Y, target.Z)
-
-    elseif settings.position == "Above" then
-        return mPos + Vector3.new(0, settings.vertDist, 0)
-
-    elseif settings.position == "Below" then
-        target = mPos + Vector3.new(0, -settings.vertDist, 0)
-        if target.Y < mPos.Y - 20 then
-            target = Vector3.new(target.X, mPos.Y - 20, target.Z)
-        end
-        return target
-    end
-
-    return nil
-end
-
--- ══════════════════════════════════════════════════════════════════════════
--- HOVER PHYSICS
--- ══════════════════════════════════════════════════════════════════════════
-
-local function makeHover()
-    local char = player.Character
-    if not char then return end
-
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    if settings.bodyVel then pcall(function() settings.bodyVel:Destroy() end) end
-    if settings.bodyGyro then pcall(function() settings.bodyGyro:Destroy() end) end
-
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum:SetStateEnabled(Enum.HumanoidStateType.Climbing,        false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown,     false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Flying,          false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Freefall,        false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp,       false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Jumping,         false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Landed,          false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding,false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,         false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Running,         false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Seated,          false)
-        hum:SetStateEnabled(Enum.HumanoidStateType.Swimming,        false)
-    end
-
-    local bv = Instance.new("BodyVelocity")
-    bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bv.Velocity = Vector3.new(0, 0, 0)
-    bv.P        = 50000
-    bv.Parent   = hrp
-    settings.bodyVel = bv
-
-    local bg = Instance.new("BodyGyro")
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    bg.P         = 30000
-    bg.D         = 1000
-    bg.Parent    = hrp
-    settings.bodyGyro = bg
-
-    print("✅ Hover objects created")
-end
-
-local function removeHover()
-    if settings.bodyVel then
-        pcall(function() settings.bodyVel:Destroy() end)
-        settings.bodyVel = nil
-    end
-    if settings.bodyGyro then
-        pcall(function() settings.bodyGyro:Destroy() end)
-        settings.bodyGyro = nil
-    end
-
-    local char = player.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum:SetStateEnabled(Enum.HumanoidStateType.Climbing,        true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.FallingDown,     true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Flying,          true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Freefall,        true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.GettingUp,       true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Jumping,         true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Landed,          true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding,true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,         true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Running,         true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Seated,          true)
-            hum:SetStateEnabled(Enum.HumanoidStateType.Swimming,        true)
-        end
-    end
-end
-
--- ══════════════════════════════════════════════════════════════════════════
--- AUTO-EQUIP + SAFE CLICKER (mouse1click, 0.20s)
--- ══════════════════════════════════════════════════════════════════════════
-
-local function autoEquipWeapon()
-    local char = player.Character
-    if not char then return end
-
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-
-    local tool = char:FindFirstChildOfClass("Tool")
-    if tool and tool.Name == "Weapon" then
-        return
-    end
-
-    local bp = player:FindFirstChild("Backpack")
-    if bp then
-        local weapon = bp:FindFirstChild("Weapon")
-        if weapon and weapon:IsA("Tool") then
-            hum:EquipTool(weapon)
-        end
-    end
-end
-
-
-local function startClicker()
-    if connections.clicker then return end
-    task.spawn(function() task.wait(0.5); autoEquipWeapon() end)
-    if not Remotes.ToolActivated then
-        Remotes.ToolActivated = GetServiceRemote("ToolService","RF","ToolActivated")
-    end
-    connections.clicker = RunService.Heartbeat:Connect(function()
-        if not settings.enabled then return end
-        autoEquipWeapon()
-        pcall(function() Remotes.ToolActivated:InvokeServer("Weapon") end)
-    end)
-end
-
-
+local function startAutoClicker()
+    if clickerLoop then return end
+    
     task.spawn(function()
         task.wait(0.5)
         autoEquipWeapon()
     end)
-
-    -- Prepare remote once
-    if not Remotes.ToolActivated then
-        Remotes.ToolActivated = GetServiceRemote("ToolService", "RF", "ToolActivated")
-    end
-
-    connections.clicker = RunService.Heartbeat:Connect(function()
-        if not settings.enabled then return end
-
-        autoEquipWeapon()
-
-        -- Server-side weapon activation
+    
+    clickerLoop = RunService.Heartbeat:Connect(function()
+        if not config.enabled then return end
+        
         pcall(function()
-            Remotes.ToolActivated:InvokeServer("Weapon")
+            mouse1click()
         end)
-
-        task.wait(0.20) -- 0.20 seconds per hit
+        
+        task.wait(0.1)
     end)
-
-    print("🔫 Server-based auto-hit started (ToolActivated remote, 0.20s interval)")
+    
+    print("🖱️ Auto-clicker started")
 end
 
-local function stopClicker()
-    if connections.clicker then
-        connections.clicker:Disconnect()
-        connections.clicker = nil
-        print("🛑 Server auto-hit stopped")
+local function stopAutoClicker()
+    if clickerLoop then
+        clickerLoop:Disconnect()
+        clickerLoop = nil
+        print("🖱️ Auto-clicker stopped")
     end
 end
 
--- ══════════════════════════════════════════════════════════════════════════
--- MAIN HOVER LOOP (WITH SIMPLIFIED STARTUP TO CENTER ONLY)
--- ══════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════════
+-- GUI
+-- ═══════════════════════════════════════════════════════════════════════════
 
-local function startHover()
-    if connections.hover then return end
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
-    makeHover()
+local Window = Rayfield:CreateWindow({
+    Name = "Mob Farm v4.2 - Fast + Noclip",
+    LoadingTitle = "Loading Mob Farm",
+    LoadingSubtitle = "Fast Hover + Noclip!",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "MobFarmV42",
+        FileName = "Config"
+    },
+    Discord = {Enabled = false},
+    KeySystem = false
+})
 
-    connections.hover = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not settings.enabled then return end
+local MainTab = Window:CreateTab("Main", 4483362458)
 
-            local char = player.Character
-            if not char then return end
+local farmLoop = nil
+local keybindConnection = nil
+local characterConnection = nil
 
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-
-            if not settings.bodyVel or not settings.bodyVel.Parent then
-                print("⚠️ Hover objects missing, recreating...")
-                makeHover()
-                return
-            end
-
-            local pos = hrp.Position
-
-            -------------------------------------------------------------------
-            -- TELEPORT / RECENTER LOGIC
-            -------------------------------------------------------------------
-            if settings.startupComplete then
-                if not settings.currentMob or not settings.currentMob.Parent then
-                    local distFromCenter = (pos - settings.startPos2).Magnitude
-                    local mobChanged = getPrimarySelectedMobIndex() ~= settings.lastMobType
-
-                    if distFromCenter > settings.maxDistanceFromCenter or mobChanged then
-                        if not settings.returningToCenter then
-                            settings.returningToCenter = true
-                            if mobChanged then
-                                print("🔄 Mob selection changed! Returning to center...")
-                                settings.lastMobType = getPrimarySelectedMobIndex()
-                            else
-                                print("🔄 Too far from center! Returning...")
-                            end
-                        end
-                    end
-                end
-
-                if settings.returningToCenter then
-                    local dir = (settings.startPos2 - pos)
-                    local dist = dir.Magnitude
-
-                    if dist > 2 then
-                        local vel = dir.Unit * settings.travelSpeed
-                        settings.bodyVel.Velocity = vel
-                        settings.bodyGyro.CFrame = CFrame.new(pos, settings.startPos2)
-                        return
-                    else
-                        settings.bodyVel.Velocity = Vector3.new(0, 0, 0)
-                        settings.returningToCenter = false
-                        settings.currentMob = nil
-                        print("✅ Back at center! Resuming farming...")
-                        task.wait(1)
-                        return
-                    end
-                end
-            end
-
-            -------------------------------------------------------------------
-            -- SIMPLIFIED STARTUP: GO DIRECTLY TO CENTER OF MAP ONLY
-            -------------------------------------------------------------------
-            if not settings.startupComplete then
-                local center = settings.startPos2
-                local distToCenter = (center - pos).Magnitude
-
-                if distToCenter > 3 then
-                    local dir = (center - pos).Unit
-                    settings.bodyVel.Velocity = dir * settings.travelSpeed
-                    settings.bodyGyro.CFrame = CFrame.new(pos, center)
-                    return
-                else
-                    settings.bodyVel.Velocity = Vector3.new(0, 0, 0)
-                    settings.startupComplete = true
-                    settings.returningToCenter = false
-                    settings.lastMobType = getPrimarySelectedMobIndex()
-                    print("✅ Reached center! Farming begins.")
-                    task.wait(0.5)
-                    return
-                end
-            end
-
-            -------------------------------------------------------------------
-            -- NORMAL FARMING LOGIC (AFTER STARTUP)
-            -------------------------------------------------------------------
-            if not settings.currentMob or not settings.currentMob.Parent then
-                settings.bodyVel.Velocity = Vector3.new(0, 0, 0)
-                return
-            end
-
-            local mHrp = settings.currentMob:FindFirstChild("HumanoidRootPart")
-            if not mHrp then
-                settings.bodyVel.Velocity = Vector3.new(0, 0, 0)
-                return
-            end
-
-            local target = calcTarget(settings.currentMob)
-            if not target then return end
-
-            local dir = (target - pos)
-            local dist = dir.Magnitude
-
-            if settings.inAggro then
-                if dist > 2 then
-                    local vel = dir.Unit * settings.speed
-                    settings.bodyVel.Velocity = vel
-                else
-                    settings.bodyVel.Velocity = Vector3.new(0, 0, 0)
-                    task.wait(0.5)
-                    settings.inAggro = false
-                    print("✅ Aggro done -> " .. settings.position)
-                end
-
-                local look = (mHrp.Position - pos)
-                if look.Magnitude > 0 then
-                    local cf = CFrame.new(pos, mHrp.Position)
-                    settings.bodyGyro.CFrame = cf * CFrame.Angles(math.rad(-45), 0, 0)
-                end
-                return
-            end
-
-            if settings.position == "Above" or settings.position == "Below" then
-                local distToMob = (pos - mHrp.Position).Magnitude
-
-                if distToMob >= settings.unlockDist then
-                    if tick() - settings.lastUnlock >= settings.unlockTime then
-                        settings.bodyVel.MaxForce = Vector3.new(0, 0, 0)
-                        task.spawn(function()
-                            task.wait(0.05)
-                            if settings.bodyVel and settings.bodyVel.Parent then
-                                settings.bodyVel.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                            end
-                        end)
-                        settings.lastUnlock = tick()
-                    end
-                end
-            end
-
-            if dist > 1 then
-                local vel = dir.Unit * settings.speed
-                settings.bodyVel.Velocity = vel
-            else
-                settings.bodyVel.Velocity = Vector3.new(0, 0, 0)
-            end
-
-            local look = (mHrp.Position - pos)
-            if look.Magnitude > 0 then
-                local cf = CFrame.new(pos, mHrp.Position)
-                settings.bodyGyro.CFrame = cf * CFrame.Angles(math.rad(-45), 0, 0)
-            end
-        end)
-    end)
-
-    print("✅ Hover loop started")
-end
-
-local function stopHover()
-    if connections.hover then
-        connections.hover:Disconnect()
-        connections.hover = nil
-    end
-    removeHover()
-end
-
-local function startMobFinder()
-    if connections.mobFinder then return end
-
-    connections.mobFinder = RunService.Heartbeat:Connect(function()
-        if not settings.enabled then return end
-
-        local needNew = false
-
-        if not settings.currentMob or not settings.currentMob.Parent then
-            needNew = true
+local EnableToggle = MainTab:CreateToggle({
+    Name = "🤖 Enable Farm (F1)",
+    CurrentValue = false,
+    Flag = "EnableToggle",
+    Callback = function(Value)
+        config.enabled = Value
+        
+        if Value then
+            setupPhysicsMovement()
+            startNoclip()
+            startAutoClicker()
+            print("✅ Farm ENABLED - Fast hover + Noclip!")
         else
-            local hum = settings.currentMob:FindFirstChild("Humanoid")
-            if not hum or hum.Health <= 0 then
-                needNew = true
-            end
+            stopAutoClicker()
+            stopNoclip()
+            cleanupPhysicsMovement()
+            config.currentMob = nil
+            print("❌ Farm DISABLED")
         end
+    end,
+})
 
-        if needNew then
-            settings.inAggro = false
-            settings.lastUnlock = tick()
-
-            local mob = getClosest()
-            if mob then
-                settings.currentMob = mob
-                print("🎯 Locked: " .. mob.Name)
-
-                if settings.position == "Above" or settings.position == "Below" then
-                    settings.inAggro = true
-                    print("👁️ Starting aggro phase")
+local MobDropdown = MainTab:CreateDropdown({
+    Name = "Select Mobs to Farm",
+    Options = {},
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "MobDropdown",
+    Callback = function(Options)
+        for _, mobData in ipairs(config.mobTypes) do
+            mobData.enabled = false
+        end
+        
+        for _, selectedName in pairs(Options) do
+            for _, mobData in ipairs(config.mobTypes) do
+                if mobData.name == selectedName then
+                    mobData.enabled = true
+                    break
                 end
             end
         end
-    end)
+    end,
+})
+
+local mobNames = {}
+for _, mobData in ipairs(config.mobTypes) do
+    table.insert(mobNames, mobData.name)
 end
+MobDropdown:Refresh(mobNames, mobNames)
 
-local function stopMobFinder()
-    if connections.mobFinder then
-        connections.mobFinder:Disconnect()
-        connections.mobFinder = nil
-    end
-end
+MainTab:CreateSlider({
+    Name = "Lock Distance",
+    Range = {8, 20},
+    Increment = 1,
+    CurrentValue = 12,
+    Flag = "LockDistance",
+    Callback = function(Value) 
+        config.behindDistance = Value 
+    end,
+})
 
--- ══════════════════════════════════════════════════════════════════════════
--- CONTROL FUNCTIONS
--- ══════════════════════════════════════════════════════════════════════════
+MainTab:CreateSlider({
+    Name = "Vertical Distance (Above/Below)",
+    Range = {8, 30},
+    Increment = 1,
+    CurrentValue = 15,
+    Flag = "VerticalDistance",
+    Callback = function(Value) 
+        config.verticalDistance = Value 
+    end,
+})
 
-local positions = {"Back", "Front", "Above", "Below"}
-local posIndex = 1
-local keybindConnection
-local destroyed = false
-
-toggleFarm = function()
-    if destroyed then return end
-
-    settings.enabled = not settings.enabled
-
-    if farmToggle then
-        pcall(function()
-            farmToggle:Set(settings.enabled)
-        end)
-    end
-
-    if settings.enabled then
-        -- Build readable list of selected mobs in priority order
-        local targetNames = {}
-        for i, mob in ipairs(mobList) do
-            if isMobTypeSelected(i) then
-                table.insert(targetNames, mob.name)
-            end
+MainTab:CreateDropdown({
+    Name = "Lock Position",
+    Options = {"Back", "Front", "Above", "Below"},
+    CurrentOption = "Back",
+    Flag = "LockPosition",
+    Callback = function(Option)
+        if type(Option) == "table" then
+            config.lockPosition = Option[1] or "Back"
+        else
+            config.lockPosition = Option
         end
-        if #targetNames == 0 then
-            -- Safety: if nothing selected, select primary
-            settings.selectedMobIndexes = settings.selectedMobIndexes or {}
-            settings.selectedMob = settings.selectedMob or 1
-            settings.selectedMobIndexes[settings.selectedMob] = true
-            targetNames = { mobList[settings.selectedMob].name }
+        print("🎯 Lock position:", config.lockPosition)
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "Hover Speed",
+    Range = {20, 150},
+    Increment = 10,
+    CurrentValue = 80,
+    Flag = "HoverSpeed",
+    Callback = function(Value) 
+        config.hoverSpeed = Value 
+        print("🚀 Hover speed:", Value)
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "Acceleration",
+    Range = {10, 80},
+    Increment = 5,
+    CurrentValue = 40,
+    Flag = "Acceleration",
+    Callback = function(Value) 
+        config.acceleration = Value 
+        print("⚡ Acceleration:", Value)
+    end,
+})
+
+MainTab:CreateSlider({
+    Name = "Max Farm Distance",
+    Range = {100, 1000},
+    Increment = 50,
+    CurrentValue = 500,
+    Flag = "FarmDistance",
+    Callback = function(Value) 
+        config.farmDistance = Value 
+    end,
+})
+
+MainTab:CreateParagraph({
+    Title = "✅ FAST HOVER + NOCLIP!",
+    Content = "🚀 SPEED UPGRADES:\n• 3x faster hover speed (80 studs/sec)\n• 2.5x faster acceleration\n• Increased force for instant response\n• Faster rotation/turning\n\n👻 NOCLIP FEATURES:\n• Pass through walls freely\n• No collision with terrain\n• Smooth movement everywhere\n• Auto re-enables on respawn\n\n🛡️ STILL SAFE:\n• Physics-based movement\n• No instant teleports\n• Natural acceleration\n• Anti-cheat friendly\n\n⚙️ SETTINGS:\n• Hover Speed: 20-150 studs/sec\n• Acceleration: 10-80\n• Higher = faster & snappier!"
+})
+
+MainTab:CreateButton({
+    Name = "🗑️ Destroy GUI",
+    Callback = function()
+        print("🗑️ DESTROYING MOB FARM...")
+        
+        config.enabled = false
+        stopAutoClicker()
+        stopNoclip()
+        cleanupPhysicsMovement()
+        
+        if farmLoop then
+            farmLoop:Disconnect()
+            farmLoop = nil
         end
+        
+        if keybindConnection then
+            keybindConnection:Disconnect()
+            keybindConnection = nil
+        end
+        
+        if characterConnection then
+            characterConnection:Disconnect()
+            characterConnection = nil
+        end
+        
+        _G.MobFarmConfig = nil
+        
+        Rayfield:Destroy()
+        
+        print("✅ GUI Destroyed!")
+    end,
+})
 
-        print("═══════════════════════════════════════")
-        print("✅ FARM ON")
-        print("Targets (priority): " .. table.concat(targetNames, ", "))
-        print("Position: " .. settings.position)
-        print("Speed: " .. settings.speed)
-        print("Vertical Distance: " .. settings.vertDist)
-        print("═══════════════════════════════════════")
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MAIN FARM LOOP
+-- ═══════════════════════════════════════════════════════════════════════════
 
-        settings.startupComplete   = false
-        settings.returningToCenter = false
-        settings.lastMobType       = getPrimarySelectedMobIndex()
-
-        noclipOn()
-        startMobFinder()
-        startHover()
-        startClicker()
+farmLoop = RunService.Heartbeat:Connect(function()
+    if not config.enabled then return end
+    
+    -- Check if current mob is still valid
+    local needNewMob = false
+    
+    if not config.currentMob or not config.currentMob.Parent then
+        needNewMob = true
     else
-        print("❌ FARM OFF")
-
-        stopHover()
-        stopMobFinder()
-        stopClicker()
-        noclipOff()
-        settings.currentMob       = nil
-        settings.startupComplete  = false
-        settings.returningToCenter= false
-
-        local char = player.Character
-        if char then
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.Anchored = false
-                hrp.Velocity = Vector3.new(0, 0, 0)
+        local humanoid = config.currentMob:FindFirstChild("Humanoid")
+        if not humanoid or humanoid.Health <= 0 then
+            needNewMob = true
+        end
+    end
+    
+    -- Get new mob if needed
+    if needNewMob then
+        local newMob = getClosestMob()
+        
+        if newMob then
+            print("🎯 New target:", newMob.Name)
+            config.currentMob = newMob
+            config.lastUnlockTime = tick()
+            
+            -- Ensure physics objects exist
+            if not config.bodyVelocity or not config.bodyGyro then
+                setupPhysicsMovement()
             end
+        else
+            config.currentMob = nil
+        end
+        
+        return
+    end
+    
+    -- Hover to position
+    if config.currentMob then
+        local lockPos = getLockPosition(config.currentMob)
+        if lockPos then
+            hoverToPosition(lockPos, config.currentMob)
         end
     end
-end
+end)
 
-cyclePos = function()
-    if destroyed then return end
-
-    posIndex = posIndex + 1
-    if posIndex > #positions then posIndex = 1 end
-    settings.position = positions[posIndex]
-    print("🎯 Position: " .. settings.position)
-
-    if posDropdown then
-        pcall(function()
-            posDropdown:Set(settings.position)
-        end)
-    end
-end
-
-changeSpeed = function(amount)
-    if destroyed then return end
-
-    settings.speed = math.max(10, math.min(100, settings.speed + amount))
-    print("⚡ Speed: " .. settings.speed)
-
-    if speedSlider then
-        pcall(function()
-            speedSlider:Set(settings.speed)
-        end)
-    end
-end
-
-changeVertDist = function(amount)
-    if destroyed then return end
-
-    local oldDist = settings.vertDist
-    settings.vertDist = settings.vertDist + amount
-    if settings.vertDist < 5  then settings.vertDist = 5  end
-    if settings.vertDist > 50 then settings.vertDist = 50 end
-    print("📏 Vertical Distance: " .. oldDist .. " → " .. settings.vertDist .. " studs (change: " .. amount .. ")")
-
-    if vertSlider then
-        pcall(function()
-            vertSlider:Set(settings.vertDist)
-        end)
-    end
-end
-
-cycleMob = function()
-    if destroyed then return end
-
-    settings.selectedMob = settings.selectedMob + 1
-    if settings.selectedMob > #mobList then
-        settings.selectedMob = 1
-    end
-
-    local currentMobData = mobList[settings.selectedMob]
-
-    -- When cycling via keybind, we switch to SINGLE-target mode
-    settings.selectedMobIndexes = {}
-    settings.selectedMobIndexes[settings.selectedMob] = true
-
-    print("👾 Target Mob (single-target mode via Delete): " .. currentMobData.name)
-
-    settings.currentMob = nil
-    settings.lastMobType = settings.selectedMob
-
-    if mobDropdown then
-        pcall(function()
-            mobDropdown:Set({ currentMobData.name }) -- multi-select expects table
-        end)
-    end
-end
-
--- ══════════════════════════════════════════════════════════════════════════
--- DESTROY FUNCTION
--- ══════════════════════════════════════════════════════════════════════════
-
-destroyScript = function()
-    if destroyed then return end
-    destroyed = true
-
-    print("═══════════════════════════════════════════════════════")
-    print("🗑️ DESTROYING MOB FARM v4.7d...")
-
-    settings.enabled = false
-
-    noclipOff()
-    stopHover()
-    stopMobFinder()
-    stopClicker()
-
-    settings.currentMob = nil
-    removeHover()
-
-    local char = player.Character
-    if char then
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChild("Humanoid")
-
-        if hrp then
-            hrp.Anchored    = false
-            hrp.Velocity    = Vector3.new(0, 0, 0)
-            hrp.RotVelocity = Vector3.new(0, 0, 0)
-
-            if hum then
-                hum:ChangeState(Enum.HumanoidStateType.Freefall)
-            end
-        end
-
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-                v.CanCollide = true
-            end
-        end
-    end
-
-    if keybindConnection then
-        keybindConnection:Disconnect()
-        keybindConnection = nil
-    end
-
-    for name, conn in pairs(connections) do
-        if conn and typeof(conn) == "RBXScriptConnection" then
-            pcall(function() conn:Disconnect() end)
-        end
-        connections[name] = nil
-    end
-
-    pcall(function()
-        if Rayfield and Rayfield.Destroy then
-            Rayfield:Destroy()
-        end
-    end)
-
-    print("✅ Script destroyed successfully!")
-    print("✅ All keybinds disabled")
-    print("✅ Character physics restored")
-    print("✅ All connections removed")
-    print("═══════════════════════════════════════════════════════")
-end
-
--- ══════════════════════════════════════════════════════════════════════════
--- KEYBINDS
--- ══════════════════════════════════════════════════════════════════════════
-
-keybindConnection = UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe or destroyed then return end
-
+-- F1 Keybind
+keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
     if input.KeyCode == Enum.KeyCode.F1 then
-        toggleFarm()
-    elseif input.KeyCode == Enum.KeyCode.F2 then
-        cyclePos()
-    elseif input.KeyCode == Enum.KeyCode.F3 then
-        changeSpeed(10)
-    elseif input.KeyCode == Enum.KeyCode.F4 then
-        changeSpeed(-10)
-    elseif input.KeyCode == Enum.KeyCode.Delete then
-        cycleMob()
-    elseif input.KeyCode == Enum.KeyCode.F5 then
-        changeVertDist(1)
-    elseif input.KeyCode == Enum.KeyCode.F6 then
-        changeVertDist(-1)
-    elseif input.KeyCode == Enum.KeyCode.F8 then
-        destroyScript()
+        config.enabled = not config.enabled
+        EnableToggle:Set(config.enabled)
     end
 end)
 
--- ══════════════════════════════════════════════════════════════════════════
--- RESPAWN HANDLER
--- ══════════════════════════════════════════════════════════════════════════
-
-player.CharacterAdded:Connect(function()
-    settings.currentMob       = nil
-    settings.inAggro          = false
-    settings.startupComplete  = false
-    settings.returningToCenter= false
-    removeHover()
-    noclipOff()
-
-    if settings.enabled and not destroyed then
+-- Cleanup on character respawn
+characterConnection = LocalPlayer.CharacterAdded:Connect(function()
+    config.currentMob = nil
+    cleanupPhysicsMovement()
+    stopNoclip()
+    
+    if config.enabled then
         task.wait(2)
+        setupPhysicsMovement()
+        startNoclip()
         autoEquipWeapon()
-        noclipOn()
-        makeHover()
-        startClicker()
+        print("⚔️ Re-equipped after respawn + Noclip restored")
     end
 end)
+
+print("═══════════════════════════════════════════════════════")
+print("MOB FARM v4.2 - FAST HOVER + NOCLIP LOADED!")
+print("✅ 3x faster hovering (80 studs/sec)")
+print("✅ Noclip enabled - pass through walls!")
+print("✅ Increased acceleration & force")
+print("✅ Still anti-cheat safe!")
+print("• Press F1 to start!")
+print("═══════════════════════════════════════════════════════")
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- STARTUP
@@ -1648,97 +738,3 @@ end
 GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
 
 print("[Anti-AFK + Auto-Rejoin] Loaded")
-
----------------------------------------------------------------------
--- 🟢 AUTO-START FARM WHEN ENTERING WORLD 2
----------------------------------------------------------------------
-task.spawn(function()
-    -- small delay to let things load
-    task.wait(5)
-
-    local lastWorld = getCurrentWorld()
-
-    while true do
-        task.wait(2)
-
-        local world = getCurrentWorld()
-
-        -- Detect transition into World 2
-        if world == 2 and lastWorld ~= 2 then
-            print("[AutoStart] Entered World 2 → starting farm...")
-
-            local char = player.Character or player.CharacterAdded:Wait()
-            if char then
-                char:WaitForChild("HumanoidRootPart", 10)
-            end
-
-            task.wait(1)
-
-            if not destroyed and not settings.enabled then
-                toggleFarm()
-            end
-        end
-
-        lastWorld = world
-    end
-end)
-
-
--- 🔵 GUI PRE-LOADER (SAFE ANYWHERE IN SCRIPT)
-task.spawn(function()
-    local pg = nil
-
-    -- Wait for PlayerGui to exist
-    repeat
-        pg = LocalPlayer:FindFirstChild("PlayerGui")
-        task.wait(0.1)
-    until pg
-
-    -- Wait for Main folder
-    local main = nil
-    repeat
-        main = pg:FindFirstChild("Main")
-        task.wait(0.1)
-    until main
-
-    -- Wait for Screen folder
-    local screen = nil
-    repeat
-        screen = main:FindFirstChild("Screen")
-        task.wait(0.1)
-    until screen
-
-    -- Wait for Teleport GUI (even if invisible)
-    local tele = nil
-    repeat
-        tele = screen:FindFirstChild("Teleport")
-        task.wait(0.1)
-    until tele
-
-    print("[World2] GUI completely loaded and ready.")
-end)
-
----------------------------------------------------------------------
--- 🟢 FIXED AUTO-START FARM WHEN ENTERING WORLD 2
----------------------------------------------------------------------
-task.spawn(function()
-    local prox = workspace:WaitForChild("Proximity", 30)
-    local function checkW2()
-        local world = getCurrentWorld()
-        if world == 2 then
-            print("[AutoStart] Detected World 2 → starting farm...")
-            local char = player.Character or player.CharacterAdded:Wait()
-            if char then char:WaitForChild("HumanoidRootPart", 15) end
-            task.wait(1)
-            if not destroyed and not settings.enabled then
-                toggleFarm()
-            end
-        end
-    end
-    task.spawn(checkW2)
-    prox.ChildAdded:Connect(function(child)
-        if child.Name == "Cobalt Pickaxe" then
-            task.spawn(checkW2)
-        end
-    end)
-end)
