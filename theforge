@@ -381,27 +381,45 @@ local function stopNoclip()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- UTILITY FUNCTIONS (UPDATED)
+-- UTILITY FUNCTIONS (FIXED - STABLE VERSION)
 -- ═══════════════════════════════════════════════════════════════════════════
 
+local physicsSetupInProgress = false
+
 local function setupPhysicsMovement()
+    if physicsSetupInProgress then return false end
+    physicsSetupInProgress = true
+    
     local character = LocalPlayer.Character
-    if not character then return false end
+    if not character then 
+        physicsSetupInProgress = false
+        return false 
+    end
     
     local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return false end
-    
-    -- Clean up old instances
-    if config.bodyVelocity and config.bodyVelocity.Parent then
-        config.bodyVelocity:Destroy()
-    end
-    if config.bodyGyro and config.bodyGyro.Parent then
-        config.bodyGyro:Destroy()
+    if not rootPart then 
+        physicsSetupInProgress = false
+        return false 
     end
     
-    -- Wait a frame to ensure cleanup
-    task.wait()
+    -- Clean up old instances properly
+    pcall(function()
+        if config.bodyVelocity then
+            config.bodyVelocity:Destroy()
+        end
+    end)
+    pcall(function()
+        if config.bodyGyro then
+            config.bodyGyro:Destroy()
+        end
+    end)
     
+    config.bodyVelocity = nil
+    config.bodyGyro = nil
+    
+    task.wait(0.1)
+    
+    -- Create new physics objects
     local bv = Instance.new("BodyVelocity")
     bv.Name = "FarmVelocity"
     bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
@@ -420,7 +438,8 @@ local function setupPhysicsMovement()
     
     rootPart.Anchored = false
     
-    print("✅ Physics movement setup")
+    print("✅ Physics movement setup complete")
+    physicsSetupInProgress = false
     return true
 end
 
@@ -433,13 +452,16 @@ local function hoverToPosition(targetPos, mob)
     
     if not rootPart or not mobRoot then return end
     
-    -- CRITICAL FIX: Check if physics objects still exist and recreate if needed
-    if not config.bodyVelocity or not config.bodyVelocity.Parent then
-        setupPhysicsMovement()
+    -- Check if physics objects exist
+    if not config.bodyVelocity or not config.bodyGyro then
         return
     end
-    if not config.bodyGyro or not config.bodyGyro.Parent then
-        setupPhysicsMovement()
+    
+    -- Verify they're still valid and parented
+    local bvValid = pcall(function() return config.bodyVelocity.Parent end)
+    local bgValid = pcall(function() return config.bodyGyro.Parent end)
+    
+    if not bvValid or not bgValid or not config.bodyVelocity.Parent or not config.bodyGyro.Parent then
         return
     end
     
@@ -455,7 +477,7 @@ local function hoverToPosition(targetPos, mob)
     local targetSpeed = config.hoverSpeed * speedMultiplier
     
     local desiredVelocity
-    if direction.Magnitude > 0 then
+    if direction.Magnitude > 0.1 then
         desiredVelocity = direction.Unit * math.min(distance * config.acceleration, targetSpeed)
     else
         desiredVelocity = Vector3.new(0, 0, 0)
@@ -464,22 +486,29 @@ local function hoverToPosition(targetPos, mob)
     local currentVelocity = config.bodyVelocity.Velocity
     local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)
     
-    config.bodyVelocity.Velocity = newVelocity
+    pcall(function()
+        config.bodyVelocity.Velocity = newVelocity
+    end)
     
     local lookAtPos = mobRoot.Position
     local lookCFrame = CFrame.new(currentPos, lookAtPos)
-    config.bodyGyro.CFrame = lookCFrame
+    
+    pcall(function()
+        config.bodyGyro.CFrame = lookCFrame
+    end)
     
     if config.lockPosition == "Above" or config.lockPosition == "Below" then
         local currentTime = tick()
         
         if currentTime - config.lastUnlockTime >= config.unlockInterval then
-            local oldForce = config.bodyVelocity.MaxForce
-            config.bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
-            task.wait(0.05)
-            if config.bodyVelocity and config.bodyVelocity.Parent then
-                config.bodyVelocity.MaxForce = oldForce
-            end
+            pcall(function()
+                local oldForce = config.bodyVelocity.MaxForce
+                config.bodyVelocity.MaxForce = Vector3.new(0, 0, 0)
+                task.wait(0.05)
+                if config.bodyVelocity and config.bodyVelocity.Parent then
+                    config.bodyVelocity.MaxForce = oldForce
+                end
+            end)
             config.lastUnlockTime = currentTime
         end
     end
@@ -771,24 +800,43 @@ MainTab:CreateButton({
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN FARM LOOP (FIXED)
+-- MAIN FARM LOOP (FIXED - STABLE VERSION)
 -- ═══════════════════════════════════════════════════════════════════════════
+
+local lastPhysicsCheck = 0
+local PHYSICS_CHECK_INTERVAL = 1 -- Check every 1 second instead of every frame
 
 farmLoop = RunService.Heartbeat:Connect(function()
     if not config.enabled then return end
     
-    -- Verify physics setup every frame
     local character = LocalPlayer.Character
     if not character then return end
     
     local rootPart = character:FindFirstChild("HumanoidRootPart")
     if not rootPart then return end
     
-    -- CRITICAL FIX: Recreate physics if missing
-    if not config.bodyVelocity or not config.bodyVelocity.Parent or 
-       not config.bodyGyro or not config.bodyGyro.Parent then
-        setupPhysicsMovement()
-        return
+    -- Only check physics occasionally, not every frame
+    local currentTime = tick()
+    if currentTime - lastPhysicsCheck >= PHYSICS_CHECK_INTERVAL then
+        local needsSetup = false
+        
+        if not config.bodyVelocity or not config.bodyGyro then
+            needsSetup = true
+        else
+            local bvValid = pcall(function() return config.bodyVelocity.Parent end)
+            local bgValid = pcall(function() return config.bodyGyro.Parent end)
+            
+            if not bvValid or not bgValid or not config.bodyVelocity.Parent or not config.bodyGyro.Parent then
+                needsSetup = true
+            end
+        end
+        
+        if needsSetup and not physicsSetupInProgress then
+            print("⚠️ Physics lost, recreating...")
+            setupPhysicsMovement()
+        end
+        
+        lastPhysicsCheck = currentTime
     end
     
     local needNewMob = false
