@@ -433,6 +433,7 @@ local function executeAutoRejoin()
         return
     end
 
+
     print("[World2] Step 1: Moving to portal spawn location (FORCE TELEPORT)...")
 
     local charNow = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
