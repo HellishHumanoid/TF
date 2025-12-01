@@ -279,29 +279,28 @@ local function W2_InteractWithPortal(portal)
         return false
     end
 
-    -------------------------------------------------------
-    -- Auto-detect the correct entry direction
-    -------------------------------------------------------
-    local portalPos = entryPart.Position
-    local hrpPos = hrp.Position
+-------------------------------------------------------
+-- Use the portal's REAL forward direction
+-------------------------------------------------------
+local portalPos = entryPart.Position
 
-    -- Direction from portal to player (this always faces YOU)
-    local direction = (hrpPos - portalPos).Unit
+-- Forward direction of the portal (pointing outward)
+local direction = entryPart.CFrame.LookVector
 
-    -- Final entry position (3 studs in front)
-    local entryPos = portalPos + direction * 3
+-- Final entry position (3 studs in front of the portal)
+local entryPos = portalPos + direction * 3
 
-    print("[World2] Tweening to:", entryPos)
+print("[World2] Tweening to:", entryPos)
 
-    -------------------------------------------------------
-    -- Tween to the REAL front of the portal
-    -------------------------------------------------------
-    if not W2_TweenToPosition(entryPos) then
-        warn("[World2] Tween failed — aborting interaction.")
-        return false
-    end
+-------------------------------------------------------
+-- Tween to the REAL front of the portal
+-------------------------------------------------------
+if not W2_TweenToPosition(entryPos) then
+    warn("[World2] Tween failed — aborting interaction.")
+    return false
+end
 
-    task.wait(0.2)
+task.wait(0.2)
 
     -------------------------------------------------------
     -- Press E to open the GUI
