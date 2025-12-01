@@ -1,7 +1,14 @@
 --[[
     ═══════════════════════════════════════════════════════════════════════════
-    MOB FARM v4.7b - HOVER + RAYFIELD UI + SAFE CLICKER + WORLD 2 AUTO-JOIN
+    MOB FARM v4.7d - HOVER + RAYFIELD UI + SAFE CLICKER + WORLD 2 AUTO-JOIN
     ═══════════════════════════════════════════════════════════════════════════
+
+    CHANGES IN 4.7d:
+    • Auto-Rejoin World 2 renamed to Auto-Join World 2
+    • Auto-Join World 2 is ALWAYS ON when you are in World 1
+    • It automatically runs the full step-by-step portal sequence to World 2
+    • Portal detection now picks ONLY the closest valid PortalTheForge in workspace.Debris
+      (tries to avoid other players' portals by distance / owner checks)
 
     FEATURES:
     • Hover-based mob farm with BodyVelocity + BodyGyro
@@ -23,7 +30,7 @@
 
     NOTE:
     - Requires exploit with mouse1click() support (Xeno has this).
-    - World 2 Auto-Join logic is accessed via "World 2" tab in Rayfield.
+    - World 2 Auto-Join logic is accessed via "World 2" tab in Rayfield but is always enabled in World 1.
 ]]
 
 wait(1) -- Ensure game is mostly loaded
@@ -107,33 +114,23 @@ local connections = {
 
 -- ══════════════════════════════════════════════════════════════════════════
 -- WORLD 2 AUTO-JOIN SETTINGS & FUNCTIONS
--- (adapted to run inside Rayfield instead of its own ScreenGui)
 -- ══════════════════════════════════════════════════════════════════════════
 
-local LocalPlayer = player
-
--- World Detection using JobId
-local WORLD1_JOBID = "61c99586-ab42-47aa-9380-ad1384a01528" -- World 1 JobId
-local WORLD2_JOBID = "3ae23189-431b-40a7-afbb-bbae83587e4c" -- World 2 (Forgotten Kingdom) JobId
+local LocalPlayer = players
 
 local function getCurrentWorld()
-    local currentJobId = game.JobId
-
-    if currentJobId == WORLD1_JOBID then
-        return 1
-    elseif currentJobId == WORLD2_JOBID then
-        return 2
-    else
-        warn("Unknown JobId, defaulting to World 1")
-        return 1 -- Default to World 1
+    local prox = workspace:FindFirstChild("Proximity")
+    if prox then
+        local cobalt = prox:FindFirstChild("Cobalt Pickaxe")
+        if cobalt then
+            return 2
+        end
     end
+    return 1
 end
 
-local currentWorld = getCurrentWorld()
-print("[World2] Current World: " .. tostring(currentWorld))
-
--- Auto-Rejoin Settings
-local autoRejoinEnabled  = false
+-- Auto-Join Settings
+local autoRejoinEnabled  = true -- ALWAYS ON
 local rejoinDelay        = 2
 local portalSpawnLocation = Vector3.new(-259.75701904296875, 17.749414443969727, 95.05717468261719)
 
@@ -205,21 +202,48 @@ local function W2_ActivatePortal()
     return true
 end
 
--- Find spawned portal in workspace.Debris
+-- Find spawned portal in workspace.Debris (closest valid)
 local function W2_FindSpawnedPortal()
     print("[World2] Waiting for portal to spawn...")
 
     local maxWaitTime = 10
     local waitedTime = 0
-    local portal = nil
 
     while waitedTime < maxWaitTime do
+        local character = LocalPlayer.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
         local debris = workspace:FindFirstChild("Debris")
-        if debris then
-            portal = debris:FindFirstChild("PortalTheForge")
-            if portal then
-                print("[World2] Portal found in workspace.Debris.PortalTheForge!")
-                return portal
+
+        if debris and hrp then
+            local closestPortal = nil
+            local closestDist = math.huge
+
+            for _, obj in ipairs(debris:GetChildren()) do
+                if obj.Name == "PortalTheForge" then
+                    local okOwner = true
+                    local portalPos = obj:GetPivot().Position
+                    local dist = (portalPos - hrp.Position).Magnitude
+
+                    -- Try to avoid other players' portals if there's an Owner field
+                    local ownerObj = obj:FindFirstChild("Owner")
+                    if ownerObj then
+                        if typeof(ownerObj.Value) == "Instance" and ownerObj.Value:IsA("Player") then
+                            okOwner = (ownerObj.Value == LocalPlayer)
+                        elseif typeof(ownerObj.Value) == "string" then
+                            okOwner = (ownerObj.Value == LocalPlayer.Name)
+                        end
+                    end
+
+                    if okOwner and dist < 60 and dist < closestDist then
+                        closestDist = dist
+                        closestPortal = obj
+                    end
+                end
+            end
+
+            if closestPortal then
+                print(string.format("[World2] Closest portal found at distance %.1f", closestDist))
+                return closestPortal
             end
         end
 
@@ -238,162 +262,104 @@ local function W2_InteractWithPortal(portal)
     local character = LocalPlayer.Character
     if not character then return false end
 
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if not humanoidRootPart then return false end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
 
-    local portalPosition = portal:GetPivot().Position
-    W2_TweenToPosition(portalPosition + Vector3.new(0, 0, 3))
+    -- Move right in front of portal
+    W2_TweenToPosition(portal:GetPivot().Position + Vector3.new(0, 0, 3))
+    task.wait(0.2)
 
-    task.wait(0.5)
+    print("[World2] Rapid E-press to trigger portal...")
 
-    print("[World2] Pressing E to interact with portal...")
-    for i = 1, 5 do
+    -- Spam E until GUI appears
+    local startTime = tick()
+    while tick() - startTime < 3 do
         VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
         task.wait(0.05)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-        task.wait(0.3)
+        task.wait(0.05)
 
-        local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-        if playerGui then
-            local mainGui = playerGui:FindFirstChild("Main")
-            if mainGui then
-                local screen = mainGui:FindFirstChild("Screen")
-                if screen then
-                    local teleportFrame = screen:FindFirstChild("Teleport")
-                    if teleportFrame and teleportFrame.Visible then
-                        print("[World2] Portal GUI opened successfully after " .. i .. " attempt(s)")
-                        task.wait(0.5)
-                        return true
-                    end
-                end
+        local gui = LocalPlayer.PlayerGui:FindFirstChild("Main")
+        if gui and gui:FindFirstChild("Screen") and gui.Screen:FindFirstChild("Teleport") then
+            if gui.Screen.Teleport.Visible then
+                print("[World2] Portal GUI detected instantly!")
+                return true
             end
         end
     end
 
-    print("[World2] Pressed E 5 times, waiting for GUI...")
-    task.wait(1)
+    print("[World2] GUI did not appear, but continuing...")
     return true
 end
 
 -- Select Forgotten Kingdom & Teleport
 local function W2_SelectWorldInPortalGUI()
     local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-
     local mainGui = playerGui:WaitForChild("Main", 5)
     if not mainGui then
         warn("[World2] Main GUI not found")
         return false
     end
 
-    task.wait(1)
+    local screen = mainGui:WaitForChild("Screen", 5)
+    local teleportFrame = screen:WaitForChild("Teleport", 5)
 
-    print("[World2] === CLICKING FORGOTTEN KINGDOM ===")
-    local forgottenKingdomX = 599
-    local forgottenKingdomY = 398
-
-    pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(forgottenKingdomX, forgottenKingdomY, 0, true, game, 0)
-        task.wait(0.05)
-        VirtualInputManager:SendMouseButtonEvent(forgottenKingdomX, forgottenKingdomY, 0, false, game, 0)
-    end)
-
-    print("[World2] Clicked Forgotten Kingdom, waiting 4 seconds for Teleport button...")
-    task.wait(4)
-
-    print("[World2] === CLICKING TELEPORT BUTTON ===")
-    local teleportX = 1110
-    local teleportY = 614
-
-    local teleportButton = nil
-    pcall(function()
-        local screen = mainGui:WaitForChild("Screen", 2)
-        local teleportFrame = screen:WaitForChild("Teleport", 2)
-        local infoFrame = teleportFrame:WaitForChild("InfoFrame", 2)
-        teleportButton = infoFrame:FindFirstChild("Teleport")
-    end)
-
-    if teleportButton then
-        print("[World2] Found Teleport button! Path: " .. teleportButton:GetFullName())
-        if teleportButton:GetFullName():match("Main.Screen.Teleport.InfoFrame.Teleport") then
-            print("[World2] Confirmed this is the game's Teleport button")
-
-            pcall(function()
-                VirtualUser:Button1Down(Vector2.new(teleportX, teleportY))
-                task.wait(0.1)
-                VirtualUser:Button1Up(Vector2.new(teleportX, teleportY))
-                print("[World2] Tried VirtualUser click")
-            end)
-
-            pcall(function()
-                GuiService.SelectedObject = teleportButton
-                task.wait(0.2)
-
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Right, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Right, false, game)
-                task.wait(0.2)
-
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Down, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Down, false, game)
-                task.wait(0.2)
-
-                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-                task.wait(0.05)
-                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-                print("[World2] Tried GuiService selection + keys")
-            end)
-
-            pcall(function()
-                for _, descendant in pairs(teleportButton:GetDescendants()) do
-                    if descendant:IsA("RemoteEvent") then
-                        descendant:FireServer()
-                        print("[World2] Fired RemoteEvent")
-                    elseif descendant:IsA("RemoteFunction") then
-                        descendant:InvokeServer()
-                        print("[World2] Invoked RemoteFunction")
-                    end
-                end
-            end)
-
-            task.wait(0.3)
-        else
-            warn("[World2] Wrong Teleport button found! Path: " .. teleportButton:GetFullName())
+    -- Wait until GUI becomes visible, BUT check rapidly (no long waits)
+    local startTime = tick()
+    while tick() - startTime < 3 do
+        if teleportFrame.Visible then
+            break
         end
-    else
-        warn("[World2] Teleport button not found!")
+        task.wait(0.05)
     end
 
-    print("[World2] Spamming clicks at Teleport coordinates...")
-    for attempt = 1, 15 do
-        pcall(function()
-            VirtualInputManager:SendMouseButtonEvent(teleportX, teleportY, 0, true, game, 0)
-            task.wait(0.03)
-            VirtualInputManager:SendMouseButtonEvent(teleportX, teleportY, 0, false, game, 0)
-        end)
+    print("[World2] Clicking Forgotten Kingdom immediately...")
 
-        pcall(function()
-            VirtualUser:ClickButton1(Vector2.new(teleportX, teleportY))
-        end)
+    local fkX, fkY = 599, 398
+    VirtualInputManager:SendMouseButtonEvent(fkX, fkY, 0, true, game, 0)
+    task.wait(0.03)
+    VirtualInputManager:SendMouseButtonEvent(fkX, fkY, 0, false, game, 0)
 
-        task.wait(0.15)
+    -- VERY fast wait instead of 4 seconds
+    task.wait(0.7)
+
+    print("[World2] Clicking Teleport...")
+
+    local tpX, tpY = 1110, 614
+    for i = 1, 10 do
+        VirtualInputManager:SendMouseButtonEvent(tpX, tpY, 0, true, game, 0)
+        task.wait(0.02)
+        VirtualInputManager:SendMouseButtonEvent(tpX, tpY, 0, false, game, 0)
+        task.wait(0.05)
     end
-
-    print("[World2] Finished clicking Teleport button!")
-    task.wait(2)
 
     return true
 end
 
--- Main Auto-Rejoin function
+-- Main Auto-Join function
 local function executeAutoRejoin()
-    if not autoRejoinEnabled then
-        print("[World2] Auto-Rejoin is disabled, aborting.")
+
+    -- HARD STOP: NEVER run Auto-Join in World 2
+    if getCurrentWorld() ~= 1 then
+        print("[World2] Auto-Join BLOCKED (you are NOT in World 1).")
         return
     end
 
-    print("[World2] Starting Auto-Rejoin sequence...")
+    if not autoRejoinEnabled then
+        print("[World2] Auto-Join is disabled, aborting.")
+        return
+    end
+
+    print("[World2] Starting Auto-Join sequence...")
     task.wait(rejoinDelay)
+
+    -- Only auto-join when actually in World 1
+    local worldNow = getCurrentWorld()
+    if worldNow ~= 1 then
+        print("[World2] Not in World 1 anymore (world=" .. tostring(worldNow) .. "), aborting Auto-Join.")
+        return
+    end
+
 
     print("[World2] Step 1: Moving to portal spawn location...")
     if not W2_TweenToPosition(portalSpawnLocation) then
@@ -432,14 +398,29 @@ local function executeAutoRejoin()
         return
     end
 
-    print("[World2] Auto-Rejoin sequence completed!")
+    print("[World2] Auto-Join sequence completed!")
 end
 
--- Hook disconnection prompts for auto rejoin
+-- Auto-Join World 2 on join if currently in World 1
+task.spawn(function()
+    if getCurrentWorld() == 1 then
+        print("[World2] Auto-Join World 2 is active (World 1 detected).")
+        executeAutoRejoin()
+    else
+        print("[World2] Already in World 2 or unknown world, Auto-Join does nothing.")
+    end
+end)
+
+-- Hook disconnection prompts for auto rejoin (safety)
 pcall(function()
     game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
         if child.Name == "ErrorPrompt" and autoRejoinEnabled then
-            executeAutoRejoin()
+            
+            if getCurrentWorld() == 1 then
+                executeAutoRejoin()
+            else
+                print("[World2] ErrorPrompt ignored (already in World 2)")
+            end
         end
     end)
 end)
@@ -447,7 +428,12 @@ end)
 pcall(function()
     GuiService.ErrorMessageChanged:Connect(function()
         if autoRejoinEnabled then
-            executeAutoRejoin()
+            
+            if getCurrentWorld() == 1 then
+                executeAutoRejoin()
+            else
+                print("[World2] GUI error ignored (already in World 2)")
+            end
         end
     end)
 end)
@@ -459,7 +445,7 @@ end)
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Mob Farm v4.7b",
+    Name = "Mob Farm v4.7d",
     LoadingTitle = "Mob Farm",
     LoadingSubtitle = "Hover + World 2 Auto-Join",
     ConfigurationSaving = {
@@ -587,14 +573,11 @@ do
                   "(1 = World 1, 2 = World 2 / Forgotten Kingdom)",
     })
 
-    World2Tab:CreateToggle({
-        Name = "Auto-Rejoin to World 2 on disconnect",
-        CurrentValue = autoRejoinEnabled,
-        Flag = "W2_AutoRejoin",
-        Callback = function(Value)
-            autoRejoinEnabled = Value
-            print("[World2] Auto-Rejoin Enabled: " .. tostring(autoRejoinEnabled))
-        end,
+    World2Tab:CreateParagraph({
+        Title = "Auto-Join World 2",
+        Content = "Auto-Join World 2 is ALWAYS enabled when you are in World 1.\n" ..
+                  "Whenever you join World 1, the script will automatically run the full\n" ..
+                  "portal sequence to send you to World 2 using the closest portal near you.",
     })
 
     World2Tab:CreateSlider({
@@ -623,13 +606,10 @@ do
     })
 
     World2Tab:CreateButton({
-        Name = "Test Rejoin Sequence Now",
+        Name = "Test Auto-Join Sequence Now",
         Callback = function()
-            print("[World2] Manual test of auto-rejoin sequence started...")
-            local tempEnabled = autoRejoinEnabled
-            autoRejoinEnabled = true
+            print("[World2] Manual test of auto-join sequence started...")
             executeAutoRejoin()
-            autoRejoinEnabled = tempEnabled
         end,
     })
 end
@@ -1247,7 +1227,7 @@ destroyScript = function()
     destroyed = true
 
     print("═══════════════════════════════════════════════════════")
-    print("🗑️ DESTROYING MOB FARM v4.7b...")
+    print("🗑️ DESTROYING MOB FARM v4.7d...")
 
     settings.enabled = false
 
@@ -1358,7 +1338,7 @@ end)
 -- ══════════════════════════════════════════════════════════════════════════
 
 print("═══════════════════════════════════════════════════════")
-print("MOB FARM v4.7c LOADED! (HOVER + RAYFIELD + SAFE CLICKER + WORLD 2 + TELEPORT QUEUE)")
+print("MOB FARM v4.7d LOADED! (HOVER + RAYFIELD + SAFE CLICKER + WORLD 2 AUTO-JOIN)")
 print("═══════════════════════════════════════════════════════")
 print("F1 = Toggle farm")
 print("F2 = Change position")
@@ -1371,37 +1351,8 @@ print("F8 = DESTROY SCRIPT")
 print("═══════════════════════════════════════════════════════")
 print("Default Mob: Reaper (use DELETE or UI dropdown to change)")
 print("Click interval: 0.20 seconds via mouse1click()")
-print("Use 'World 2' tab in Rayfield for Auto-Rejoin controls.")
-print("Press F1 or toggle in Rayfield to start!")
+print("Use 'World 2' tab in Rayfield to view Auto-Join settings (always on in World 1).")
+print("Press F1 or toggle in Rayfield to start farming!")
 print("═══════════════════════════════════════════════════════")
 
-
--- ══════════════════════════════════════════════════════════════════════════
--- TELEPORT RE-EXEC (LIKE INFINITE YIELD) - REQUIRES EXECUTOR SUPPORT
--- This uses queue_on_teleport / syn.queue_on_teleport if available.
--- You MUST host this script somewhere (e.g. Pastebin raw link) and put the URL below.
--- Then your executor will automatically re-run this script every time you teleport
--- to another server / world, just like Infinite Yield does.
--- ══════════════════════════════════════════════════════════════════════════
-
-local qot = queue_on_teleport
-    or (syn and syn.queue_on_teleport)
-    or (fluxus and fluxus.queue_on_teleport)
-    or (KRNL_LOADED and queue_on_teleport)
-
-if qot then
-    -- TODO: Replace the URL below with the raw URL where this FULL script is hosted.
-    -- Example: "https://pastebin.com/raw/XXXXXXXX"
-    local SCRIPT_URL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgetest"
-
-    if SCRIPT_URL ~= "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgetest" then
-        qot(string.format([[
-            loadstring(game:HttpGet("%s"))()
-        ]], SCRIPT_URL))
-        print("✅ Teleport re-exec queued via queue_on_teleport.")
-    else
-        warn("⚠ queue_on_teleport is available, but SCRIPT_URL was not set. Edit the script and set SCRIPT_URL.")
-    end
-else
-    warn("⚠ queue_on_teleport API not found in this executor. Auto re-execute on teleport is not available.")
-end
+-- (Teleport queue block removed; recommended to run via your GitHub RAW loader)
