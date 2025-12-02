@@ -1,20 +1,3 @@
---[[
-    ═══════════════════════════════════════════════════════════════════════════
-    MOB FARM v4.4 - MULTI-METHOD ATTACK SYSTEM
-    ═══════════════════════════════════════════════════════════════════════════
-    
-    CHANGES:
-    • Tries multiple attack methods in sequence:
-      1. Tool:Activate()
-      2. Remote events (Punch, Attack, Hit, etc.)
-      3. VirtualInputManager mouse clicks
-    • Automatic weapon remote detection
-    • Works when alt-tabbed
-    • Priority-based mob targeting
-    
-    ═══════════════════════════════════════════════════════════════════════════
-]]
-
 -- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -24,6 +7,13 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local Living = workspace:WaitForChild("Living")
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- HOVER POSITIONS (Your saved positions)
+-- ═══════════════════════════════════════════════════════════════════════════
+local HOVER_POSITION_1 = Vector3.new(-207.98, 84.49, -47.61)
+local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
+-- ═══════════════════════════════════════════════════════════════════════════
+
 -- Global Config
 _G.MobFarmConfig = {
     -- Settings
@@ -32,18 +22,20 @@ _G.MobFarmConfig = {
     verticalDistance = 8,
     farmDistance = 1000,
     hoverSpeed = 80,
-    acceleration = 40,
-    lockPosition = "Back",
-    unlockInterval = 0.3,
-    lastUnlockTime = 0,
+    lockPosition = "Below",
     aboveAngle = 90,
     belowAngle = 220,
     
+    -- Hover sequence
+    hoverSequenceActive = false,
+    currentHoverTarget = 1,
+    hoverReachedThreshold = 3,
+    
     -- Attack settings
-    attackMethod = "auto", -- Always use auto mode
+    attackMethod = "auto",
     weaponRemote = nil,
     lastAttackTime = 0,
-    attackCooldown = 0.25, -- Fixed at 0.25 seconds
+    attackCooldown = 0.25,
     
     -- State
     currentMob = nil,
@@ -87,8 +79,6 @@ local function startNoclip()
             end
         end
     end)
-    
-    print("✅ Noclip enabled")
 end
 
 local function stopNoclip()
@@ -104,9 +94,22 @@ local function stopNoclip()
                 end
             end
         end
-        
-        print("🔒 Noclip disabled")
     end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SAFETY HOVER (When disabling Below mode)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function safetyHoverUp()
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    
+    -- Move up 8 studs instantly
+    rootPart.CFrame = rootPart.CFrame + Vector3.new(0, 8, 0)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -191,26 +194,21 @@ local function autoEquipWeapon()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
     
-    -- Check if weapon is already equipped in character
     local weaponInChar = character:FindFirstChild("Weapon")
     if weaponInChar and weaponInChar:IsA("Tool") then
-        print("✅ Weapon already equipped")
         return true
     end
     
-    -- Check backpack for weapon
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if backpack then
         local weapon = backpack:FindFirstChild("Weapon")
         if weapon and weapon:IsA("Tool") then
             humanoid:EquipTool(weapon)
-            print("⚔️ Auto-equipped Weapon from backpack")
             task.wait(0.2)
             return true
         end
     end
     
-    print("⚠️ No weapon found in character or backpack")
     return false
 end
 
@@ -221,7 +219,6 @@ local function findWeaponRemote()
     local weapon = character:FindFirstChild("Weapon")
     if not weapon then return nil end
     
-    -- Common remote names for attacks
     local remoteNames = {"Punch", "Attack", "Hit", "Strike", "Combat", "Swing", "Fire", "Activate", "Action", "Use"}
     
     for _, remoteName in pairs(remoteNames) do
@@ -231,7 +228,6 @@ local function findWeaponRemote()
         end
     end
     
-    -- Search all descendants for any RemoteEvent
     for _, desc in pairs(weapon:GetDescendants()) do
         if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") then
             return desc
@@ -241,50 +237,17 @@ local function findWeaponRemote()
     return nil
 end
 
-local function attackWithTool()
-    local character = LocalPlayer.Character
-    if not character then return false end
-    
-    local weapon = character:FindFirstChild("Weapon")
-    if weapon and weapon:IsA("Tool") then
-        weapon:Activate()
-        return true
-    end
-    return false
-end
-
-local function attackWithRemote()
-    if not config.weaponRemote then
-        config.weaponRemote = findWeaponRemote()
-    end
-    
-    if config.weaponRemote then
-        local success = pcall(function()
-            if config.weaponRemote:IsA("RemoteEvent") then
-                config.weaponRemote:FireServer()
-            elseif config.weaponRemote:IsA("RemoteFunction") then
-                config.weaponRemote:InvokeServer()
-            end
-        end)
-        return success
-    end
-    return false
-end
-
 local function attackWithVirtualInput()
     local success = pcall(function()
-        -- Send mouse button down
         VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-        -- Small delay
         task.wait(0.01)
-        -- Send mouse button up
         VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
     end)
     return success
 end
 
 local function performAttack()
-    if not config.isLockedOn or not config.currentMob then
+    if not config.isLockedOn or not config.currentMob or config.hoverSequenceActive then
         return
     end
     
@@ -294,8 +257,6 @@ local function performAttack()
     end
     
     config.lastAttackTime = currentTime
-    
-    -- Always use auto mode (tries VirtualInput primarily)
     attackWithVirtualInput()
 end
 
@@ -379,7 +340,49 @@ local function setupPhysicsMovement()
     return true
 end
 
-local function hoverToPosition(targetPos, mob)
+local function hoverToPosition(targetPos, lookAtPos)
+    local character = LocalPlayer.Character
+    if not character then return false end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    
+    if not rootPart or not config.bodyVelocity or not config.bodyGyro then
+        return false
+    end
+    
+    local currentPos = rootPart.Position
+    local direction = (targetPos - currentPos)
+    local distance = direction.Magnitude
+    
+    if distance < config.hoverReachedThreshold then
+        config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        return true
+    end
+    
+    local speedMultiplier = math.min(distance / 10, 1)
+    local targetSpeed = config.hoverSpeed * speedMultiplier
+    
+    local desiredVelocity
+    if direction.Magnitude > 0 then
+        desiredVelocity = direction.Unit * targetSpeed
+    else
+        desiredVelocity = Vector3.new(0, 0, 0)
+    end
+    
+    local currentVelocity = config.bodyVelocity.Velocity
+    local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)
+    
+    config.bodyVelocity.Velocity = newVelocity
+    
+    if lookAtPos then
+        local lookCFrame = CFrame.new(currentPos, lookAtPos)
+        config.bodyGyro.CFrame = lookCFrame
+    end
+    
+    return false
+end
+
+local function hoverToMob(targetPos, mob)
     local character = LocalPlayer.Character
     if not character then return end
     
@@ -434,7 +437,7 @@ local function hoverToPosition(targetPos, mob)
     
     local desiredVelocity
     if direction.Magnitude > 0 then
-        desiredVelocity = direction.Unit * math.min(distance * config.acceleration, targetSpeed)
+        desiredVelocity = direction.Unit * targetSpeed
     else
         desiredVelocity = Vector3.new(0, 0, 0)
     end
@@ -490,15 +493,12 @@ local function startAutoAttack()
         if not config.enabled then return end
         performAttack()
     end)
-    
-    print("🖱️ Auto-attack started (Multi-method)")
 end
 
 local function stopAutoAttack()
     if attackLoop then
         attackLoop:Disconnect()
         attackLoop = nil
-        print("🖱️ Auto-attack stopped")
     end
 end
 
@@ -509,12 +509,12 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-    Name = "Mob Farm v4.4 - Multi-Method Attack",
-    LoadingTitle = "Loading Mob Farm",
-    LoadingSubtitle = "Multiple attack methods!",
+    Name = "Rafso's Autofarm",
+    LoadingTitle = "Loading",
+    LoadingSubtitle = "Made with no love",
     ConfigurationSaving = {
         Enabled = true,
-        FolderName = "MobFarmV44",
+        FolderName = "Farm",
         FileName = "Config"
     },
     Discord = {Enabled = false},
@@ -532,29 +532,96 @@ local keybindConnection = nil
 local characterConnection = nil
 
 local EnableToggle = MainTab:CreateToggle({
-    Name = "🤖 Enable Farm (F1)",
+    Name = "Enable Farm [F1]",
     CurrentValue = false,
     Flag = "EnableToggle",
     Callback = function(Value)
         config.enabled = Value
         
         if Value then
+            local character = LocalPlayer.Character
+            if character then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    -- Check if we're close to a mob
+                    local closestMob = getClosestMob()
+                    
+                    if closestMob then
+                        local mobRoot = closestMob:FindFirstChild("HumanoidRootPart")
+                        if mobRoot then
+                            local distToMob = (rootPart.Position - mobRoot.Position).Magnitude
+                            local distToPos2 = (rootPart.Position - HOVER_POSITION_2).Magnitude
+                            
+                            -- If closer to mob than to position 2, skip hover sequence
+                            if distToMob < distToPos2 then
+                                config.hoverSequenceActive = false
+                                config.currentHoverTarget = 3
+                            else
+                                -- Otherwise go through hover sequence
+                                local distToPos1 = (rootPart.Position - HOVER_POSITION_1).Magnitude
+                                
+                                if distToPos2 < distToPos1 then
+                                    config.hoverSequenceActive = true
+                                    config.currentHoverTarget = 2
+                                else
+                                    config.hoverSequenceActive = true
+                                    config.currentHoverTarget = 1
+                                end
+                            end
+                        else
+                            -- No mob root, use default hover sequence
+                            local distToPos1 = (rootPart.Position - HOVER_POSITION_1).Magnitude
+                            local distToPos2 = (rootPart.Position - HOVER_POSITION_2).Magnitude
+                            
+                            if distToPos2 < distToPos1 then
+                                config.hoverSequenceActive = true
+                                config.currentHoverTarget = 2
+                            else
+                                config.hoverSequenceActive = true
+                                config.currentHoverTarget = 1
+                            end
+                        end
+                    else
+                        -- No mob found, use default hover sequence
+                        local distToPos1 = (rootPart.Position - HOVER_POSITION_1).Magnitude
+                        local distToPos2 = (rootPart.Position - HOVER_POSITION_2).Magnitude
+                        
+                        if distToPos2 < distToPos1 then
+                            config.hoverSequenceActive = true
+                            config.currentHoverTarget = 2
+                        else
+                            config.hoverSequenceActive = true
+                            config.currentHoverTarget = 1
+                        end
+                    end
+                else
+                    config.hoverSequenceActive = true
+                    config.currentHoverTarget = 1
+                end
+            else
+                config.hoverSequenceActive = true
+                config.currentHoverTarget = 1
+            end
+            
             setupPhysicsMovement()
             startNoclip()
             startAutoAttack()
-            print("✅ Farm ENABLED!")
         else
+            if config.lockPosition == "Below" then
+                safetyHoverUp()
+            end
+            
             stopAutoAttack()
             stopNoclip()
             cleanupPhysicsMovement()
             config.currentMob = nil
-            print("❌ Farm DISABLED")
+            config.hoverSequenceActive = false
         end
     end,
 })
 
 local MobDropdown = MainTab:CreateDropdown({
-    Name = "Select Mobs to Farm (Priority Order)",
+    Name = "Select Mobs [Priority Order]",
     Options = {},
     CurrentOption = {},
     MultipleOptions = true,
@@ -572,8 +639,6 @@ local MobDropdown = MainTab:CreateDropdown({
                 end
             end
         end
-        
-        print("📋 Enabled mobs:", table.concat(Options, ", "))
     end,
 })
 
@@ -584,7 +649,7 @@ end
 MobDropdown:Refresh(mobNames, mobNames)
 
 MainTab:CreateButton({
-    Name = "🗑️ Destroy GUI",
+    Name = "Destroy GUI",
     Callback = function()
         config.enabled = false
         stopAutoAttack()
@@ -597,7 +662,6 @@ MainTab:CreateButton({
         
         _G.MobFarmConfig = nil
         Rayfield:Destroy()
-        print("✅ GUI Destroyed!")
     end,
 })
 
@@ -632,19 +696,8 @@ SettingsTab:CreateSlider({
     end,
 })
 
-SettingsTab:CreateSlider({
-    Name = "Acceleration",
-    Range = {10, 80},
-    Increment = 5,
-    CurrentValue = 40,
-    Flag = "Acceleration",
-    Callback = function(Value) 
-        config.acceleration = Value 
-    end,
-})
-
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN FARM LOOP
+-- MAIN FARM LOOP WITH HOVER SEQUENCE
 -- ═══════════════════════════════════════════════════════════════════════════
 
 farmLoop = RunService.Heartbeat:Connect(function()
@@ -653,6 +706,24 @@ farmLoop = RunService.Heartbeat:Connect(function()
     if not config.bodyVelocity or not config.bodyGyro then
         setupPhysicsMovement()
         return
+    end
+    
+    if config.hoverSequenceActive then
+        if config.currentHoverTarget == 1 then
+            local reached = hoverToPosition(HOVER_POSITION_1, HOVER_POSITION_2)
+            if reached then
+                config.currentHoverTarget = 2
+            end
+            return
+            
+        elseif config.currentHoverTarget == 2 then
+            local reached = hoverToPosition(HOVER_POSITION_2, nil)
+            if reached then
+                config.currentHoverTarget = 3
+                config.hoverSequenceActive = false
+            end
+            return
+        end
     end
     
     local needNewMob = false
@@ -670,9 +741,8 @@ farmLoop = RunService.Heartbeat:Connect(function()
         local newMob = getClosestMob()
         
         if newMob then
-            print("🎯 New target:", newMob.Name)
             config.currentMob = newMob
-            config.weaponRemote = nil -- Reset remote for new mob
+            config.weaponRemote = nil
             
             if not config.bodyVelocity or not config.bodyGyro then
                 setupPhysicsMovement()
@@ -688,12 +758,11 @@ farmLoop = RunService.Heartbeat:Connect(function()
     if config.currentMob then
         local lockPos = getLockPosition(config.currentMob)
         if lockPos then
-            hoverToPosition(lockPos, config.currentMob)
+            hoverToMob(lockPos, config.currentMob)
         end
     end
 end)
 
--- F1 Keybind
 keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
@@ -703,11 +772,11 @@ keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProc
     end
 end)
 
--- Cleanup on character respawn
 characterConnection = LocalPlayer.CharacterAdded:Connect(function()
     config.currentMob = nil
     config.isLockedOn = false
     config.weaponRemote = nil
+    config.hoverSequenceActive = false
     cleanupPhysicsMovement()
     stopNoclip()
     
@@ -716,15 +785,5 @@ characterConnection = LocalPlayer.CharacterAdded:Connect(function()
         setupPhysicsMovement()
         startNoclip()
         autoEquipWeapon()
-        print("⚔️ Re-equipped after respawn")
     end
 end)
-
-print("═══════════════════════════════════════════════════════")
-print("MOB FARM v4.4 - SIMPLIFIED AUTO ATTACK!")
-print("✅ VirtualInputManager clicks (works alt-tabbed)")
-print("✅ Attack cooldown: 0.25 seconds")
-print("✅ Vertical distance: 8 studs (fixed)")
-print("✅ Auto-equips weapon")
-print("• Press F1 to start!")
-print("═══════════════════════════════════════════════════════")
