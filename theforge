@@ -10,7 +10,7 @@ local Living = workspace:WaitForChild("Living")
 -- ═══════════════════════════════════════════════════════════════════════════
 -- HOVER POSITIONS (Your saved positions)
 -- ═══════════════════════════════════════════════════════════════════════════
-local HOVER_POSITION_1 = Vector3.new(-207.98, 84.49, -47.61)
+local HOVER_HEIGHT = 85  -- Changed: Now just hovers to Y85 instead of fixed position
 local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -30,12 +30,15 @@ _G.MobFarmConfig = {
     hoverSequenceActive = false,
     currentHoverTarget = 1,
     hoverReachedThreshold = 3,
+    hoverPosition1 = nil,  -- NEW: Dynamic Y85 position
     
     -- Attack settings
     attackMethod = "auto",
     weaponRemote = nil,
     lastAttackTime = 0,
     attackCooldown = 0.25,
+    lastWeaponCheckTime = 0,  -- NEW: For continuous weapon check
+    weaponCheckInterval = 0.5,  -- NEW: Check weapon every 0.5 seconds
     
     -- State
     currentMob = nil,
@@ -43,6 +46,7 @@ _G.MobFarmConfig = {
     bodyVelocity = nil,
     bodyGyro = nil,
     noclipLoop = nil,
+    isRespawning = false,  -- NEW: Track if we're in respawn delay
     
     -- Mob types (PRIORITY ORDER - Top = Highest Priority)
     mobTypes = {
@@ -210,6 +214,19 @@ local function autoEquipWeapon()
     end
     
     return false
+end
+
+-- NEW: Continuous weapon check function
+local function checkAndEquipWeapon()
+    if not config.enabled then return end
+    
+    local currentTime = tick()
+    if currentTime - config.lastWeaponCheckTime < config.weaponCheckInterval then
+        return
+    end
+    
+    config.lastWeaponCheckTime = currentTime
+    autoEquipWeapon()
 end
 
 local function findWeaponRemote()
@@ -480,6 +497,7 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local attackLoop = nil
+local weaponCheckLoop = nil  -- NEW: Separate loop for weapon checking
 
 local function startAutoAttack()
     if attackLoop then return end
@@ -493,12 +511,26 @@ local function startAutoAttack()
         if not config.enabled then return end
         performAttack()
     end)
+    
+    -- NEW: Start continuous weapon check loop
+    if not weaponCheckLoop then
+        weaponCheckLoop = RunService.Heartbeat:Connect(function()
+            if not config.enabled then return end
+            checkAndEquipWeapon()
+        end)
+    end
 end
 
 local function stopAutoAttack()
     if attackLoop then
         attackLoop:Disconnect()
         attackLoop = nil
+    end
+    
+    -- NEW: Stop weapon check loop
+    if weaponCheckLoop then
+        weaponCheckLoop:Disconnect()
+        weaponCheckLoop = nil
     end
 end
 
@@ -543,6 +575,9 @@ local EnableToggle = MainTab:CreateToggle({
             if character then
                 local rootPart = character:FindFirstChild("HumanoidRootPart")
                 if rootPart then
+                    -- CHANGED: Create dynamic Y85 hover position based on current location
+                    config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+                    
                     -- Check if we're close to a mob
                     local closestMob = getClosestMob()
                     
@@ -557,42 +592,19 @@ local EnableToggle = MainTab:CreateToggle({
                                 config.hoverSequenceActive = false
                                 config.currentHoverTarget = 3
                             else
-                                -- Otherwise go through hover sequence
-                                local distToPos1 = (rootPart.Position - HOVER_POSITION_1).Magnitude
-                                
-                                if distToPos2 < distToPos1 then
-                                    config.hoverSequenceActive = true
-                                    config.currentHoverTarget = 2
-                                else
-                                    config.hoverSequenceActive = true
-                                    config.currentHoverTarget = 1
-                                end
-                            end
-                        else
-                            -- No mob root, use default hover sequence
-                            local distToPos1 = (rootPart.Position - HOVER_POSITION_1).Magnitude
-                            local distToPos2 = (rootPart.Position - HOVER_POSITION_2).Magnitude
-                            
-                            if distToPos2 < distToPos1 then
-                                config.hoverSequenceActive = true
-                                config.currentHoverTarget = 2
-                            else
+                                -- Start hover sequence (Y85 then position 2)
                                 config.hoverSequenceActive = true
                                 config.currentHoverTarget = 1
                             end
-                        end
-                    else
-                        -- No mob found, use default hover sequence
-                        local distToPos1 = (rootPart.Position - HOVER_POSITION_1).Magnitude
-                        local distToPos2 = (rootPart.Position - HOVER_POSITION_2).Magnitude
-                        
-                        if distToPos2 < distToPos1 then
-                            config.hoverSequenceActive = true
-                            config.currentHoverTarget = 2
                         else
+                            -- No mob root, use default hover sequence
                             config.hoverSequenceActive = true
                             config.currentHoverTarget = 1
                         end
+                    else
+                        -- No mob found, use default hover sequence
+                        config.hoverSequenceActive = true
+                        config.currentHoverTarget = 1
                     end
                 else
                     config.hoverSequenceActive = true
@@ -672,7 +684,7 @@ MainTab:CreateButton({
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
 
 SettingsTab:CreateDropdown({
-    Name = "Lock Position",
+    Name = "Lock Position [Lifesteal recommended to survive lava]",
     Options = {"Back", "Front", "Above", "Below"},
     CurrentOption = "Back",
     Flag = "LockPosition",
@@ -703,14 +715,18 @@ SettingsTab:CreateSlider({
 farmLoop = RunService.Heartbeat:Connect(function()
     if not config.enabled then return end
     
+    -- NEW: Don't run farm loop during respawn delay
+    if config.isRespawning then return end
+    
     if not config.bodyVelocity or not config.bodyGyro then
         setupPhysicsMovement()
         return
     end
     
     if config.hoverSequenceActive then
+        -- CHANGED: Use dynamic Y85 position instead of fixed position
         if config.currentHoverTarget == 1 then
-            local reached = hoverToPosition(HOVER_POSITION_1, HOVER_POSITION_2)
+            local reached = hoverToPosition(config.hoverPosition1, HOVER_POSITION_2)
             if reached then
                 config.currentHoverTarget = 2
             end
@@ -772,18 +788,36 @@ keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProc
     end
 end)
 
-characterConnection = LocalPlayer.CharacterAdded:Connect(function()
+characterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
+    -- Immediately stop all farming activities
     config.currentMob = nil
     config.isLockedOn = false
     config.weaponRemote = nil
-    config.hoverSequenceActive = false
+    config.isRespawning = true  -- NEW: Set respawning flag
     cleanupPhysicsMovement()
     stopNoclip()
     
     if config.enabled then
-        task.wait(2)
+        -- Wait 5 seconds before restarting
+        task.wait(3)
+        
+        -- ALWAYS reset hover sequence when respawning
+        local rootPart = character:WaitForChild("HumanoidRootPart", 5)
+        if rootPart then
+            -- Create new Y85 hover position from spawn location
+            config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+            
+            -- Always start from the beginning: Y85 -> Position 2 -> Farm
+            config.hoverSequenceActive = true
+            config.currentHoverTarget = 1
+        end
+        
         setupPhysicsMovement()
         startNoclip()
         autoEquipWeapon()
+        
+        config.isRespawning = false  -- NEW: Clear respawning flag
+    else
+        config.isRespawning = false  -- NEW: Clear respawning flag even if disabled
     end
 end)
