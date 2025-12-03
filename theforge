@@ -1,3 +1,7 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- RAYFIELD FARM & MINE SCRIPT - PART 1: CORE SETUP & CONFIG
+-- ═══════════════════════════════════════════════════════════════════════════
+
 -- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,15 +12,16 @@ local LocalPlayer = Players.LocalPlayer
 local Living = workspace:WaitForChild("Living")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- HOVER POSITIONS (Your saved positions)
+-- HOVER POSITIONS
 -- ═══════════════════════════════════════════════════════════════════════════
-local HOVER_HEIGHT = 85  -- Changed: Now just hovers to Y85 instead of fixed position
+local HOVER_HEIGHT = 85
 local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
--- ═══════════════════════════════════════════════════════════════════════════
 
--- Global Config
+-- ═══════════════════════════════════════════════════════════════════════════
+-- GLOBAL CONFIG
+-- ═══════════════════════════════════════════════════════════════════════════
 _G.MobFarmConfig = {
-    -- Settings
+    -- Farming settings
     enabled = false,
     behindDistance = 8,
     verticalDistance = 8,
@@ -24,21 +29,20 @@ _G.MobFarmConfig = {
     hoverSpeed = 80,
     lockPosition = "Below",
     aboveAngle = 90,
-    belowAngle = 220,
+    belowAngle = 240,
     
     -- Hover sequence
     hoverSequenceActive = false,
     currentHoverTarget = 1,
     hoverReachedThreshold = 3,
-    hoverPosition1 = nil,  -- NEW: Dynamic Y85 position
+    hoverPosition1 = nil,
     
     -- Attack settings
-    attackMethod = "auto",
     weaponRemote = nil,
     lastAttackTime = 0,
     attackCooldown = 0.25,
-    lastWeaponCheckTime = 0,  -- NEW: For continuous weapon check
-    weaponCheckInterval = 0.5,  -- NEW: Check weapon every 0.5 seconds
+    lastWeaponCheckTime = 0,
+    weaponCheckInterval = 0.5,
     
     -- State
     currentMob = nil,
@@ -46,9 +50,9 @@ _G.MobFarmConfig = {
     bodyVelocity = nil,
     bodyGyro = nil,
     noclipLoop = nil,
-    isRespawning = false,  -- NEW: Track if we're in respawn delay
+    isRespawning = false,
     
-    -- Mob types (PRIORITY ORDER - Top = Highest Priority)
+    -- Mob types
     mobTypes = {
         {name = "Reaper", pattern = "^Reaper%d+$", enabled = false, priority = 1},
         {name = "Blazing Slime", pattern = "^Blazing Slime%d+$", enabled = false, priority = 2},
@@ -59,9 +63,54 @@ _G.MobFarmConfig = {
         {name = "Skeleton Rogue", pattern = "^Skeleton Rogue%d+$", enabled = false, priority = 7},
         {name = "Bomber", pattern = "^Bomber%d+$", enabled = false, priority = 8},
         {name = "Slime", pattern = "^Slime%d+$", enabled = false, priority = 9},
+    },
+    
+    -- Mining system
+    miningEnabled = false,
+    miningVerticalDistance = 6,
+    miningAngle = 270,
+    currentRock = nil,
+    lastMineTime = 0,
+    miningCooldown = 0.1,
+    lastPickaxeCheckTime = 0,
+    pickaxeCheckInterval = 0.5,
+    miningBodyVelocity = nil,
+    miningBodyGyro = nil,
+    ignoreGoblinCave = true,
+    
+    -- ✅ NEW: Rock damage tracking
+    rockDurabilityCheck = 0,
+    rockDurabilityCheckInterval = 3,  -- Check every 3 seconds
+    lastRockDurability = nil,
+    ignoredRocks = {},  -- Table to store rocks being mined by others
+    
+    -- Rock types (PRIORITY ORDER)
+    rockTypes = {
+        {name = "Volcanic Rock", enabled = false, priority = 1},
+        {name = "Earth Crystal", enabled = false, priority = 2},
+        {name = "Violet Crystal", enabled = false, priority = 3},
+        {name = "Crimson Crystal", enabled = false, priority = 4},
+        {name = "Light Crystal", enabled = false, priority = 5},
+        {name = "Cyan Crystal", enabled = false, priority = 6},
+        {name = "Basalt Vein", enabled = false, priority = 7},
+        {name = "Basalt Core", enabled = false, priority = 8},
+        {name = "Basalt Rock", enabled = false, priority = 9},
+        {name = "Boulder", enabled = false, priority = 10},
+        {name = "Rock", enabled = false, priority = 11},
+        {name = "Pebble", enabled = false, priority = 12},
     }
 }
 
+local config = _G.MobFarmConfig
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PART 2: NOCLIP & MOB/ROCK DETECTION (WITH TRANSPARENCY + IGNORE GOBLIN CAVE + DAMAGE CHECK)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Living = workspace:WaitForChild("Living")
 local config = _G.MobFarmConfig
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -72,7 +121,7 @@ local function startNoclip()
     if config.noclipLoop then return end
     
     config.noclipLoop = RunService.Stepped:Connect(function()
-        if not config.enabled then return end
+        if not config.enabled and not config.miningEnabled then return end
         
         local character = LocalPlayer.Character
         if not character then return end
@@ -102,21 +151,6 @@ local function stopNoclip()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- SAFETY HOVER (When disabling Below mode)
--- ═══════════════════════════════════════════════════════════════════════════
-
-local function safetyHoverUp()
-    local character = LocalPlayer.Character
-    if not character then return end
-    
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return end
-    
-    -- Move up 8 studs instantly
-    rootPart.CFrame = rootPart.CFrame + Vector3.new(0, 8, 0)
-end
-
--- ═══════════════════════════════════════════════════════════════════════════
 -- MOB DETECTION
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -124,17 +158,9 @@ local function isValidMob(mob)
     local humanoid = mob:FindFirstChildOfClass("Humanoid")
     local rootPart = mob:FindFirstChild("HumanoidRootPart")
     
-    if not humanoid or not rootPart then
-        return false
-    end
-    
-    if humanoid.Health <= 0 then
-        return false
-    end
-    
-    if Players:GetPlayerFromCharacter(mob) then
-        return false
-    end
+    if not humanoid or not rootPart then return false end
+    if humanoid.Health <= 0 then return false end
+    if Players:GetPlayerFromCharacter(mob) then return false end
     
     return true
 end
@@ -188,7 +214,186 @@ local function getClosestMob()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- WEAPON & ATTACK SYSTEM
+-- ROCK DETECTION (FOR MINING) - WITH IGNORED ROCKS CHECK
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function isValidRock(durabilityModel)
+    if not durabilityModel:IsA("Model") then return false end
+    if not durabilityModel.Parent then return false end
+    
+    -- Check if this durability model has ANY MeshPart (Rock, 3.001, 13.001, etc)
+    local hasMeshPart = durabilityModel:FindFirstChildOfClass("MeshPart") ~= nil
+    
+    return hasMeshPart
+end
+
+-- ✅ NEW: Check if rock is in ignored list
+local function isRockIgnored(rock)
+    for _, ignoredRock in ipairs(config.ignoredRocks) do
+        if ignoredRock == rock then
+            return true
+        end
+    end
+    return false
+end
+
+local function getRockPriority(rockTypeName)
+    for _, rockData in ipairs(config.rockTypes) do
+        if rockData.enabled and rockTypeName == rockData.name then
+            return rockData.priority
+        end
+    end
+    return 999
+end
+
+local function getRockPosition(durabilityModel)
+    -- Try to find a part named "Rock" first (for Volcanic Rock)
+    local rockPart = durabilityModel:FindFirstChild("Rock")
+    if rockPart and rockPart:IsA("BasePart") then
+        return rockPart
+    end
+    
+    -- Otherwise, use the Hitbox from the parent rock type model
+    local rockTypeModel = durabilityModel.Parent
+    if rockTypeModel then
+        local hitbox = rockTypeModel:FindFirstChild("Hitbox")
+        if hitbox and hitbox:IsA("BasePart") then
+            return hitbox
+        end
+    end
+    
+    -- Fallback: use any MeshPart in the durability model
+    local meshPart = durabilityModel:FindFirstChildOfClass("MeshPart")
+    if meshPart then
+        return meshPart
+    end
+    
+    return nil
+end
+
+-- ✅ NEW: Get rock durability (the model name is the durability number)
+local function getRockDurability(rock)
+    if not rock then return nil end
+    return tonumber(rock.Name)
+end
+
+local function getClosestRock()
+    local character = LocalPlayer.Character
+    if not character then 
+        return nil 
+    end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then 
+        return nil 
+    end
+    
+    local rocksFolder = workspace:FindFirstChild("Rocks")
+    if not rocksFolder then
+        return nil
+    end
+    
+    local closestRock = nil
+    local closestDistance = config.farmDistance
+    local highestPriority = 999
+    
+    -- Loop through all island folders
+    for _, islandFolder in pairs(rocksFolder:GetChildren()) do
+        if islandFolder:IsA("Folder") then
+            -- ✅ Skip Goblin Cave if toggle is enabled
+            if config.ignoreGoblinCave and islandFolder.Name == "Island2GoblinCave" then
+                continue
+            end
+            
+            -- Loop through all SpawnLocation parts
+            for _, spawnPart in pairs(islandFolder:GetChildren()) do
+                if spawnPart:IsA("Part") and spawnPart.Name == "SpawnLocation" then
+                    -- Check if this SpawnLocation has spawned rock models as children
+                    for _, rockTypeModel in pairs(spawnPart:GetChildren()) do
+                        if rockTypeModel:IsA("Model") then
+                            local rockTypeName = rockTypeModel.Name
+                            local priority = getRockPriority(rockTypeName)
+                            
+                            if priority < 999 then -- Rock type is enabled
+                                -- Look for durability models inside (100, 80, 60, etc)
+                                for _, durabilityModel in pairs(rockTypeModel:GetChildren()) do
+                                    if durabilityModel:IsA("Model") and tonumber(durabilityModel.Name) then
+                                        -- ✅ NEW: Skip ignored rocks
+                                        if not isRockIgnored(durabilityModel) and isValidRock(durabilityModel) then
+                                            local positionPart = getRockPosition(durabilityModel)
+                                            if positionPart then
+                                                local distance = (rootPart.Position - positionPart.Position).Magnitude
+                                                
+                                                if distance <= config.farmDistance then
+                                                    if priority < highestPriority or (priority == highestPriority and distance < closestDistance) then
+                                                        closestRock = durabilityModel
+                                                        closestDistance = distance
+                                                        highestPriority = priority
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return closestRock
+end
+
+local function makeRockTransparent(rock)
+    if not rock then return end
+    
+    -- Make all parts in the rock transparent
+    for _, descendant in pairs(rock:GetDescendants()) do
+        if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+            descendant.Transparency = 0.7
+        end
+    end
+    
+    -- Also make parent rock type model transparent
+    local rockTypeModel = rock.Parent
+    if rockTypeModel then
+        for _, descendant in pairs(rockTypeModel:GetDescendants()) do
+            if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+                descendant.Transparency = 0.7
+            end
+        end
+    end
+end
+
+-- Store functions globally
+_G.FarmFunctions = {
+    startNoclip = startNoclip,
+    stopNoclip = stopNoclip,
+    getClosestMob = getClosestMob,
+    getClosestRock = getClosestRock,
+    isValidMob = isValidMob,
+    isValidRock = isValidRock,
+    getRockPosition = getRockPosition,
+    getRockDurability = getRockDurability,  -- ✅ NEW
+    isRockIgnored = isRockIgnored,  -- ✅ NEW
+    makeRockTransparent = makeRockTransparent,
+}
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PART 3: WEAPON SYSTEM & PHYSICS MOVEMENT (FIXED - MINING ATTACK SYSTEM)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local LocalPlayer = Players.LocalPlayer
+local config = _G.MobFarmConfig
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- WEAPON & TOOL SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local function autoEquipWeapon()
@@ -216,45 +421,34 @@ local function autoEquipWeapon()
     return false
 end
 
--- NEW: Continuous weapon check function
-local function checkAndEquipWeapon()
-    if not config.enabled then return end
-    
-    local currentTime = tick()
-    if currentTime - config.lastWeaponCheckTime < config.weaponCheckInterval then
-        return
-    end
-    
-    config.lastWeaponCheckTime = currentTime
-    autoEquipWeapon()
-end
-
-local function findWeaponRemote()
+local function autoEquipPickaxe()
     local character = LocalPlayer.Character
-    if not character then return nil end
+    if not character then return false end
     
-    local weapon = character:FindFirstChild("Weapon")
-    if not weapon then return nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return false end
     
-    local remoteNames = {"Punch", "Attack", "Hit", "Strike", "Combat", "Swing", "Fire", "Activate", "Action", "Use"}
+    -- ✅ Check if pickaxe is already equipped
+    local pickaxeInChar = character:FindFirstChild("Pickaxe")
+    if pickaxeInChar and pickaxeInChar:IsA("Tool") then
+        return true
+    end
     
-    for _, remoteName in pairs(remoteNames) do
-        local remote = weapon:FindFirstChild(remoteName, true)
-        if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
-            return remote
+    -- ✅ Try to equip from backpack
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if backpack then
+        local pickaxe = backpack:FindFirstChild("Pickaxe")
+        if pickaxe and pickaxe:IsA("Tool") then
+            humanoid:EquipTool(pickaxe)
+            task.wait(0.2)
+            return true
         end
     end
     
-    for _, desc in pairs(weapon:GetDescendants()) do
-        if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") then
-            return desc
-        end
-    end
-    
-    return nil
+    return false
 end
 
-local function attackWithVirtualInput()
+local function clickMouse()
     local success = pcall(function()
         VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
         task.wait(0.01)
@@ -274,48 +468,36 @@ local function performAttack()
     end
     
     config.lastAttackTime = currentTime
-    attackWithVirtualInput()
+    clickMouse()
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
--- POSITION & MOVEMENT
--- ═══════════════════════════════════════════════════════════════════════════
-
-local function getLockPosition(mob)
-    local mobRoot = mob:FindFirstChild("HumanoidRootPart")
-    if not mobRoot then return nil end
+-- ✅ NEW: Mining function that works like farming (no distance check, just mine when locked)
+local function performMine()
+    if not config.currentRock then return end
+    if not config.miningEnabled then return end
     
-    local distance = config.behindDistance
-    local verticalDist = config.verticalDistance
-    local mobPos = mobRoot.Position
-    local targetPos
+    local character = LocalPlayer.Character
+    if not character then return end
     
-    if config.lockPosition == "Back" then
-        local behindOffset = -mobRoot.CFrame.LookVector * distance
-        targetPos = mobPos + behindOffset
-        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
-        
-    elseif config.lockPosition == "Front" then
-        local frontOffset = mobRoot.CFrame.LookVector * distance
-        targetPos = mobPos + frontOffset
-        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
-        
-    elseif config.lockPosition == "Above" then
-        targetPos = mobPos + Vector3.new(0, verticalDist, 0)
-        
-    elseif config.lockPosition == "Below" then
-        targetPos = mobPos + Vector3.new(0, -verticalDist, 0)
-        if targetPos.Y < mobPos.Y - 20 then
-            targetPos = Vector3.new(targetPos.X, mobPos.Y - 20, targetPos.Z)
-        end
-    else
-        local behindOffset = -mobRoot.CFrame.LookVector * distance
-        targetPos = mobPos + behindOffset
-        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+    -- ✅ Make sure pickaxe is equipped before mining
+    local pickaxe = character:FindFirstChild("Pickaxe")
+    if not pickaxe then
+        autoEquipPickaxe()
+        return
     end
     
-    return targetPos
+    local currentTime = tick()
+    if currentTime - config.lastMineTime < config.miningCooldown then
+        return
+    end
+    
+    config.lastMineTime = currentTime
+    clickMouse()
 end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PHYSICS MOVEMENT
+-- ═══════════════════════════════════════════════════════════════════════════
 
 local function setupPhysicsMovement()
     local character = LocalPlayer.Character
@@ -335,14 +517,15 @@ local function setupPhysicsMovement()
     bv.Name = "FarmVelocity"
     bv.MaxForce = Vector3.new(9e9, 9e9, 9e9)
     bv.Velocity = Vector3.new(0, 0, 0)
+    bv.P = 1250
     bv.Parent = rootPart
     config.bodyVelocity = bv
     
     local bg = Instance.new("BodyGyro")
     bg.Name = "FarmGyro"
     bg.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-    bg.P = 10000
-    bg.D = 500
+    bg.P = 30000
+    bg.D = 1000
     bg.Parent = rootPart
     config.bodyGyro = bg
     
@@ -352,10 +535,115 @@ local function setupPhysicsMovement()
     if humanoid then
         humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
         humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+        humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, true)
+        humanoid:ChangeState(Enum.HumanoidStateType.Physics)
     end
     
     return true
 end
+
+local function cleanupPhysicsMovement()
+    if config.bodyVelocity then
+        config.bodyVelocity:Destroy()
+        config.bodyVelocity = nil
+    end
+    if config.bodyGyro then
+        config.bodyGyro:Destroy()
+        config.bodyGyro = nil
+    end
+    
+    local character = LocalPlayer.Character
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            rootPart.Anchored = false
+            rootPart.Velocity = Vector3.new(0, 0, 0)
+        end
+        
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Flying, true)
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            task.wait(0.1)
+            humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+        end
+    end
+    
+    config.isLockedOn = false
+end
+
+-- Store functions globally
+_G.FarmFunctions.autoEquipWeapon = autoEquipWeapon
+_G.FarmFunctions.autoEquipPickaxe = autoEquipPickaxe
+_G.FarmFunctions.performAttack = performAttack
+_G.FarmFunctions.performMine = performMine
+_G.FarmFunctions.setupPhysicsMovement = setupPhysicsMovement
+_G.FarmFunctions.cleanupPhysicsMovement = cleanupPhysicsMovement
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PART 4: MOVEMENT LOGIC & HOVERING (WITH CONFIGURABLE MINING ANGLE)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local config = _G.MobFarmConfig
+
+local HOVER_HEIGHT = 85
+local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- POSITION CALCULATION
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function getLockPosition(mob)
+    local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+    if not mobRoot then return nil end
+    
+    local distance = config.behindDistance
+    local verticalDist = config.verticalDistance
+    local mobPos = mobRoot.Position
+    local targetPos
+    
+    if config.lockPosition == "Back" then
+        local behindOffset = -mobRoot.CFrame.LookVector * distance
+        targetPos = mobPos + behindOffset
+        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+    elseif config.lockPosition == "Front" then
+        local frontOffset = mobRoot.CFrame.LookVector * distance
+        targetPos = mobPos + frontOffset
+        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+    elseif config.lockPosition == "Above" then
+        targetPos = mobPos + Vector3.new(0, verticalDist, 0)
+    elseif config.lockPosition == "Below" then
+        targetPos = mobPos + Vector3.new(0, -verticalDist, 0)
+    else
+        local behindOffset = -mobRoot.CFrame.LookVector * distance
+        targetPos = mobPos + behindOffset
+        targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+    end
+    
+    return targetPos
+end
+
+local function getMiningPosition(rock)
+    if not rock then return nil end
+    
+    local positionPart = _G.FarmFunctions.getRockPosition(rock)
+    if not positionPart then 
+        return nil 
+    end
+    
+    local rockPos = positionPart.Position
+    local targetPos = rockPos + Vector3.new(0, -config.miningVerticalDistance, 0)
+    
+    return targetPos
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- HOVER MOVEMENT
+-- ═══════════════════════════════════════════════════════════════════════════
 
 local function hoverToPosition(targetPos, lookAtPos)
     local character = LocalPlayer.Character
@@ -379,13 +667,7 @@ local function hoverToPosition(targetPos, lookAtPos)
     local speedMultiplier = math.min(distance / 10, 1)
     local targetSpeed = config.hoverSpeed * speedMultiplier
     
-    local desiredVelocity
-    if direction.Magnitude > 0 then
-        desiredVelocity = direction.Unit * targetSpeed
-    else
-        desiredVelocity = Vector3.new(0, 0, 0)
-    end
-    
+    local desiredVelocity = direction.Unit * targetSpeed
     local currentVelocity = config.bodyVelocity.Velocity
     local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)
     
@@ -414,109 +696,151 @@ local function hoverToMob(targetPos, mob)
     local direction = (targetPos - currentPos)
     local distance = direction.Magnitude
     
-    if distance < 3 then
-        config.isLockedOn = true
-    else
-        config.isLockedOn = false
-    end
+    config.isLockedOn = distance < 3
     
     if (config.lockPosition == "Above" or config.lockPosition == "Below") and distance < 3 then
         config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-        config.bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
         
         if config.lockPosition == "Above" then
             local angle = math.rad(config.aboveAngle)
             local downCFrame = CFrame.new(currentPos) * CFrame.Angles(-angle, 0, 0)
             config.bodyGyro.CFrame = downCFrame
-            config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-            config.bodyGyro.P = 50000
         else
             local angle = math.rad(config.belowAngle)
             local upCFrame = CFrame.new(currentPos) * CFrame.Angles(angle, math.rad(180), 0)
             config.bodyGyro.CFrame = upCFrame
-            config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-            config.bodyGyro.P = 50000
         end
-        
         return
     end
     
-    local bobbing = 0
-    if config.lockPosition ~= "Above" and config.lockPosition ~= "Below" then
-        bobbing = math.sin(tick() * 2) * 0.3
-    end
-    
-    local bobbedTarget = targetPos + Vector3.new(0, bobbing, 0)
-    direction = (bobbedTarget - currentPos)
-    
     local speedMultiplier = math.min(distance / 10, 1)
     local targetSpeed = config.hoverSpeed * speedMultiplier
-    
-    local desiredVelocity
-    if direction.Magnitude > 0 then
-        desiredVelocity = direction.Unit * targetSpeed
-    else
-        desiredVelocity = Vector3.new(0, 0, 0)
-    end
-    
-    local currentVelocity = config.bodyVelocity.Velocity
-    local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)
+    local desiredVelocity = direction.Unit * targetSpeed
+    local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.3)
     
     config.bodyVelocity.Velocity = newVelocity
     
-    local lookAtPos = mobRoot.Position
-    local lookCFrame = CFrame.new(currentPos, lookAtPos)
-    config.bodyGyro.CFrame = lookCFrame
-    config.bodyGyro.P = 10000
+    local lookCFrame = CFrame.new(currentPos, mobRoot.Position)
+    config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.3)
 end
 
-local function cleanupPhysicsMovement()
-    if config.bodyVelocity then
-        config.bodyVelocity:Destroy()
-        config.bodyVelocity = nil
-    end
-    if config.bodyGyro then
-        config.bodyGyro:Destroy()
-        config.bodyGyro = nil
+local function hoverToRock(targetPos, rock)
+    if not targetPos then 
+        return 
     end
     
     local character = LocalPlayer.Character
-    if character then
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if rootPart then
-            rootPart.Anchored = false
-            rootPart.Velocity = Vector3.new(0, 0, 0)
-        end
+    if not character then return end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    
+    if not rootPart or not config.bodyVelocity or not config.bodyGyro then
+        return
     end
     
-    config.isLockedOn = false
+    local currentPos = rootPart.Position
+    local direction = (targetPos - currentPos)
+    local distance = direction.Magnitude
+    
+    if distance < 3 then
+        config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        
+        -- ✅ USE CONFIGURABLE MINING ANGLE (0-360 degrees)
+        local angle = math.rad(config.miningAngle)
+        local lookCFrame = CFrame.new(currentPos) * CFrame.Angles(angle, math.rad(180), 0)
+        config.bodyGyro.CFrame = lookCFrame
+        config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+        config.bodyGyro.P = 50000
+        return
+    end
+    
+    local speedMultiplier = math.min(distance / 10, 1)
+    local targetSpeed = config.hoverSpeed * speedMultiplier
+    local desiredVelocity = direction.Unit * targetSpeed
+    local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.5)
+    
+    config.bodyVelocity.Velocity = newVelocity
+    
+    -- Get position part for looking at rock while moving
+    local positionPart = _G.FarmFunctions.getRockPosition(rock)
+    if positionPart then
+        local lookCFrame = CFrame.new(currentPos, positionPart.Position)
+        config.bodyGyro.CFrame = lookCFrame
+        config.bodyGyro.P = 10000
+    end
 end
 
+-- Store functions globally
+_G.FarmFunctions.getLockPosition = getLockPosition
+_G.FarmFunctions.getMiningPosition = getMiningPosition
+_G.FarmFunctions.hoverToPosition = hoverToPosition
+_G.FarmFunctions.hoverToMob = hoverToMob
+_G.FarmFunctions.hoverToRock = hoverToRock
+
 -- ═══════════════════════════════════════════════════════════════════════════
--- AUTO-ATTACK LOOP
+-- PART 5: RAYFIELD GUI & MAIN LOOPS (FIXED RESPAWN & TOGGLE)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+local Living = workspace:WaitForChild("Living")
+
+local config = _G.MobFarmConfig
+local funcs = _G.FarmFunctions
+
+local HOVER_HEIGHT = 85
+local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LOAD RAYFIELD
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Window = Rayfield:CreateWindow({
+   Name = "Rafso's Autofarm",
+   LoadingTitle = "Loading",
+   LoadingSubtitle = "by Rafso",
+   ConfigurationSaving = {
+      Enabled = true,
+      FolderName = "FarmScript",
+      FileName = "FarmConfig"
+   },
+   KeySystem = false,
+})
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTO-LOOPS
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local attackLoop = nil
-local weaponCheckLoop = nil  -- NEW: Separate loop for weapon checking
+local mineLoop = nil
+local weaponCheckLoop = nil
+local pickaxeCheckLoop = nil
 
 local function startAutoAttack()
     if attackLoop then return end
     
     task.spawn(function()
         task.wait(0.5)
-        autoEquipWeapon()
+        funcs.autoEquipWeapon()
     end)
     
     attackLoop = RunService.Heartbeat:Connect(function()
         if not config.enabled then return end
-        performAttack()
+        funcs.performAttack()
     end)
     
-    -- NEW: Start continuous weapon check loop
     if not weaponCheckLoop then
         weaponCheckLoop = RunService.Heartbeat:Connect(function()
             if not config.enabled then return end
-            checkAndEquipWeapon()
+            local currentTime = tick()
+            if currentTime - config.lastWeaponCheckTime >= config.weaponCheckInterval then
+                config.lastWeaponCheckTime = currentTime
+                funcs.autoEquipWeapon()
+            end
         end)
     end
 end
@@ -526,155 +850,223 @@ local function stopAutoAttack()
         attackLoop:Disconnect()
         attackLoop = nil
     end
-    
-    -- NEW: Stop weapon check loop
     if weaponCheckLoop then
         weaponCheckLoop:Disconnect()
         weaponCheckLoop = nil
     end
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
--- GUI
--- ═══════════════════════════════════════════════════════════════════════════
-
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
-local Window = Rayfield:CreateWindow({
-    Name = "Rafso's Autofarm",
-    LoadingTitle = "Loading",
-    LoadingSubtitle = "Made with no love",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "Farm",
-        FileName = "Config"
-    },
-    Discord = {Enabled = false},
-    KeySystem = false
-})
-
--- ═══════════════════════════════════════════════════════════════════════════
--- MAIN TAB
--- ═══════════════════════════════════════════════════════════════════════════
-
-local MainTab = Window:CreateTab("Main", 4483362458)
-
-local farmLoop = nil
-local keybindConnection = nil
-local characterConnection = nil
-
-local EnableToggle = MainTab:CreateToggle({
-    Name = "Enable Farm [F1]",
-    CurrentValue = false,
-    Flag = "EnableToggle",
-    Callback = function(Value)
-        config.enabled = Value
-        
-        if Value then
-            local character = LocalPlayer.Character
-            if character then
-                local rootPart = character:FindFirstChild("HumanoidRootPart")
-                if rootPart then
-                    -- CHANGED: Create dynamic Y85 hover position based on current location
-                    config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
-                    
-                    -- Check if we're close to a mob
-                    local closestMob = getClosestMob()
-                    
-                    if closestMob then
-                        local mobRoot = closestMob:FindFirstChild("HumanoidRootPart")
-                        if mobRoot then
-                            local distToMob = (rootPart.Position - mobRoot.Position).Magnitude
-                            local distToPos2 = (rootPart.Position - HOVER_POSITION_2).Magnitude
-                            
-                            -- If closer to mob than to position 2, skip hover sequence
-                            if distToMob < distToPos2 then
-                                config.hoverSequenceActive = false
-                                config.currentHoverTarget = 3
-                            else
-                                -- Start hover sequence (Y85 then position 2)
-                                config.hoverSequenceActive = true
-                                config.currentHoverTarget = 1
-                            end
-                        else
-                            -- No mob root, use default hover sequence
-                            config.hoverSequenceActive = true
-                            config.currentHoverTarget = 1
-                        end
-                    else
-                        -- No mob found, use default hover sequence
-                        config.hoverSequenceActive = true
-                        config.currentHoverTarget = 1
-                    end
-                else
-                    config.hoverSequenceActive = true
-                    config.currentHoverTarget = 1
-                end
-            else
-                config.hoverSequenceActive = true
-                config.currentHoverTarget = 1
+local function startAutoMine()
+    if mineLoop then return end
+    
+    task.spawn(function()
+        task.wait(0.3)
+        funcs.autoEquipPickaxe()
+    end)
+    
+    mineLoop = RunService.Heartbeat:Connect(function()
+        if not config.miningEnabled then return end
+        funcs.performMine()
+    end)
+    
+    if not pickaxeCheckLoop then
+        pickaxeCheckLoop = RunService.Heartbeat:Connect(function()
+            if not config.miningEnabled then return end
+            local currentTime = tick()
+            if currentTime - config.lastPickaxeCheckTime >= config.pickaxeCheckInterval then
+                config.lastPickaxeCheckTime = currentTime
+                funcs.autoEquipPickaxe()
             end
-            
-            setupPhysicsMovement()
-            startNoclip()
-            startAutoAttack()
-        else
-            if config.lockPosition == "Below" then
-                safetyHoverUp()
-            end
-            
-            stopAutoAttack()
-            stopNoclip()
-            cleanupPhysicsMovement()
-            config.currentMob = nil
-            config.hoverSequenceActive = false
-        end
-    end,
-})
-
-local MobDropdown = MainTab:CreateDropdown({
-    Name = "Select Mobs [Priority Order]",
-    Options = {},
-    CurrentOption = {},
-    MultipleOptions = true,
-    Flag = "MobDropdown",
-    Callback = function(Options)
-        for _, mobData in ipairs(config.mobTypes) do
-            mobData.enabled = false
-        end
-        
-        for _, selectedName in pairs(Options) do
-            for _, mobData in ipairs(config.mobTypes) do
-                if mobData.name == selectedName then
-                    mobData.enabled = true
-                    break
-                end
-            end
-        end
-    end,
-})
-
-local mobNames = {}
-for _, mobData in ipairs(config.mobTypes) do
-    table.insert(mobNames, mobData.name)
+        end)
+    end
 end
-MobDropdown:Refresh(mobNames, mobNames)
 
-MainTab:CreateButton({
-    Name = "Destroy GUI",
-    Callback = function()
-        config.enabled = false
-        stopAutoAttack()
-        stopNoclip()
-        cleanupPhysicsMovement()
-        
-        if farmLoop then farmLoop:Disconnect() end
-        if keybindConnection then keybindConnection:Disconnect() end
-        if characterConnection then characterConnection:Disconnect() end
-        
-        _G.MobFarmConfig = nil
-        Rayfield:Destroy()
-    end,
+local function stopAutoMine()
+    if mineLoop then
+        mineLoop:Disconnect()
+        mineLoop = nil
+    end
+    if pickaxeCheckLoop then
+        pickaxeCheckLoop:Disconnect()
+        pickaxeCheckLoop = nil
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- FARMING TAB
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local FarmTab = Window:CreateTab("Farming", 4483362458)
+
+local FarmToggle = FarmTab:CreateToggle({
+   Name = "Enable Mob Farming (F1)",
+   CurrentValue = false,
+   Flag = "FarmToggle",
+   Callback = function(Value)
+      config.enabled = Value
+      
+      if config.enabled then
+         local character = LocalPlayer.Character
+         if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+               config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+               config.hoverSequenceActive = true
+               config.currentHoverTarget = 1
+            end
+         end
+         
+         funcs.setupPhysicsMovement()
+         funcs.startNoclip()
+         startAutoAttack()
+      else
+         config.hoverSequenceActive = false
+         config.currentMob = nil
+         stopAutoAttack()
+         funcs.stopNoclip()
+         funcs.cleanupPhysicsMovement()
+      end
+   end,
+})
+
+FarmTab:CreateSection("Lock Position")
+
+local LockPositionDropdown = FarmTab:CreateDropdown({
+   Name = "Lock Position",
+   Options = {"Back", "Front", "Above", "Below"},
+   CurrentOption = {"Below"},
+   MultipleOptions = false,
+   Flag = "LockPosition",
+   Callback = function(Option)
+      config.lockPosition = Option[1]
+   end,
+})
+
+FarmTab:CreateSection("Mob Selection")
+
+-- Create dropdown options for mobs
+local mobOptions = {}
+for i, mobData in ipairs(config.mobTypes) do
+   table.insert(mobOptions, mobData.name)
+end
+
+local MobDropdown = FarmTab:CreateDropdown({
+   Name = "Select Mobs to Farm",
+   Options = mobOptions,
+   CurrentOption = {},
+   MultipleOptions = true,
+   Flag = "MobDropdown",
+   Callback = function(Options)
+      -- Disable all mobs first
+      for i, mobData in ipairs(config.mobTypes) do
+         config.mobTypes[i].enabled = false
+      end
+      
+      -- Enable selected mobs
+      for _, selectedMob in ipairs(Options) do
+         for i, mobData in ipairs(config.mobTypes) do
+            if mobData.name == selectedMob then
+               config.mobTypes[i].enabled = true
+               break
+            end
+         end
+      end
+   end,
+})
+
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MINING TAB
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local MineTab = Window:CreateTab("Mining", 4483362458)
+
+local MineToggle = MineTab:CreateToggle({
+   Name = "Enable Mining (F2)",
+   CurrentValue = false,
+   Flag = "MineToggle",
+   Callback = function(Value)
+      config.miningEnabled = Value
+      
+      if config.miningEnabled then
+         -- ✅ Reset ignored rocks list
+         config.ignoredRocks = {}
+         config.lastRockDurability = nil
+         config.rockDurabilityCheck = tick()
+         config.currentRock = nil
+         
+         -- ✅ Start hover sequence for mining
+         local character = LocalPlayer.Character
+         if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+               config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+               config.hoverSequenceActive = true
+               config.currentHoverTarget = 1
+            end
+         end
+         
+         funcs.setupPhysicsMovement()
+         funcs.startNoclip()
+         startAutoMine()
+      else
+         -- ✅ CRITICAL FIX: Stop hover sequence and reset ALL state
+         config.hoverSequenceActive = false
+         config.currentHoverTarget = 1
+         config.currentRock = nil
+         config.ignoredRocks = {}
+         config.lastRockDurability = nil
+         config.isLockedOn = false
+         
+         -- ✅ Stop all systems in correct order
+         stopAutoMine()
+         funcs.stopNoclip()
+         funcs.cleanupPhysicsMovement()
+         
+         -- ✅ Force stop all movement immediately
+         local character = LocalPlayer.Character
+         if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart then
+               rootPart.Velocity = Vector3.new(0, 0, 0)
+               rootPart.Anchored = false
+            end
+         end
+      end
+   end,
+})
+
+MineTab:CreateSection("Rock Selection")
+
+-- Create dropdown options for rocks
+local rockOptions = {}
+for i, rockData in ipairs(config.rockTypes) do
+   table.insert(rockOptions, rockData.name)
+end
+
+local RockDropdown = MineTab:CreateDropdown({
+   Name = "Select Rocks to Mine",
+   Options = rockOptions,
+   CurrentOption = {},
+   MultipleOptions = true,
+   Flag = "RockDropdown",
+   Callback = function(Options)
+      -- Disable all rocks first
+      for i, rockData in ipairs(config.rockTypes) do
+         config.rockTypes[i].enabled = false
+      end
+      
+      -- Enable selected rocks
+      for _, selectedRock in ipairs(Options) do
+         for i, rockData in ipairs(config.rockTypes) do
+            if rockData.name == selectedRock then
+               config.rockTypes[i].enabled = true
+               break
+            end
+         end
+      end
+   end,
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -683,141 +1075,362 @@ MainTab:CreateButton({
 
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
 
-SettingsTab:CreateDropdown({
-    Name = "Lock Position [Lifesteal recommended to survive lava]",
-    Options = {"Back", "Front", "Above", "Below"},
-    CurrentOption = "Back",
-    Flag = "LockPosition",
-    Callback = function(Option)
-        if type(Option) == "table" then
-            config.lockPosition = Option[1] or "Back"
-        else
-            config.lockPosition = Option
-        end
-    end,
-})
+SettingsTab:CreateSection("General Settings")
 
 SettingsTab:CreateSlider({
-    Name = "Hover Speed",
-    Range = {20, 150},
-    Increment = 10,
-    CurrentValue = 80,
-    Flag = "HoverSpeed",
-    Callback = function(Value) 
-        config.hoverSpeed = Value 
-    end,
+   Name = "Hover Speed",
+   Range = {20, 150},
+   Increment = 5,
+   CurrentValue = 80,
+   Flag = "HoverSpeed",
+   Callback = function(Value)
+      config.hoverSpeed = Value
+   end,
+})
+
+SettingsTab:CreateSection("Farm Settings")
+
+SettingsTab:CreateSlider({
+   Name = "Vertical Distance",
+   Range = {1, 20},
+   Increment = 1,
+   CurrentValue = 8,
+   Flag = "VerticalDistance",
+   Callback = function(Value)
+      config.verticalDistance = Value
+   end,
+})
+
+SettingsTab:CreateSection("Mining Settings")
+
+SettingsTab:CreateSlider({
+   Name = "Mining Vertical Distance",
+   Range = {1, 15},
+   Increment = 1,
+   CurrentValue = 6,
+   Flag = "MiningVerticalDistance",
+   Callback = function(Value)
+      config.miningVerticalDistance = Value
+   end,
+})
+
+-- ✅ Goblin Cave Toggle
+SettingsTab:CreateToggle({
+   Name = "Ignore Goblin Cave Rocks",
+   CurrentValue = true,
+   Flag = "IgnoreGoblinCave",
+   Callback = function(Value)
+      config.ignoreGoblinCave = Value
+   end,
+})
+
+SettingsTab:CreateSection("Script Control")
+
+SettingsTab:CreateButton({
+   Name = "Destroy GUI",
+   Callback = function()
+      -- Stop all loops
+      if farmLoop then farmLoop:Disconnect() end
+      if miningLoop then miningLoop:Disconnect() end
+      stopAutoAttack()
+      stopAutoMine()
+      
+      -- Disconnect keybinds
+      if keybindConnection then
+         keybindConnection:Disconnect()
+         keybindConnection = nil
+      end
+      
+      -- Stop noclip
+      funcs.stopNoclip()
+      
+      -- Cleanup physics
+      funcs.cleanupPhysicsMovement()
+      
+      -- Disable farming and mining
+      config.enabled = false
+      config.miningEnabled = false
+      
+      -- Clear globals
+      _G.MobFarmConfig = nil
+      _G.FarmFunctions = nil
+      
+      -- Destroy Rayfield
+      Rayfield:Destroy()
+      
+   end,
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN FARM LOOP WITH HOVER SEQUENCE
+-- KEYBIND SYSTEM (F1/F2)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-farmLoop = RunService.Heartbeat:Connect(function()
-    if not config.enabled then return end
-    
-    -- NEW: Don't run farm loop during respawn delay
-    if config.isRespawning then return end
-    
-    if not config.bodyVelocity or not config.bodyGyro then
-        setupPhysicsMovement()
-        return
-    end
-    
-    if config.hoverSequenceActive then
-        -- CHANGED: Use dynamic Y85 position instead of fixed position
-        if config.currentHoverTarget == 1 then
-            local reached = hoverToPosition(config.hoverPosition1, HOVER_POSITION_2)
-            if reached then
-                config.currentHoverTarget = 2
-            end
-            return
-            
-        elseif config.currentHoverTarget == 2 then
-            local reached = hoverToPosition(HOVER_POSITION_2, nil)
-            if reached then
-                config.currentHoverTarget = 3
-                config.hoverSequenceActive = false
-            end
-            return
-        end
-    end
-    
-    local needNewMob = false
-    
-    if not config.currentMob or not config.currentMob.Parent then
-        needNewMob = true
-    else
-        local humanoid = config.currentMob:FindFirstChild("Humanoid")
-        if not humanoid or humanoid.Health <= 0 then
-            needNewMob = true
-        end
-    end
-    
-    if needNewMob then
-        local newMob = getClosestMob()
-        
-        if newMob then
-            config.currentMob = newMob
-            config.weaponRemote = nil
-            
-            if not config.bodyVelocity or not config.bodyGyro then
-                setupPhysicsMovement()
-            end
-        else
-            config.currentMob = nil
-            config.isLockedOn = false
-        end
-        
-        return
-    end
-    
-    if config.currentMob then
-        local lockPos = getLockPosition(config.currentMob)
-        if lockPos then
-            hoverToMob(lockPos, config.currentMob)
-        end
-    end
-end)
+local keybindConnection = nil
 
 keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
+    -- Check if script is destroyed
+    if not _G.MobFarmConfig or not _G.FarmFunctions then
+        return
+    end
+    
     if input.KeyCode == Enum.KeyCode.F1 then
         config.enabled = not config.enabled
-        EnableToggle:Set(config.enabled)
+        
+        -- Update toggle in UI if it exists
+        if FarmToggle then
+            FarmToggle:Set(config.enabled)
+        end
+        
+        if config.enabled then
+            local character = LocalPlayer.Character
+            if character then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+                    config.hoverSequenceActive = true
+                    config.currentHoverTarget = 1
+                end
+            end
+            
+            funcs.setupPhysicsMovement()
+            funcs.startNoclip()
+            startAutoAttack()
+        else
+            config.hoverSequenceActive = false
+            config.currentMob = nil
+            stopAutoAttack()
+            funcs.stopNoclip()
+            funcs.cleanupPhysicsMovement()
+        end
+        
+    elseif input.KeyCode == Enum.KeyCode.F2 then
+        config.miningEnabled = not config.miningEnabled
+        
+        -- Update toggle in UI if it exists
+        if MineToggle then
+            MineToggle:Set(config.miningEnabled)
+        end
+        
+        if config.miningEnabled then
+            -- ✅ Reset ignored rocks list
+            config.ignoredRocks = {}
+            config.lastRockDurability = nil
+            config.rockDurabilityCheck = tick()
+            config.currentRock = nil
+            
+            -- ✅ Start hover sequence for mining
+            local character = LocalPlayer.Character
+            if character then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+                    config.hoverSequenceActive = true
+                    config.currentHoverTarget = 1
+                end
+            end
+            
+            funcs.setupPhysicsMovement()
+            funcs.startNoclip()
+            startAutoMine()
+        else
+            -- ✅ CRITICAL FIX: Stop hover sequence and reset ALL state
+            config.hoverSequenceActive = false
+            config.currentHoverTarget = 1
+            config.currentRock = nil
+            config.ignoredRocks = {}
+            config.lastRockDurability = nil
+            config.isLockedOn = false
+            
+            -- ✅ Stop all systems in correct order
+            stopAutoMine()
+            funcs.stopNoclip()
+            funcs.cleanupPhysicsMovement()
+            
+            -- ✅ Force stop all movement immediately
+            local character = LocalPlayer.Character
+            if character then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    rootPart.Velocity = Vector3.new(0, 0, 0)
+                    rootPart.Anchored = false
+                end
+            end
+        end
     end
 end)
 
-characterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
-    -- Immediately stop all farming activities
-    config.currentMob = nil
-    config.isLockedOn = false
-    config.weaponRemote = nil
-    config.isRespawning = true  -- NEW: Set respawning flag
-    cleanupPhysicsMovement()
-    stopNoclip()
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MAIN LOOPS
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local farmLoop = RunService.Heartbeat:Connect(function()
+    if not config.enabled or config.isRespawning then return end
     
-    if config.enabled then
-        -- Wait 5 seconds before restarting
-        task.wait(3)
-        
-        -- ALWAYS reset hover sequence when respawning
-        local rootPart = character:WaitForChild("HumanoidRootPart", 5)
-        if rootPart then
-            -- Create new Y85 hover position from spawn location
-            config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
-            
-            -- Always start from the beginning: Y85 -> Position 2 -> Farm
-            config.hoverSequenceActive = true
-            config.currentHoverTarget = 1
+    if not config.bodyVelocity or not config.bodyGyro then
+        funcs.setupPhysicsMovement()
+        return
+    end
+    
+    if config.hoverSequenceActive then
+        if config.currentHoverTarget == 1 then
+            if funcs.hoverToPosition(config.hoverPosition1, HOVER_POSITION_2) then
+                config.currentHoverTarget = 2
+            end
+        elseif config.currentHoverTarget == 2 then
+            if funcs.hoverToPosition(HOVER_POSITION_2, nil) then
+                config.currentHoverTarget = 3
+                config.hoverSequenceActive = false
+            end
         end
-        
-        setupPhysicsMovement()
-        startNoclip()
-        autoEquipWeapon()
-        
-        config.isRespawning = false  -- NEW: Clear respawning flag
-    else
-        config.isRespawning = false  -- NEW: Clear respawning flag even if disabled
+        return
+    end
+    
+    if not config.currentMob or not config.currentMob.Parent or not funcs.isValidMob(config.currentMob) then
+        config.currentMob = funcs.getClosestMob()
+        return
+    end
+    
+    if config.currentMob then
+        local lockPos = funcs.getLockPosition(config.currentMob)
+        if lockPos then
+            funcs.hoverToMob(lockPos, config.currentMob)
+        end
     end
 end)
+
+local miningLoop = RunService.Heartbeat:Connect(function()
+    if not config.miningEnabled or config.isRespawning then return end
+    
+    if not config.bodyVelocity or not config.bodyGyro then
+        funcs.setupPhysicsMovement()
+        return
+    end
+    
+    -- ✅ Handle hover sequence first (same as farming)
+    if config.hoverSequenceActive then
+        if config.currentHoverTarget == 1 then
+            if funcs.hoverToPosition(config.hoverPosition1, HOVER_POSITION_2) then
+                config.currentHoverTarget = 2
+            end
+        elseif config.currentHoverTarget == 2 then
+            if funcs.hoverToPosition(HOVER_POSITION_2, nil) then
+                config.currentHoverTarget = 3
+                config.hoverSequenceActive = false
+            end
+        end
+        return
+    end
+    
+    -- ✅ Check if current rock is destroyed
+    if config.currentRock and (not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)) then
+        config.currentRock = nil
+        config.lastRockDurability = nil
+    end
+    
+    -- ✅ Check if rock is taking damage
+    if config.currentRock then
+        local currentTime = tick()
+        
+        -- Check durability every few seconds
+        if currentTime - config.rockDurabilityCheck >= config.rockDurabilityCheckInterval then
+            config.rockDurabilityCheck = currentTime
+            
+            local currentDurability = funcs.getRockDurability(config.currentRock)
+            
+            if config.lastRockDurability then
+                -- If durability hasn't changed, rock is being mined by someone else
+                if currentDurability == config.lastRockDurability then
+                    -- Add to ignored list
+                    table.insert(config.ignoredRocks, config.currentRock)
+                    
+                    -- Reset and find new rock
+                    config.currentRock = nil
+                    config.lastRockDurability = nil
+                    return
+                end
+            end
+            
+            -- Update last known durability
+            config.lastRockDurability = currentDurability
+        end
+    end
+    
+    -- ✅ Find new rock if we don't have one
+    if not config.currentRock then
+        config.currentRock = funcs.getClosestRock()
+        
+        if config.currentRock then
+            -- Reset durability tracking for new rock
+            config.lastRockDurability = funcs.getRockDurability(config.currentRock)
+            config.rockDurabilityCheck = tick()
+            
+            -- Make it transparent
+            funcs.makeRockTransparent(config.currentRock)
+        end
+        return
+    end
+    
+    if config.currentRock then
+        local rockPos = funcs.getMiningPosition(config.currentRock)
+        if rockPos then
+            funcs.hoverToRock(rockPos, config.currentRock)
+        end
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- CHARACTER RESPAWN HANDLER (FIXED - 3 SECOND DELAY FOR BOTH)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+LocalPlayer.CharacterAdded:Connect(function(character)
+    -- ✅ Immediately stop everything
+    config.currentMob = nil
+    config.currentRock = nil
+    config.isLockedOn = false
+    config.isRespawning = true
+    config.hoverSequenceActive = false
+    funcs.cleanupPhysicsMovement()
+    funcs.stopNoclip()
+    
+    -- ✅ Only resume if farming or mining was enabled
+    local wasFarming = config.enabled
+    local wasMining = config.miningEnabled
+    
+    if wasFarming or wasMining then
+        -- ✅ CRITICAL: Wait for character to fully load, THEN wait 3 seconds
+        character:WaitForChild("HumanoidRootPart", 10)
+        task.wait(3)  -- This was not actually waiting before
+        
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            -- ✅ Setup hover sequence
+            config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+            config.hoverSequenceActive = true
+            config.currentHoverTarget = 1
+            
+            funcs.setupPhysicsMovement()
+            funcs.startNoclip()
+            
+            if wasFarming then 
+                funcs.autoEquipWeapon()
+            end
+            if wasMining then 
+                funcs.autoEquipPickaxe()
+                -- Reset mining state
+                config.ignoredRocks = {}
+                config.lastRockDurability = nil
+                config.rockDurabilityCheck = tick()
+            end
+        end
+        
+        config.isRespawning = false
+    else
+        config.isRespawning = false
+    end
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- FINISH
+-- ═══════════════════════════════════════════════════════════════════════════
