@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- RAYFIELD FARM & MINE SCRIPT - PART 1: CORE SETUP & CONFIG
+-- RAFSO'S COMPLETE SCRIPT - PART 1: CORE SETUP & CONFIG
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Services
@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local Living = workspace:WaitForChild("Living")
@@ -16,6 +17,90 @@ local Living = workspace:WaitForChild("Living")
 -- ═══════════════════════════════════════════════════════════════════════════
 local HOVER_HEIGHT = 85
 local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTOSELL CONFIG
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local SELLER_POSITION = Vector3.new(-141.95, 21.30, -27.09)
+local SELLER_PROXIMITY = workspace.Proximity["Greedy Cey"].ProximityPrompt
+local NO_BUTTON_X = 1200
+local NO_BUTTON_Y = 498
+
+local originalPosition = nil
+
+-- Remote for selling
+local RunCommand = ReplicatedStorage:WaitForChild("Shared", 10):WaitForChild("Packages", 10):WaitForChild("Knit", 10):WaitForChild("Services", 10):WaitForChild("DialogueService", 10):WaitForChild("RF", 10):WaitForChild("RunCommand", 10)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ITEMS BY RARITY (FOR AUTOSELL)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local ItemsByRarity = {
+    Common = {
+        "Stone",
+        "Sand Stone",
+        "Copper",
+        "Iron",
+        "Cardboardite"
+    },
+    Uncommon = {
+        "Cobalt",
+        "Titanium",
+        "Lapis Lazuli",
+        "Tin",
+        "Silver",
+        "Gold",
+        "Bananite"
+    },
+    Rare = {
+        "Volcanic Rock",
+        "Quartz",
+        "Amethyst",
+        "Boneite",
+        "Dark Boneite",
+        "Topaz",
+        "Diamond",
+        "Sapphire",
+        "Mushroomite",
+        "Platinum"
+    },
+    Epic = {
+        "Aite",
+        "Slimite",
+        "Poopite",
+        "Cuprite",
+        "Obsidian",
+        "Emerald",
+        "Ruby",
+        "Rivalite"
+    },
+    Legendary = {
+        "Uranium",
+        "Mythril",
+        "Eye Ore",
+        "Fireite",
+        "Magmaite",
+        "Lightite"
+    },
+    Mythical = {
+        "Demonite",
+        "Darkryte"
+    },
+    Rune = {
+        "Frost Speck",
+        "Venom Crumb",
+        "Blast Chip",
+        "Miner Shard",
+        "Flame Spark",
+        "Drain Edge",
+        "Briar Notch",
+        "Ward Patch",
+        "Rot Stich",
+        "Chill Dust",
+        "Rage Mark"
+    }
+}
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- GLOBAL CONFIG
@@ -55,10 +140,10 @@ _G.MobFarmConfig = {
     -- Mob types
     mobTypes = {
         {name = "Reaper", pattern = "^Reaper%d+$", enabled = false, priority = 1},
-        {name = "Blazing Slime", pattern = "^Blazing Slime%d+$", enabled = false, priority = 2},
+        {name = "Deathaxe Skeleton", pattern = "^Deathaxe Skeleton%d+$", enabled = false, priority = 2},
         {name = "Elite Deathaxe Skeleton", pattern = "^Elite Deathaxe Skeleton%d+$", enabled = false, priority = 3},
         {name = "Elite Rogue Skeleton", pattern = "^Elite Rogue Skeleton%d+$", enabled = false, priority = 4},
-        {name = "Deathaxe Skeleton", pattern = "^Deathaxe Skeleton%d+$", enabled = false, priority = 5},
+        {name = "Blazing Slime", pattern = "^Blazing Slime%d+$", enabled = false, priority = 5},
         {name = "Axe Skeleton", pattern = "^Axe Skeleton%d+$", enabled = false, priority = 6},
         {name = "Skeleton Rogue", pattern = "^Skeleton Rogue%d+$", enabled = false, priority = 7},
         {name = "Bomber", pattern = "^Bomber%d+$", enabled = false, priority = 8},
@@ -78,11 +163,11 @@ _G.MobFarmConfig = {
     miningBodyGyro = nil,
     ignoreGoblinCave = true,
     
-    -- ✅ NEW: Rock damage tracking
+    -- Rock damage tracking
     rockDurabilityCheck = 0,
-    rockDurabilityCheckInterval = 3,  -- Check every 3 seconds
+    rockDurabilityCheckInterval = 3,
     lastRockDurability = nil,
-    ignoredRocks = {},  -- Table to store rocks being mined by others
+    ignoredRocks = {},
     
     -- Rock types (PRIORITY ORDER)
     rockTypes = {
@@ -98,13 +183,31 @@ _G.MobFarmConfig = {
         {name = "Boulder", enabled = false, priority = 10},
         {name = "Rock", enabled = false, priority = 11},
         {name = "Pebble", enabled = false, priority = 12},
+    },
+    
+    -- AutoSell settings
+    autoSellEnabled = false,
+    sellCooldown = 1.5,
+    lastSellTime = 0,
+    autoClickerActive = false,
+    autoClickerLoop = nil,
+    selectedItems = {
+        Common = {},
+        Uncommon = {},
+        Rare = {},
+        Epic = {},
+        Legendary = {},
+        Mythical = {},
+        Rune = {}
     }
 }
 
 local config = _G.MobFarmConfig
 
+print("✅ Part 1 Loaded: Core Setup & Config")
+
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 2: NOCLIP & MOB/ROCK DETECTION (WITH TRANSPARENCY + IGNORE GOBLIN CAVE + DAMAGE CHECK)
+-- PART 2: NOCLIP & MOB/ROCK DETECTION
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -214,20 +317,18 @@ local function getClosestMob()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ROCK DETECTION (FOR MINING) - WITH IGNORED ROCKS CHECK
+-- ROCK DETECTION (FOR MINING)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local function isValidRock(durabilityModel)
     if not durabilityModel:IsA("Model") then return false end
     if not durabilityModel.Parent then return false end
     
-    -- Check if this durability model has ANY MeshPart (Rock, 3.001, 13.001, etc)
     local hasMeshPart = durabilityModel:FindFirstChildOfClass("MeshPart") ~= nil
     
     return hasMeshPart
 end
 
--- ✅ NEW: Check if rock is in ignored list
 local function isRockIgnored(rock)
     for _, ignoredRock in ipairs(config.ignoredRocks) do
         if ignoredRock == rock then
@@ -247,13 +348,11 @@ local function getRockPriority(rockTypeName)
 end
 
 local function getRockPosition(durabilityModel)
-    -- Try to find a part named "Rock" first (for Volcanic Rock)
     local rockPart = durabilityModel:FindFirstChild("Rock")
     if rockPart and rockPart:IsA("BasePart") then
         return rockPart
     end
     
-    -- Otherwise, use the Hitbox from the parent rock type model
     local rockTypeModel = durabilityModel.Parent
     if rockTypeModel then
         local hitbox = rockTypeModel:FindFirstChild("Hitbox")
@@ -262,7 +361,6 @@ local function getRockPosition(durabilityModel)
         end
     end
     
-    -- Fallback: use any MeshPart in the durability model
     local meshPart = durabilityModel:FindFirstChildOfClass("MeshPart")
     if meshPart then
         return meshPart
@@ -271,7 +369,6 @@ local function getRockPosition(durabilityModel)
     return nil
 end
 
--- ✅ NEW: Get rock durability (the model name is the durability number)
 local function getRockDurability(rock)
     if not rock then return nil end
     return tonumber(rock.Name)
@@ -297,28 +394,22 @@ local function getClosestRock()
     local closestDistance = config.farmDistance
     local highestPriority = 999
     
-    -- Loop through all island folders
     for _, islandFolder in pairs(rocksFolder:GetChildren()) do
         if islandFolder:IsA("Folder") then
-            -- ✅ Skip Goblin Cave if toggle is enabled
             if config.ignoreGoblinCave and islandFolder.Name == "Island2GoblinCave" then
                 continue
             end
             
-            -- Loop through all SpawnLocation parts
             for _, spawnPart in pairs(islandFolder:GetChildren()) do
                 if spawnPart:IsA("Part") and spawnPart.Name == "SpawnLocation" then
-                    -- Check if this SpawnLocation has spawned rock models as children
                     for _, rockTypeModel in pairs(spawnPart:GetChildren()) do
                         if rockTypeModel:IsA("Model") then
                             local rockTypeName = rockTypeModel.Name
                             local priority = getRockPriority(rockTypeName)
                             
-                            if priority < 999 then -- Rock type is enabled
-                                -- Look for durability models inside (100, 80, 60, etc)
+                            if priority < 999 then
                                 for _, durabilityModel in pairs(rockTypeModel:GetChildren()) do
                                     if durabilityModel:IsA("Model") and tonumber(durabilityModel.Name) then
-                                        -- ✅ NEW: Skip ignored rocks
                                         if not isRockIgnored(durabilityModel) and isValidRock(durabilityModel) then
                                             local positionPart = getRockPosition(durabilityModel)
                                             if positionPart then
@@ -349,14 +440,12 @@ end
 local function makeRockTransparent(rock)
     if not rock then return end
     
-    -- Make all parts in the rock transparent
     for _, descendant in pairs(rock:GetDescendants()) do
         if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
             descendant.Transparency = 0.7
         end
     end
     
-    -- Also make parent rock type model transparent
     local rockTypeModel = rock.Parent
     if rockTypeModel then
         for _, descendant in pairs(rockTypeModel:GetDescendants()) do
@@ -376,21 +465,25 @@ _G.FarmFunctions = {
     isValidMob = isValidMob,
     isValidRock = isValidRock,
     getRockPosition = getRockPosition,
-    getRockDurability = getRockDurability,  -- ✅ NEW
-    isRockIgnored = isRockIgnored,  -- ✅ NEW
+    getRockDurability = getRockDurability,
+    isRockIgnored = isRockIgnored,
     makeRockTransparent = makeRockTransparent,
 }
 
+print("✅ Part 2 Loaded: Noclip & Detection Systems")
+
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 3: WEAPON SYSTEM & PHYSICS MOVEMENT (FIXED - MINING ATTACK SYSTEM)
+-- PART 3: WEAPON SYSTEM, AUTOSELL & PHYSICS MOVEMENT
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local config = _G.MobFarmConfig
+local funcs = _G.FarmFunctions
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WEAPON & TOOL SYSTEM
@@ -428,13 +521,11 @@ local function autoEquipPickaxe()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return false end
     
-    -- ✅ Check if pickaxe is already equipped
     local pickaxeInChar = character:FindFirstChild("Pickaxe")
     if pickaxeInChar and pickaxeInChar:IsA("Tool") then
         return true
     end
     
-    -- ✅ Try to equip from backpack
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     if backpack then
         local pickaxe = backpack:FindFirstChild("Pickaxe")
@@ -471,7 +562,6 @@ local function performAttack()
     clickMouse()
 end
 
--- ✅ NEW: Mining function that works like farming (no distance check, just mine when locked)
 local function performMine()
     if not config.currentRock then return end
     if not config.miningEnabled then return end
@@ -479,7 +569,6 @@ local function performMine()
     local character = LocalPlayer.Character
     if not character then return end
     
-    -- ✅ Make sure pickaxe is equipped before mining
     local pickaxe = character:FindFirstChild("Pickaxe")
     if not pickaxe then
         autoEquipPickaxe()
@@ -493,6 +582,213 @@ local function performMine()
     
     config.lastMineTime = currentTime
     clickMouse()
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTOSELL SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local SELLER_POSITION = Vector3.new(-141.95, 21.30, -27.09)
+local SELLER_PROXIMITY = workspace.Proximity["Greedy Cey"].ProximityPrompt
+local NO_BUTTON_X = 1200
+local NO_BUTTON_Y = 498
+local originalPosition = nil
+
+local RunCommand = ReplicatedStorage:WaitForChild("Shared", 10):WaitForChild("Packages", 10):WaitForChild("Knit", 10):WaitForChild("Services", 10):WaitForChild("DialogueService", 10):WaitForChild("RF", 10):WaitForChild("RunCommand", 10)
+
+local function startAutoClickerAt(x, y, duration)
+    if config.autoClickerActive then return end
+    
+    config.autoClickerActive = true
+    print("🖱️ AutoClicker started at: X=" .. x .. ", Y=" .. y .. " for " .. duration .. " seconds")
+    
+    config.autoClickerLoop = task.spawn(function()
+        local startTime = tick()
+        local clicks = 0
+        while config.autoClickerActive and (tick() - startTime) < duration do
+            VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+            task.wait(0.01)
+            VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+            clicks = clicks + 1
+            task.wait(0.05)
+        end
+        config.autoClickerActive = false
+        print("🛑 AutoClicker stopped after " .. clicks .. " clicks")
+    end)
+end
+
+local function stopAutoClicker()
+    config.autoClickerActive = false
+    if config.autoClickerLoop then
+        task.cancel(config.autoClickerLoop)
+        config.autoClickerLoop = nil
+    end
+end
+
+local function closeChat()
+    task.wait(0.3)
+    print("🔘 Starting autoclicker at No button position: X=" .. NO_BUTTON_X .. ", Y=" .. NO_BUTTON_Y)
+    startAutoClickerAt(NO_BUTTON_X, NO_BUTTON_Y, 3)
+    task.wait(0.3)
+    stopAutoClicker()
+    print("✅ Dialogue close attempt complete")
+end
+
+local function talkToSeller()
+    local character = LocalPlayer.Character
+    if not character then return false end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return false end
+    
+    originalPosition = rootPart.CFrame
+    print("💾 Saved original position: " .. tostring(originalPosition.Position))
+    
+    rootPart.CFrame = CFrame.new(SELLER_POSITION)
+    task.wait(0.5)
+    
+    if SELLER_PROXIMITY then
+        fireproximityprompt(SELLER_PROXIMITY)
+        task.wait(0.5)
+        closeChat()
+        task.wait(0)
+        
+        if originalPosition then
+            rootPart.CFrame = originalPosition
+            print("🔙 Teleported back to original position")
+        end
+        
+        return true
+    end
+    
+    return false
+end
+
+local function getItemQuantity(itemName)
+    local success, quantity = pcall(function()
+        local playerGui = LocalPlayer:WaitForChild("PlayerGui", 2)
+        if not playerGui then return 0 end
+        
+        local menu = playerGui:FindFirstChild("Menu")
+        if not menu then return 0 end
+        
+        local stash = menu:FindFirstChild("Frame", true)
+        if stash then
+            stash = stash:FindFirstChild("Frame", true)
+            if stash then
+                stash = stash:FindFirstChild("Menus", true)
+                if stash then
+                    stash = stash:FindFirstChild("Stash", true)
+                    if stash then
+                        stash = stash:FindFirstChild("Background", true)
+                        if stash then
+                            for _, itemFolder in pairs(stash:GetChildren()) do
+                                if itemFolder:IsA("Folder") or itemFolder:IsA("Frame") then
+                                    local main = itemFolder:FindFirstChild("Main")
+                                    if main then
+                                        if itemFolder.Name == itemName then
+                                            local quantityLabel = main:FindFirstChild("Quantity")
+                                            if quantityLabel and quantityLabel:IsA("TextLabel") then
+                                                local quantityText = quantityLabel.Text
+                                                local number = tonumber(string.match(quantityText, "%d+"))
+                                                return number or 0
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        return 0
+    end)
+    
+    if success then
+        return quantity
+    else
+        return 0
+    end
+end
+
+local function sellItems()
+    if not config.autoSellEnabled then return end
+    
+    local currentTime = tick()
+    if currentTime - config.lastSellTime < config.sellCooldown then
+        return
+    end
+    
+    local itemsToSell = {}
+    
+    for rarity, items in pairs(config.selectedItems) do
+        if rarity ~= "Rune" then
+            for _, itemName in ipairs(items) do
+                local quantity = getItemQuantity(itemName)
+                
+                if quantity > 0 then
+                    itemsToSell[itemName] = quantity
+                    print(string.format("📦 %s: %d", itemName, quantity))
+                end
+            end
+        end
+    end
+    
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 2)
+    if playerGui then
+        local menu = playerGui:FindFirstChild("Menu")
+        if menu then
+            local stash = menu:FindFirstChild("Frame", true)
+            if stash then
+                stash = stash:FindFirstChild("Frame", true)
+                if stash then
+                    stash = stash:FindFirstChild("Menus", true)
+                    if stash then
+                        stash = stash:FindFirstChild("Stash", true)
+                        if stash then
+                            stash = stash:FindFirstChild("Background", true)
+                            if stash then
+                                for _, itemFolder in pairs(stash:GetChildren()) do
+                                    local main = itemFolder:FindFirstChild("Main")
+                                    if main then
+                                        local itemNameLabel = main:FindFirstChild("ItemName")
+                                        if itemNameLabel and itemNameLabel:IsA("TextLabel") then
+                                            local itemName = itemNameLabel.Text
+                                            
+                                            for _, selectedRuneName in ipairs(config.selectedItems.Rune) do
+                                                if itemName == selectedRuneName then
+                                                    itemsToSell[itemFolder.Name] = 1
+                                                    print(string.format("🔮 %s (UUID: %s): 1", itemName, itemFolder.Name))
+                                                    break
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    if next(itemsToSell) == nil then
+        return
+    end
+    
+    local success, err = pcall(function()
+        RunCommand:InvokeServer("SellConfirm", {Basket = itemsToSell})
+    end)
+    
+    if success then
+        config.lastSellTime = currentTime
+        print("✅ Sold items successfully")
+    else
+        print("❌ Error selling: " .. tostring(err))
+    end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -574,21 +870,26 @@ local function cleanupPhysicsMovement()
     config.isLockedOn = false
 end
 
--- Store functions globally
-_G.FarmFunctions.autoEquipWeapon = autoEquipWeapon
-_G.FarmFunctions.autoEquipPickaxe = autoEquipPickaxe
-_G.FarmFunctions.performAttack = performAttack
-_G.FarmFunctions.performMine = performMine
-_G.FarmFunctions.setupPhysicsMovement = setupPhysicsMovement
-_G.FarmFunctions.cleanupPhysicsMovement = cleanupPhysicsMovement
+-- Add to global functions
+funcs.autoEquipWeapon = autoEquipWeapon
+funcs.autoEquipPickaxe = autoEquipPickaxe
+funcs.performAttack = performAttack
+funcs.performMine = performMine
+funcs.setupPhysicsMovement = setupPhysicsMovement
+funcs.cleanupPhysicsMovement = cleanupPhysicsMovement
+funcs.talkToSeller = talkToSeller
+funcs.sellItems = sellItems
+
+print("✅ Part 3 Loaded: Weapon, AutoSell & Physics")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 4: MOVEMENT LOGIC & HOVERING (WITH CONFIGURABLE MINING ANGLE)
+-- PART 4: MOVEMENT LOGIC & HOVERING (FIXED - BETTER MOB TRACKING)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local config = _G.MobFarmConfig
+local funcs = _G.FarmFunctions
 
 local HOVER_HEIGHT = 85
 local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
@@ -630,7 +931,7 @@ end
 local function getMiningPosition(rock)
     if not rock then return nil end
     
-    local positionPart = _G.FarmFunctions.getRockPosition(rock)
+    local positionPart = funcs.getRockPosition(rock)
     if not positionPart then 
         return nil 
     end
@@ -681,6 +982,7 @@ local function hoverToPosition(targetPos, lookAtPos)
     return false
 end
 
+-- ✅ FIXED: Better mob tracking - follows mob even when close
 local function hoverToMob(targetPos, mob)
     local character = LocalPlayer.Character
     if not character then return end
@@ -696,11 +998,17 @@ local function hoverToMob(targetPos, mob)
     local direction = (targetPos - currentPos)
     local distance = direction.Magnitude
     
-    config.isLockedOn = distance < 3
+    -- ✅ CRITICAL FIX: Mark as locked on when close, but KEEP FOLLOWING the mob
+    config.isLockedOn = distance < 5  -- Slightly larger range for attacking
     
+    -- Handle Above/Below positions (stationary attack angle)
     if (config.lockPosition == "Above" or config.lockPosition == "Below") and distance < 3 then
-        config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        -- ✅ FIX: Still follow mob position even when locked
+        local followSpeed = 15  -- Slower speed to track mob
+        local desiredVelocity = direction.Unit * followSpeed
+        config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.2)
         
+        -- Set attack angle
         if config.lockPosition == "Above" then
             local angle = math.rad(config.aboveAngle)
             local downCFrame = CFrame.new(currentPos) * CFrame.Angles(-angle, 0, 0)
@@ -713,15 +1021,29 @@ local function hoverToMob(targetPos, mob)
         return
     end
     
-    local speedMultiplier = math.min(distance / 10, 1)
-    local targetSpeed = config.hoverSpeed * speedMultiplier
+    -- ✅ FIX: For Back/Front positions, ALWAYS follow the mob
+    -- Use slower speed when close, faster when far
+    local targetSpeed
+    if distance < 3 then
+        -- Close range: slow tracking to match mob movement
+        targetSpeed = 20
+    else
+        -- Far range: fast approach
+        targetSpeed = config.hoverSpeed * math.min(distance / 10, 1)
+    end
+    
     local desiredVelocity = direction.Unit * targetSpeed
-    local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.3)
+    
+    -- ✅ FIX: Smoother lerp when close for better tracking
+    local lerpSpeed = distance < 3 and 0.4 or 0.3
+    local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, lerpSpeed)
     
     config.bodyVelocity.Velocity = newVelocity
     
+    -- ✅ FIX: Always look at mob for better hitbox alignment
     local lookCFrame = CFrame.new(currentPos, mobRoot.Position)
-    config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.3)
+    local gyroLerpSpeed = distance < 3 and 0.5 or 0.3
+    config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, gyroLerpSpeed)
 end
 
 local function hoverToRock(targetPos, rock)
@@ -745,7 +1067,6 @@ local function hoverToRock(targetPos, rock)
     if distance < 3 then
         config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
         
-        -- ✅ USE CONFIGURABLE MINING ANGLE (0-360 degrees)
         local angle = math.rad(config.miningAngle)
         local lookCFrame = CFrame.new(currentPos) * CFrame.Angles(angle, math.rad(180), 0)
         config.bodyGyro.CFrame = lookCFrame
@@ -761,8 +1082,7 @@ local function hoverToRock(targetPos, rock)
     
     config.bodyVelocity.Velocity = newVelocity
     
-    -- Get position part for looking at rock while moving
-    local positionPart = _G.FarmFunctions.getRockPosition(rock)
+    local positionPart = funcs.getRockPosition(rock)
     if positionPart then
         local lookCFrame = CFrame.new(currentPos, positionPart.Position)
         config.bodyGyro.CFrame = lookCFrame
@@ -770,15 +1090,17 @@ local function hoverToRock(targetPos, rock)
     end
 end
 
--- Store functions globally
-_G.FarmFunctions.getLockPosition = getLockPosition
-_G.FarmFunctions.getMiningPosition = getMiningPosition
-_G.FarmFunctions.hoverToPosition = hoverToPosition
-_G.FarmFunctions.hoverToMob = hoverToMob
-_G.FarmFunctions.hoverToRock = hoverToRock
+-- Add to global functions
+funcs.getLockPosition = getLockPosition
+funcs.getMiningPosition = getMiningPosition
+funcs.hoverToPosition = hoverToPosition
+funcs.hoverToMob = hoverToMob
+funcs.hoverToRock = hoverToRock
+
+print("✅ Part 4 Loaded: Movement Logic & Hovering (FIXED - Better Mob Tracking)")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 5: RAYFIELD GUI & MAIN LOOPS (FIXED RESPAWN & TOGGLE)
+-- PART 5: RAYFIELD GUI & AUTO-LOOPS
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -800,13 +1122,13 @@ local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Rafso's Autofarm",
+   Name = "Rafso's Complete Hub",
    LoadingTitle = "Loading",
    LoadingSubtitle = "by Rafso",
    ConfigurationSaving = {
       Enabled = true,
-      FolderName = "FarmScript",
-      FileName = "FarmConfig"
+      FolderName = "RafsoHub",
+      FileName = "CompleteConfig"
    },
    KeySystem = false,
 })
@@ -819,6 +1141,7 @@ local attackLoop = nil
 local mineLoop = nil
 local weaponCheckLoop = nil
 local pickaxeCheckLoop = nil
+local sellLoop = nil
 
 local function startAutoAttack()
     if attackLoop then return end
@@ -892,11 +1215,27 @@ local function stopAutoMine()
     end
 end
 
+local function startAutoSell()
+    if sellLoop then return end
+    
+    sellLoop = RunService.Heartbeat:Connect(function()
+        if not config.autoSellEnabled then return end
+        funcs.sellItems()
+    end)
+end
+
+local function stopAutoSell()
+    if sellLoop then
+        sellLoop:Disconnect()
+        sellLoop = nil
+    end
+end
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- FARMING TAB
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local FarmTab = Window:CreateTab("Farming", 4483362458)
+local FarmTab = Window:CreateTab("⚔️ Farming", 4483362458)
 
 local FarmToggle = FarmTab:CreateToggle({
    Name = "Enable Mob Farming (F1)",
@@ -944,7 +1283,6 @@ local LockPositionDropdown = FarmTab:CreateDropdown({
 
 FarmTab:CreateSection("Mob Selection")
 
--- Create dropdown options for mobs
 local mobOptions = {}
 for i, mobData in ipairs(config.mobTypes) do
    table.insert(mobOptions, mobData.name)
@@ -957,12 +1295,10 @@ local MobDropdown = FarmTab:CreateDropdown({
    MultipleOptions = true,
    Flag = "MobDropdown",
    Callback = function(Options)
-      -- Disable all mobs first
       for i, mobData in ipairs(config.mobTypes) do
          config.mobTypes[i].enabled = false
       end
       
-      -- Enable selected mobs
       for _, selectedMob in ipairs(Options) do
          for i, mobData in ipairs(config.mobTypes) do
             if mobData.name == selectedMob then
@@ -974,13 +1310,11 @@ local MobDropdown = FarmTab:CreateDropdown({
    end,
 })
 
-
-
 -- ═══════════════════════════════════════════════════════════════════════════
 -- MINING TAB
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local MineTab = Window:CreateTab("Mining", 4483362458)
+local MineTab = Window:CreateTab("⛏️ Mining", 4483362458)
 
 local MineToggle = MineTab:CreateToggle({
    Name = "Enable Mining (F2)",
@@ -990,13 +1324,11 @@ local MineToggle = MineTab:CreateToggle({
       config.miningEnabled = Value
       
       if config.miningEnabled then
-         -- ✅ Reset ignored rocks list
          config.ignoredRocks = {}
          config.lastRockDurability = nil
          config.rockDurabilityCheck = tick()
          config.currentRock = nil
          
-         -- ✅ Start hover sequence for mining
          local character = LocalPlayer.Character
          if character then
             local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -1011,7 +1343,6 @@ local MineToggle = MineTab:CreateToggle({
          funcs.startNoclip()
          startAutoMine()
       else
-         -- ✅ CRITICAL FIX: Stop hover sequence and reset ALL state
          config.hoverSequenceActive = false
          config.currentHoverTarget = 1
          config.currentRock = nil
@@ -1019,12 +1350,10 @@ local MineToggle = MineTab:CreateToggle({
          config.lastRockDurability = nil
          config.isLockedOn = false
          
-         -- ✅ Stop all systems in correct order
          stopAutoMine()
          funcs.stopNoclip()
          funcs.cleanupPhysicsMovement()
          
-         -- ✅ Force stop all movement immediately
          local character = LocalPlayer.Character
          if character then
             local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -1039,7 +1368,6 @@ local MineToggle = MineTab:CreateToggle({
 
 MineTab:CreateSection("Rock Selection")
 
--- Create dropdown options for rocks
 local rockOptions = {}
 for i, rockData in ipairs(config.rockTypes) do
    table.insert(rockOptions, rockData.name)
@@ -1052,12 +1380,10 @@ local RockDropdown = MineTab:CreateDropdown({
    MultipleOptions = true,
    Flag = "RockDropdown",
    Callback = function(Options)
-      -- Disable all rocks first
       for i, rockData in ipairs(config.rockTypes) do
          config.rockTypes[i].enabled = false
       end
       
-      -- Enable selected rocks
       for _, selectedRock in ipairs(Options) do
          for i, rockData in ipairs(config.rockTypes) do
             if rockData.name == selectedRock then
@@ -1069,11 +1395,131 @@ local RockDropdown = MineTab:CreateDropdown({
    end,
 })
 
+print("✅ Part 5 Loaded: Rayfield GUI & Auto-Loops")
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PART 6: AUTOSELL TAB & SETTINGS (COMPLETE WITH FIXED KEYBINDS)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local config = _G.MobFarmConfig
+local funcs = _G.FarmFunctions
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTOSELL TAB
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local SellTab = Window:CreateTab("💰 AutoSell", 4483362458)
+
+SellTab:CreateSection("Auto Sell")
+
+local AutoSellToggle = SellTab:CreateToggle({
+    Name = "Enable Auto Sell",
+    CurrentValue = false,
+    Flag = "AutoSellToggle",
+    Callback = function(Value)
+        config.autoSellEnabled = Value
+        
+        if config.autoSellEnabled then
+            print("🟢 AutoSell Enabled")
+            startAutoSell()
+        else
+            print("🔴 AutoSell Disabled")
+            stopAutoSell()
+        end
+    end,
+})
+
+SellTab:CreateSection("Select Items to Auto Sell")
+
+-- Common Items
+SellTab:CreateDropdown({
+    Name = "Common Items",
+    Options = ItemsByRarity.Common,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "CommonDropdown",
+    Callback = function(Options)
+        config.selectedItems.Common = Options
+    end,
+})
+
+-- Uncommon Items
+SellTab:CreateDropdown({
+    Name = "Uncommon Items",
+    Options = ItemsByRarity.Uncommon,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "UncommonDropdown",
+    Callback = function(Options)
+        config.selectedItems.Uncommon = Options
+    end,
+})
+
+-- Rare Items
+SellTab:CreateDropdown({
+    Name = "Rare Items",
+    Options = ItemsByRarity.Rare,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "RareDropdown",
+    Callback = function(Options)
+        config.selectedItems.Rare = Options
+    end,
+})
+
+-- Epic Items
+SellTab:CreateDropdown({
+    Name = "Epic Items",
+    Options = ItemsByRarity.Epic,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "EpicDropdown",
+    Callback = function(Options)
+        config.selectedItems.Epic = Options
+    end,
+})
+
+-- Legendary Items
+SellTab:CreateDropdown({
+    Name = "Legendary Items",
+    Options = ItemsByRarity.Legendary,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "LegendaryDropdown",
+    Callback = function(Options)
+        config.selectedItems.Legendary = Options
+    end,
+})
+
+-- Mythical Items
+SellTab:CreateDropdown({
+    Name = "Mythical Items",
+    Options = ItemsByRarity.Mythical,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "MythicalDropdown",
+    Callback = function(Options)
+        config.selectedItems.Mythical = Options
+    end,
+})
+
+-- Rune Items
+SellTab:CreateDropdown({
+    Name = "Rune Items",
+    Options = ItemsByRarity.Rune,
+    CurrentOption = {},
+    MultipleOptions = true,
+    Flag = "RuneDropdown",
+    Callback = function(Options)
+        config.selectedItems.Rune = Options
+    end,
+})
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- SETTINGS TAB
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local SettingsTab = Window:CreateTab("Settings", 4483362458)
+local SettingsTab = Window:CreateTab("⚙️ Settings", 4483362458)
 
 SettingsTab:CreateSection("General Settings")
 
@@ -1114,7 +1560,6 @@ SettingsTab:CreateSlider({
    end,
 })
 
--- ✅ Goblin Cave Toggle
 SettingsTab:CreateToggle({
    Name = "Ignore Goblin Cave Rocks",
    CurrentValue = true,
@@ -1129,40 +1574,33 @@ SettingsTab:CreateSection("Script Control")
 SettingsTab:CreateButton({
    Name = "Destroy GUI",
    Callback = function()
-      -- Stop all loops
       if farmLoop then farmLoop:Disconnect() end
       if miningLoop then miningLoop:Disconnect() end
       stopAutoAttack()
       stopAutoMine()
+      stopAutoSell()
       
-      -- Disconnect keybinds
       if keybindConnection then
          keybindConnection:Disconnect()
          keybindConnection = nil
       end
       
-      -- Stop noclip
       funcs.stopNoclip()
-      
-      -- Cleanup physics
       funcs.cleanupPhysicsMovement()
       
-      -- Disable farming and mining
       config.enabled = false
       config.miningEnabled = false
+      config.autoSellEnabled = false
       
-      -- Clear globals
       _G.MobFarmConfig = nil
       _G.FarmFunctions = nil
       
-      -- Destroy Rayfield
       Rayfield:Destroy()
-      
    end,
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- KEYBIND SYSTEM (F1/F2)
+-- KEYBIND SYSTEM (F1/F2) - FIXED VERSION
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local keybindConnection = nil
@@ -1170,7 +1608,6 @@ local keybindConnection = nil
 keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
     
-    -- Check if script is destroyed
     if not _G.MobFarmConfig or not _G.FarmFunctions then
         return
     end
@@ -1178,7 +1615,6 @@ keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProc
     if input.KeyCode == Enum.KeyCode.F1 then
         config.enabled = not config.enabled
         
-        -- Update toggle in UI if it exists
         if FarmToggle then
             FarmToggle:Set(config.enabled)
         end
@@ -1208,19 +1644,17 @@ keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProc
     elseif input.KeyCode == Enum.KeyCode.F2 then
         config.miningEnabled = not config.miningEnabled
         
-        -- Update toggle in UI if it exists
         if MineToggle then
             MineToggle:Set(config.miningEnabled)
         end
         
         if config.miningEnabled then
-            -- ✅ Reset ignored rocks list
+            print("⛏️ Mining ENABLED")
             config.ignoredRocks = {}
             config.lastRockDurability = nil
             config.rockDurabilityCheck = tick()
             config.currentRock = nil
             
-            -- ✅ Start hover sequence for mining
             local character = LocalPlayer.Character
             if character then
                 local rootPart = character:FindFirstChild("HumanoidRootPart")
@@ -1235,7 +1669,9 @@ keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProc
             funcs.startNoclip()
             startAutoMine()
         else
-            -- ✅ CRITICAL FIX: Stop hover sequence and reset ALL state
+            -- ✅ FIXED: Complete cleanup when disabled
+            print("⛏️ Mining DISABLED - Cleaning up...")
+            
             config.hoverSequenceActive = false
             config.currentHoverTarget = 1
             config.currentRock = nil
@@ -1243,26 +1679,304 @@ keybindConnection = UserInputService.InputBegan:Connect(function(input, gameProc
             config.lastRockDurability = nil
             config.isLockedOn = false
             
-            -- ✅ Stop all systems in correct order
+            -- Stop all mining activities
             stopAutoMine()
             funcs.stopNoclip()
             funcs.cleanupPhysicsMovement()
             
-            -- ✅ Force stop all movement immediately
+            -- Reset character physics
             local character = LocalPlayer.Character
             if character then
                 local rootPart = character:FindFirstChild("HumanoidRootPart")
                 if rootPart then
                     rootPart.Velocity = Vector3.new(0, 0, 0)
+                    rootPart.RotVelocity = Vector3.new(0, 0, 0)
                     rootPart.Anchored = false
                 end
+                
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, true)
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, true)
+                    humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+                end
             end
+            
+            print("✅ Mining cleanup complete")
         end
     end
 end)
 
+print("✅ Part 6 Loaded: AutoSell Tab & Settings (FIXED)")
+
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN LOOPS
+-- PART 7: MAIN LOOPS & CHARACTER RESPAWN HANDLER (INSTANT ROCK SWITCH)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+local config = _G.MobFarmConfig
+local funcs = _G.FarmFunctions
+
+local HOVER_HEIGHT = 85
+local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MINING DEFENSE CONFIG
+-- ═══════════════════════════════════════════════════════════════════════════
+
+config.miningDefenseEnabled = true
+config.miningDefenseDistance = 10
+config.defendingAgainstMob = nil
+config.savedMiningRock = nil
+config.weaponEquipped = false
+config.lastDefenseAttackTime = 0
+config.defenseAttackCooldown = 0.1
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LAVA CHECK CONFIG
+-- ═══════════════════════════════════════════════════════════════════════════
+
+config.lavaCheckEnabled = true
+config.lastHealth = nil
+config.lavaTeleportHeight = 6
+config.inLavaCooldown = false
+config.lavaCooldownTime = 2
+
+local function checkLavaDamage()
+    if not config.miningEnabled or config.defendingAgainstMob or not config.lavaCheckEnabled then
+        return
+    end
+    
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+    
+    local currentHealth = humanoid.Health
+    
+    if not config.lastHealth then
+        config.lastHealth = currentHealth
+        return
+    end
+    
+    if currentHealth < config.lastHealth and not config.inLavaCooldown then
+        print("🔥 LAVA DAMAGE DETECTED! Teleporting up...")
+        config.inLavaCooldown = true
+        
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart and config.currentRock then
+            local positionPart = funcs.getRockPosition(config.currentRock)
+            if positionPart then
+                local rockPos = positionPart.Position
+                local safePos = rockPos + Vector3.new(0, config.lavaTeleportHeight, 0)
+                rootPart.CFrame = CFrame.new(safePos)
+                
+                if config.bodyVelocity then
+                    config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                end
+                
+                print("✅ Teleported to safety at " .. config.lavaTeleportHeight .. " studs above rock")
+            end
+        end
+        
+        task.delay(config.lavaCooldownTime, function()
+            config.inLavaCooldown = false
+        end)
+    end
+    
+    config.lastHealth = currentHealth
+end
+
+local function clickMouseForDefense()
+    local success = pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
+        task.wait(0.01)
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
+    end)
+    return success
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- IMPROVED MESSAGE DETECTION SYSTEM (INSTANT ROCK SWITCH)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local lastMessageTime = 0
+local MESSAGE_COOLDOWN = 0.5  -- Reduced from 1 second for faster detection
+
+-- ✅ INSTANT rock switch function
+local function switchToNewRock(reason)
+    if config.currentRock and config.miningEnabled and not config.defendingAgainstMob then
+        print("⚠️ " .. reason)
+        print("🚫 INSTANTLY switching to new rock...")
+        
+        -- Add to ignore list
+        table.insert(config.ignoredRocks, config.currentRock)
+        
+        -- Clear current rock IMMEDIATELY
+        config.currentRock = nil
+        config.lastRockDurability = nil
+        config.isLockedOn = false
+        
+        -- Force body velocity to stop moving to old rock
+        local character = LocalPlayer.Character
+        if character then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart and config.bodyVelocity then
+                config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            end
+        end
+        
+        print("✅ Ready to find new rock!")
+    end
+end
+
+-- ✅ METHOD 1: Monitor ALL TextLabels in PlayerGui
+local function setupTextLabelMonitoring()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
+    if not playerGui then return end
+    
+    local function monitorTextLabel(textLabel)
+        if not textLabel:IsA("TextLabel") then return end
+        
+        local connection
+        connection = textLabel:GetPropertyChangedSignal("Text"):Connect(function()
+            if (tick() - lastMessageTime) < MESSAGE_COOLDOWN then return end
+            
+            local text = textLabel.Text:lower()
+            
+            if text:find("already mining") or 
+               text:find("someone else") or 
+               text:find("being mined") or
+               text:find("another player") then
+                
+                lastMessageTime = tick()
+                switchToNewRock("Detected: Another player is mining this rock!")
+            end
+        end)
+    end
+    
+    -- Monitor existing labels
+    for _, gui in pairs(playerGui:GetDescendants()) do
+        monitorTextLabel(gui)
+    end
+    
+    -- Monitor new labels
+    playerGui.DescendantAdded:Connect(function(descendant)
+        task.wait(0.05)
+        monitorTextLabel(descendant)
+    end)
+end
+
+-- ✅ METHOD 2: Monitor StarterGui notifications
+local function setupStarterGuiMonitoring()
+    local starterGui = game:GetService("StarterGui")
+    
+    -- Hook into SetCore notifications
+    local oldSetCore = starterGui.SetCore
+    starterGui.SetCore = function(self, ...)
+        local args = {...}
+        if args[1] == "ChatMakeSystemMessage" or args[1] == "SendNotification" then
+            local message = ""
+            if type(args[2]) == "table" then
+                message = tostring(args[2].Text or ""):lower()
+            else
+                message = tostring(args[2] or ""):lower()
+            end
+            
+            if message:find("already mining") or 
+               message:find("someone else") or 
+               message:find("being mined") then
+                
+                switchToNewRock("Detected notification: Rock being mined by another player!")
+            end
+        end
+        return oldSetCore(self, ...)
+    end
+end
+
+-- ✅ METHOD 3: Monitor specific common GUI paths
+local function setupCommonGuiMonitoring()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
+    if not playerGui then return end
+    
+    -- Common notification GUI names
+    local commonPaths = {
+        "Notifications",
+        "SystemMessages", 
+        "Messages",
+        "Hints",
+        "Popups",
+        "ErrorMessages",
+        "Chat"
+    }
+    
+    for _, guiName in ipairs(commonPaths) do
+        local gui = playerGui:FindFirstChild(guiName)
+        if gui then
+            gui.DescendantAdded:Connect(function(descendant)
+                if descendant:IsA("TextLabel") or descendant:IsA("TextBox") then
+                    task.wait(0.05)
+                    local text = descendant.Text:lower()
+                    
+                    if text:find("already mining") or 
+                       text:find("someone else") or 
+                       text:find("being mined") then
+                        
+                        switchToNewRock("Detected in " .. guiName .. ": Rock occupied!")
+                    end
+                end
+            end)
+        end
+    end
+end
+
+-- ✅ METHOD 4: Direct chat monitoring
+local function setupChatMonitoring()
+    local chatService = game:GetService("Chat")
+    local textChatService = game:GetService("TextChatService")
+    
+    -- Try new TextChatService
+    pcall(function()
+        textChatService.MessageReceived:Connect(function(message)
+            local text = message.Text:lower()
+            if text:find("already mining") or 
+               text:find("someone else") or 
+               text:find("being mined") then
+                
+                switchToNewRock("Detected in chat: Rock occupied!")
+            end
+        end)
+    end)
+end
+
+-- ✅ Initialize ALL detection methods (redundancy for reliability)
+task.spawn(function()
+    task.wait(1)
+    print("🔍 Setting up INSTANT rock switch detection...")
+    
+    setupTextLabelMonitoring()
+    print("✅ Method 1: TextLabel monitoring active")
+    
+    setupStarterGuiMonitoring()
+    print("✅ Method 2: StarterGui monitoring active")
+    
+    setupCommonGuiMonitoring()
+    print("✅ Method 3: Common GUI monitoring active")
+    
+    setupChatMonitoring()
+    print("✅ Method 4: Chat monitoring active")
+    
+    print("🎯 All detection methods ready!")
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MAIN FARMING LOOP
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local farmLoop = RunService.Heartbeat:Connect(function()
@@ -1300,15 +2014,152 @@ local farmLoop = RunService.Heartbeat:Connect(function()
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MAIN MINING LOOP
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Living = workspace:WaitForChild("Living")
+
 local miningLoop = RunService.Heartbeat:Connect(function()
-    if not config.miningEnabled or config.isRespawning then return end
+    if not config.miningEnabled then 
+        if config.currentRock then
+            config.currentRock = nil
+            config.lastRockDurability = nil
+            config.isLockedOn = false
+        end
+        if config.defendingAgainstMob then
+            config.defendingAgainstMob = nil
+            config.savedMiningRock = nil
+            config.weaponEquipped = false
+        end
+        config.lastHealth = nil
+        return 
+    end
+    
+    if config.isRespawning then return end
     
     if not config.bodyVelocity or not config.bodyGyro then
         funcs.setupPhysicsMovement()
         return
     end
     
-    -- ✅ Handle hover sequence first (same as farming)
+    local character = LocalPlayer.Character
+    if not character then return end
+    
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then return end
+    
+    checkLavaDamage()
+    
+    -- DEFENSE: CHECK FOR THREATS
+    if config.miningDefenseEnabled then
+        local closestThreat = nil
+        local closestDistance = config.miningDefenseDistance
+        
+        for _, child in pairs(Living:GetChildren()) do
+            if funcs.isValidMob(child) then
+                local mobRoot = child:FindFirstChild("HumanoidRootPart")
+                if mobRoot then
+                    local distance = (rootPart.Position - mobRoot.Position).Magnitude
+                    if distance < closestDistance then
+                        closestThreat = child
+                        closestDistance = distance
+                    end
+                end
+            end
+        end
+        
+        if closestThreat and not config.defendingAgainstMob then
+            print("🚨 THREAT: " .. closestThreat.Name .. " at " .. math.floor(closestDistance) .. " studs!")
+            config.defendingAgainstMob = closestThreat
+            config.savedMiningRock = config.currentRock
+            config.currentRock = nil
+            config.isLockedOn = false
+            config.weaponEquipped = false
+            config.lastHealth = nil
+            
+            if pickaxeCheckLoop then
+                pickaxeCheckLoop:Disconnect()
+                pickaxeCheckLoop = nil
+            end
+            
+            return
+        end
+        
+        if closestThreat and config.defendingAgainstMob then
+            config.defendingAgainstMob = closestThreat
+        end
+    end
+    
+    -- DEFENSE MODE: KILL THE MOB
+    if config.defendingAgainstMob then
+        if not config.defendingAgainstMob.Parent or not funcs.isValidMob(config.defendingAgainstMob) then
+            print("✅ THREAT ELIMINATED!")
+            config.defendingAgainstMob = nil
+            config.weaponEquipped = false
+            config.isLockedOn = false
+            
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:UnequipTools()
+                task.wait(0.2)
+            end
+            
+            config.currentRock = config.savedMiningRock
+            config.savedMiningRock = nil
+            
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                config.lastHealth = humanoid.Health
+            end
+            
+            startAutoMine()
+            
+            print("⛏️ Resuming mining...")
+            return
+        end
+        
+        if not config.weaponEquipped then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:UnequipTools()
+                task.wait(0.2)
+            end
+            
+            local backpack = LocalPlayer:FindFirstChild("Backpack")
+            if backpack then
+                local weapon = backpack:FindFirstChild("Weapon")
+                if weapon and weapon:IsA("Tool") then
+                    humanoid:EquipTool(weapon)
+                    task.wait(0.3)
+                    config.weaponEquipped = true
+                    print("⚔️ WEAPON EQUIPPED!")
+                end
+            end
+            return
+        end
+        
+        local lockPos = funcs.getLockPosition(config.defendingAgainstMob)
+        if lockPos then
+            local distance = (rootPart.Position - lockPos).Magnitude
+            
+            funcs.hoverToMob(lockPos, config.defendingAgainstMob)
+            
+            if distance < 3 then
+                config.isLockedOn = true
+                
+                local currentTime = tick()
+                if currentTime - config.lastDefenseAttackTime >= config.defenseAttackCooldown then
+                    config.lastDefenseAttackTime = currentTime
+                    clickMouseForDefense()
+                end
+            end
+        end
+        
+        return
+    end
+    
+    -- NORMAL MINING
     if config.hoverSequenceActive then
         if config.currentHoverTarget == 1 then
             if funcs.hoverToPosition(config.hoverPosition1, HOVER_POSITION_2) then
@@ -1323,51 +2174,21 @@ local miningLoop = RunService.Heartbeat:Connect(function()
         return
     end
     
-    -- ✅ Check if current rock is destroyed
     if config.currentRock and (not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)) then
+        print("🪨 Rock destroyed, finding new rock...")
         config.currentRock = nil
         config.lastRockDurability = nil
+        return
     end
     
-    -- ✅ Check if rock is taking damage
-    if config.currentRock then
-        local currentTime = tick()
-        
-        -- Check durability every few seconds
-        if currentTime - config.rockDurabilityCheck >= config.rockDurabilityCheckInterval then
-            config.rockDurabilityCheck = currentTime
-            
-            local currentDurability = funcs.getRockDurability(config.currentRock)
-            
-            if config.lastRockDurability then
-                -- If durability hasn't changed, rock is being mined by someone else
-                if currentDurability == config.lastRockDurability then
-                    -- Add to ignored list
-                    table.insert(config.ignoredRocks, config.currentRock)
-                    
-                    -- Reset and find new rock
-                    config.currentRock = nil
-                    config.lastRockDurability = nil
-                    return
-                end
-            end
-            
-            -- Update last known durability
-            config.lastRockDurability = currentDurability
-        end
-    end
-    
-    -- ✅ Find new rock if we don't have one
     if not config.currentRock then
         config.currentRock = funcs.getClosestRock()
         
         if config.currentRock then
-            -- Reset durability tracking for new rock
             config.lastRockDurability = funcs.getRockDurability(config.currentRock)
             config.rockDurabilityCheck = tick()
-            
-            -- Make it transparent
             funcs.makeRockTransparent(config.currentRock)
+            print("🎯 Locked onto rock: " .. config.currentRock.Parent.Name .. " (Durability: " .. tostring(config.lastRockDurability) .. ")")
         end
         return
     end
@@ -1381,31 +2202,32 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- CHARACTER RESPAWN HANDLER (FIXED - 3 SECOND DELAY FOR BOTH)
+-- CHARACTER RESPAWN HANDLER
 -- ═══════════════════════════════════════════════════════════════════════════
 
 LocalPlayer.CharacterAdded:Connect(function(character)
-    -- ✅ Immediately stop everything
     config.currentMob = nil
     config.currentRock = nil
     config.isLockedOn = false
     config.isRespawning = true
     config.hoverSequenceActive = false
+    config.defendingAgainstMob = nil
+    config.savedMiningRock = nil
+    config.weaponEquipped = false
+    config.lastHealth = nil
+    config.inLavaCooldown = false
     funcs.cleanupPhysicsMovement()
     funcs.stopNoclip()
     
-    -- ✅ Only resume if farming or mining was enabled
     local wasFarming = config.enabled
     local wasMining = config.miningEnabled
     
     if wasFarming or wasMining then
-        -- ✅ CRITICAL: Wait for character to fully load, THEN wait 3 seconds
         character:WaitForChild("HumanoidRootPart", 10)
-        task.wait(3)  -- This was not actually waiting before
+        task.wait(3)
         
         local rootPart = character:FindFirstChild("HumanoidRootPart")
         if rootPart then
-            -- ✅ Setup hover sequence
             config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
             config.hoverSequenceActive = true
             config.currentHoverTarget = 1
@@ -1418,10 +2240,14 @@ LocalPlayer.CharacterAdded:Connect(function(character)
             end
             if wasMining then 
                 funcs.autoEquipPickaxe()
-                -- Reset mining state
                 config.ignoredRocks = {}
                 config.lastRockDurability = nil
                 config.rockDurabilityCheck = tick()
+                
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    config.lastHealth = humanoid.Health
+                end
             end
         end
         
@@ -1432,5 +2258,29 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- AUTO-INITIALIZATION FOR AUTOSELL
+-- ═══════════════════════════════════════════════════════════════════════════
+
+task.spawn(function()
+    task.wait(0)
+    print("🔄 Talking to seller...")
+    funcs.talkToSeller()
+    print("✅ Ready to auto-sell!")
+end)
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- FINISH
 -- ═══════════════════════════════════════════════════════════════════════════
+
+print("✅ Part 7 Loaded: INSTANT Rock Switch + Defense + Lava Protection")
+print("═══════════════════════════════════════════════════════════════════════════")
+print("🎉 RAFSO'S COMPLETE HUB LOADED SUCCESSFULLY!")
+print("═══════════════════════════════════════════════════════════════════════════")
+print("⚔️  Press F1 to toggle Mob Farming")
+print("⛏️  Press F2 to toggle Mining (with auto-defense)")
+print("💰 Enable AutoSell in the AutoSell tab")
+print("⚙️  Configure settings in the Settings tab")
+print("🛡️  Mining Defense: Auto-kills mobs within 10 studs")
+print("🔥 Lava Protection: Teleports 6 studs up when taking damage")
+print("⚡ INSTANT Rock Switch: 4 detection methods for instant response")
+print("═══════════════════════════════════════════════════════════════════════════")
