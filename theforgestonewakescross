@@ -1392,7 +1392,7 @@ funcs.hoverToMob = hoverToMob
 funcs.hoverToRock = hoverToRock
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 5: UI SETUP & TELEPORT SYSTEM (FIXED)
+-- PART 5: UI SETUP & TELEPORT SYSTEM (ERROR PROTECTED)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1589,7 +1589,7 @@ local function stopWorld2AutoJoin()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- LOAD LINORIA UI LIBRARY (WITH ERROR HANDLING)
+-- LOAD LINORIA UI LIBRARY (WITH COMPREHENSIVE ERROR HANDLING)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 print("📦 Loading Linoria UI Library...")
@@ -1598,29 +1598,54 @@ local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main
 
 local Library, ThemeManager
 
-local librarySuccess = pcall(function()
-	Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
-	ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
-end)
+-- Retry mechanism for library loading
+local maxRetries = 3
+local retryDelay = 2
 
-if not librarySuccess or not Library then
-	error("❌ Failed to load Linoria UI Library! Check your internet connection.")
-	return
+for attempt = 1, maxRetries do
+	print("📥 Attempt " .. attempt .. " of " .. maxRetries .. "...")
+	
+	local librarySuccess = pcall(function()
+		Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+		ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+	end)
+	
+	if librarySuccess and Library then
+		print("✅ Linoria UI Library loaded successfully")
+		break
+	else
+		warn("❌ Failed to load Linoria UI Library (Attempt " .. attempt .. ")")
+		
+		if attempt < maxRetries then
+			print("⏳ Retrying in " .. retryDelay .. " seconds...")
+			task.wait(retryDelay)
+		else
+			error("❌ Failed to load Linoria UI Library after " .. maxRetries .. " attempts!")
+			return
+		end
+	end
 end
 
-print("✅ Linoria UI Library loaded successfully")
-
 -- ═══════════════════════════════════════════════════════════════════════════
--- CREATE WINDOW
+-- CREATE WINDOW (WITH ERROR PROTECTION)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local Window = Library:CreateWindow({
-	Title = "The Forge by Rafso | Stonewake's Cross",
-	Center = true,
-	AutoShow = true,
-	TabPadding = 8,
-	MenuFadeTime = 0.2
-})
+local Window
+
+local windowSuccess = pcall(function()
+	Window = Library:CreateWindow({
+		Title = "The Forge by Rafso | Stonewake's Cross",
+		Center = true,
+		AutoShow = true,
+		TabPadding = 8,
+		MenuFadeTime = 0.2
+	})
+end)
+
+if not windowSuccess or not Window then
+	error("❌ Failed to create window!")
+	return
+end
 
 print("✅ Window created")
 
@@ -1628,8 +1653,8 @@ print("✅ Window created")
 -- INITIALIZE GLOBAL REFERENCES
 -- ═══════════════════════════════════════════════════════════════════════════
 
-getgenv().Toggles = {}
-getgenv().Options = {}
+getgenv().Toggles = getgenv().Toggles or {}
+getgenv().Options = getgenv().Options or {}
 
 _G.UIReferences = {
 	Window = Window,
@@ -2792,7 +2817,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 9: KEYBINDS, MAIN LOOPS & FINALIZATION (FIXED HOVERING)
+-- PART 9: KEYBINDS, MAIN LOOPS & FINALIZATION (ULTRA DEBUG VERSION)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2820,6 +2845,7 @@ task.spawn(function()
 				local newValue = not config.enabled
 				Toggles.FarmToggle:SetValue(newValue)
 				Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
+				print("🎮 F1 pressed - Farming: " .. (newValue and "ON" or "OFF"))
 			end
 			
 		elseif input.KeyCode == Enum.KeyCode.F2 then
@@ -2827,6 +2853,7 @@ task.spawn(function()
 				local newValue = not config.miningEnabled
 				Toggles.MineToggle:SetValue(newValue)
 				Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
+				print("🎮 F2 pressed - Mining: " .. (newValue and "ON" or "OFF"))
 			end
 		end
 	end)
@@ -2908,17 +2935,6 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PROXIMITY CHECK (FIXED - ALWAYS SKIP HOVER SEQUENCE)
--- ═══════════════════════════════════════════════════════════════════════════
-
-local SKIP_HOVER_DISTANCE = 9999 -- CRITICAL FIX: Always skip hover sequence
-
-local function checkProximityToTarget()
-	-- ALWAYS return true to skip hover sequence
-	return true
-end
-
--- ═══════════════════════════════════════════════════════════════════════════
 -- DEFENSE ATTACK FUNCTION
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -2931,18 +2947,26 @@ local function clickMouseForDefense()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN FARMING LOOP (FIXED - DIRECT HOVER)
+-- MAIN FARMING LOOP (ULTRA DEBUG VERSION)
 -- ═══════════════════════════════════════════════════════════════════════════
 
+print("🔧 Initializing farming loop...")
+
 local farmLoop = RunService.Heartbeat:Connect(function()
-	if not config.enabled or config.isRespawning then return end
+	if not config.enabled then return end
+	
+	if config.isRespawning then 
+		print("⏸️ Farming paused - respawning")
+		return 
+	end
 	
 	if not config.bodyVelocity or not config.bodyGyro then
+		print("⚙️ Setting up physics movement...")
 		funcs.setupPhysicsMovement()
 		return
 	end
 	
-	-- SKIP hover sequence entirely - go directly to mob
+	-- Skip hover sequence
 	config.hoverSequenceActive = false
 	
 	local needNewMob = not config.currentMob or not config.currentMob.Parent or not funcs.isValidMob(config.currentMob)
@@ -2951,6 +2975,40 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		config.currentMob = funcs.getClosestMob()
 		if config.currentMob then
 			print("🎯 Locked onto: " .. config.currentMob.Name)
+		else
+			-- DEBUG: Check why no mobs found
+			local character = LocalPlayer.Character
+			if not character then
+				print("❌ No character found")
+				return
+			end
+			
+			local rootPart = character:FindFirstChild("HumanoidRootPart")
+			if not rootPart then
+				print("❌ No HumanoidRootPart found")
+				return
+			end
+			
+			print("⚠️ No valid mobs found. Checking Living folder...")
+			local mobCount = 0
+			for _, child in pairs(Living:GetChildren()) do
+				if funcs.isValidMob(child) then
+					mobCount = mobCount + 1
+				end
+			end
+			print("   Found " .. mobCount .. " valid mobs in Living folder")
+			
+			-- Check if any mob types are enabled
+			local enabledCount = 0
+			for _, mobData in ipairs(config.mobTypes) do
+				if mobData.enabled then
+					enabledCount = enabledCount + 1
+					print("   ✅ " .. mobData.name .. " is enabled")
+				end
+			end
+			if enabledCount == 0 then
+				print("   ❌ No mob types are enabled! Enable them in the Mobs tab.")
+			end
 		end
 		return
 	end
@@ -2959,6 +3017,8 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		local lockPos = funcs.getLockPosition(config.currentMob)
 		if lockPos then
 			funcs.hoverToMob(lockPos, config.currentMob)
+		else
+			print("❌ Failed to get lock position for mob")
 		end
 	end
 end)
@@ -2966,8 +3026,10 @@ end)
 print("✅ Farming loop active")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN MINING LOOP (FIXED - DIRECT HOVER WITH DEFENSE)
+-- MAIN MINING LOOP (ULTRA DEBUG VERSION)
 -- ═══════════════════════════════════════════════════════════════════════════
+
+print("🔧 Initializing mining loop...")
 
 local miningLoop = RunService.Heartbeat:Connect(function()
 	if not config.miningEnabled then 
@@ -2984,9 +3046,13 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		return 
 	end
 	
-	if config.isRespawning then return end
+	if config.isRespawning then
+		print("⏸️ Mining paused - respawning")
+		return
+	end
 	
 	if not config.bodyVelocity or not config.bodyGyro then
+		print("⚙️ Setting up physics movement...")
 		funcs.setupPhysicsMovement()
 		return
 	end
@@ -2997,7 +3063,7 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	if not rootPart then return end
 	
-	-- SKIP hover sequence entirely
+	-- Skip hover sequence
 	config.hoverSequenceActive = false
 	
 	-- ═══════════════════════════════════════════════════════════════════════
@@ -3121,6 +3187,27 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			config.lastRockDurability = funcs.getRockDurability(config.currentRock)
 			config.rockDurabilityCheck = tick()
 			funcs.makeRockTransparent(config.currentRock)
+		else
+			-- DEBUG: Check why no rocks found
+			print("⚠️ No valid rocks found. Checking Rocks folder...")
+			
+			local rocksFolder = workspace:FindFirstChild("Rocks")
+			if not rocksFolder then
+				print("   ❌ Rocks folder not found in workspace!")
+				return
+			end
+			
+			-- Check if any rock types are enabled
+			local enabledCount = 0
+			for _, rockData in ipairs(config.rockTypes) do
+				if rockData.enabled then
+					enabledCount = enabledCount + 1
+					print("   ✅ " .. rockData.name .. " is enabled")
+				end
+			end
+			if enabledCount == 0 then
+				print("   ❌ No rock types are enabled! Enable them in the Mine tab.")
+			end
 		end
 		return
 	end
@@ -3129,6 +3216,8 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		local rockPos = funcs.getMiningPosition(config.currentRock)
 		if rockPos then
 			funcs.hoverToRock(rockPos, config.currentRock)
+		else
+			print("❌ Failed to get mining position for rock")
 		end
 	end
 end)
@@ -3207,4 +3296,9 @@ print("🎮 Controls:")
 print("   F1 = Toggle Farming")
 print("   F2 = Toggle Mining")
 print("   K  = Toggle Menu")
+print("═══════════════════════════════════════════════════════════")
+print("⚠️ IMPORTANT:")
+print("   1. Select mobs in the 'Mobs' tab")
+print("   2. Select rocks in the 'Mine' tab")
+print("   3. Then press F1/F2 to start!")
 print("═══════════════════════════════════════════════════════════")
