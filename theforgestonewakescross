@@ -1835,7 +1835,6 @@ InfoLeftBox:AddLabel('• Config System')
 
 local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 
-InfoRightBox:AddLabel('Important Tips:')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('if not automatically done')
 InfoRightBox:AddLabel('This Script is in BETA')
