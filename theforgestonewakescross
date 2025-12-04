@@ -1507,7 +1507,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 local Living = workspace:WaitForChild("Living")
-
+local HOVER_HEIGHT = -5
 local config = _G.MobFarmConfig
 local funcs = _G.FarmFunctions
 
@@ -1821,7 +1821,7 @@ Tabs.Configs = Window:AddTab('Config')
 
 local InfoLeftBox = Tabs.Info:AddLeftGroupbox('Script Information')
 
-InfoLeftBox:AddLabel('World 1: Stonewake's Cross')
+InfoLeftBox:AddLabel("World 1: Stonewake's Cross")
 InfoLeftBox:AddLabel('Tested on Xeno')
 InfoLeftBox:AddLabel('Created by Rafso [literalh]')
 InfoLeftBox:AddDivider()
