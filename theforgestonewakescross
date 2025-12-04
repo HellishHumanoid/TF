@@ -1913,7 +1913,7 @@ InfoRightBox:AddLabel('• Press F2 to toggle mining')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('  if not automatically done')
 InfoRightBox:AddLabel('• Script is in BETA')
-InfoRightBox:AddLabel('• Don't hesitate sending DM')
+InfoRightBox:AddLabel('• Do not hesitate sending a DM')
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- FARMING TAB
