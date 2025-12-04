@@ -2511,6 +2511,9 @@ World2Box:AddToggle('AutoJoinWorld2', {
 				return
 			end
 			
+			-- Hide the GUI
+			Library:ToggleOpen()
+			
 			Library:Notify("Starting in 5 seconds...", 3)
 			task.wait(5)
 			
@@ -2518,13 +2521,22 @@ World2Box:AddToggle('AutoJoinWorld2', {
 				local success = startWorld2AutoJoin()
 				if not success then
 					Toggles.AutoJoinWorld2:SetValue(false)
+					-- Show GUI again if failed
+					Library:ToggleOpen()
 				else
 					Library:Notify("World 2 Auto-Join started!", 3)
 				end
+			else
+				-- Show GUI again if cancelled during countdown
+				Library:ToggleOpen()
 			end
 		else
 			stopWorld2AutoJoin()
 			Library:Notify("World 2 Auto-Join stopped!", 3)
+			-- Show GUI again when stopped
+			if not Library.Toggled then
+				Library:ToggleOpen()
+			end
 		end
 	end
 })
@@ -2539,6 +2551,9 @@ World2Box:AddButton({
 			return
 		end
 		
+		-- Hide the GUI
+		Library:ToggleOpen()
+		
 		Library:Notify("Teleporting to Forgotten Kingdom...", 3)
 		local success = teleportToWorld2()
 		
@@ -2546,6 +2561,9 @@ World2Box:AddButton({
 			Library:Notify("Successfully joined Forgotten Kingdom!", 3)
 		else
 			Library:Notify("Failed to join Forgotten Kingdom!", 3)
+			-- Show GUI again if failed
+			task.wait(2)
+			Library:ToggleOpen()
 		end
 	end,
 	DoubleClick = false,
