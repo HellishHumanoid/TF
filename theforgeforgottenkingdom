@@ -2258,13 +2258,13 @@ for npcName, _ in pairs(teleportNPCs) do
 end
 table.sort(npcOptions)
 
-TeleportNPCsBox:AddLabel('Select an NPC:')
+TeleportNPCsBox:AddLabel('Select a NPC:')
 
 TeleportNPCsBox:AddDropdown('NPCSelection', {
 	Values = npcOptions,
 	Default = 1,
 	Multi = false,
-	Tooltip = 'Choose an NPC to teleport to',
+	Tooltip = 'Choose a NPC to teleport to',
 	Callback = function(Value)
 		selectedNPC = Value
 	end
