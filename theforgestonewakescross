@@ -13,22 +13,14 @@ local LocalPlayer = Players.LocalPlayer
 local Living = workspace:WaitForChild("Living")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- HOVER POSITIONS
--- ═══════════════════════════════════════════════════════════════════════════
-Vector3.new(-44.71, -5.12, -273.02)
--- ═══════════════════════════════════════════════════════════════════════════
--- AUTOSELL CONFIG
+-- CONSTANTS
 -- ═══════════════════════════════════════════════════════════════════════════
 
+local HOVER_HEIGHT = -5
+local HOVER_POSITION_2 = Vector3.new(-44.71, -5.12, -273.02)
 local SELLER_POSITION = Vector3.new(-113.83, 37.54, -35.20)
-local SELLER_PROXIMITY = workspace.Proximity["Greedy Cey"].ProximityPrompt
 local NO_BUTTON_X = 1200
 local NO_BUTTON_Y = 498
-
-local originalPosition = nil
-
--- Remote for selling
-local RunCommand = ReplicatedStorage:WaitForChild("Shared", 10):WaitForChild("Packages", 10):WaitForChild("Knit", 10):WaitForChild("Services", 10):WaitForChild("DialogueService", 10):WaitForChild("RF", 10):WaitForChild("RunCommand", 10)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ITEMS BY RARITY (FOR AUTOSELL)
@@ -108,7 +100,6 @@ local CONFIG_FOLDER = "RafsoHubConfigs_World1"
 local CONFIG_LIST_FILE = CONFIG_FOLDER .. "/ConfigList.json"
 local AUTOLOAD_FILE = CONFIG_FOLDER .. "/AutoLoad.txt"
 
--- Config log storage
 local configLog = ""
 
 local function addToLog(message)
@@ -119,21 +110,17 @@ local function clearLog()
 	configLog = ""
 end
 
--- Ensure config folder exists
 if not isfolder(CONFIG_FOLDER) then
 	makefolder(CONFIG_FOLDER)
 end
 
--- Save configuration
 local function saveConfig(configName)
 	clearLog()
 	addToLog("═══════════════════════════════════════════════════════════")
 	addToLog("💾 SAVING CONFIG: " .. configName)
 	addToLog("═══════════════════════════════════════════════════════════")
 	
-	-- Capture current state
 	local configData = {
-		-- Farming settings
 		enabled = _G.MobFarmConfig.enabled,
 		behindDistance = _G.MobFarmConfig.behindDistance,
 		verticalDistance = _G.MobFarmConfig.verticalDistance,
@@ -142,19 +129,11 @@ local function saveConfig(configName)
 		lockPosition = _G.MobFarmConfig.lockPosition,
 		aboveAngle = _G.MobFarmConfig.aboveAngle,
 		belowAngle = _G.MobFarmConfig.belowAngle,
-		
-		-- Mob types
 		mobTypes = {},
-		
-		-- Mining settings
 		miningEnabled = _G.MobFarmConfig.miningEnabled,
 		miningVerticalDistance = _G.MobFarmConfig.miningVerticalDistance,
 		miningAngle = _G.MobFarmConfig.miningAngle,
-		
-		-- Rock types
 		rockTypes = {},
-		
-		-- AutoSell settings
 		autoSellEnabled = _G.MobFarmConfig.autoSellEnabled,
 		selectedItems = _G.MobFarmConfig.selectedItems,
 	}
@@ -165,10 +144,7 @@ local function saveConfig(configName)
 	addToLog("  AutoSell Enabled: " .. tostring(configData.autoSellEnabled))
 	addToLog("  Hover Speed: " .. configData.hoverSpeed)
 	addToLog("  Vertical Distance: " .. configData.verticalDistance)
-	addToLog("  Mining Vertical Distance: " .. configData.miningVerticalDistance)
-	addToLog("  Lock Position: " .. configData.lockPosition)
 	
-	-- Save mob types
 	local enabledMobCount = 0
 	for _, mobData in ipairs(_G.MobFarmConfig.mobTypes) do
 		table.insert(configData.mobTypes, {
@@ -183,7 +159,6 @@ local function saveConfig(configName)
 	end
 	addToLog("Total enabled mobs: " .. enabledMobCount)
 	
-	-- Save rock types
 	local enabledRockCount = 0
 	for _, rockData in ipairs(_G.MobFarmConfig.rockTypes) do
 		table.insert(configData.rockTypes, {
@@ -198,7 +173,6 @@ local function saveConfig(configName)
 	end
 	addToLog("Total enabled rocks: " .. enabledRockCount)
 	
-	-- Config: Print AutoSell items
 	addToLog("💰 AutoSell items:")
 	local totalItems = 0
 	for rarity, items in pairs(configData.selectedItems) do
@@ -209,7 +183,6 @@ local function saveConfig(configName)
 	end
 	addToLog("Total AutoSell items: " .. totalItems)
 	
-	-- Write to file
 	local configPath = CONFIG_FOLDER .. "/" .. configName .. ".json"
 	local success, err = pcall(function()
 		local jsonData = game:GetService("HttpService"):JSONEncode(configData)
@@ -224,7 +197,6 @@ local function saveConfig(configName)
 	
 	addToLog("✅ Config file written to: " .. configPath)
 	
-	-- Update config list
 	local configList = {}
 	if isfile(CONFIG_LIST_FILE) then
 		local listSuccess, listData = pcall(function()
@@ -249,7 +221,6 @@ local function saveConfig(configName)
 	return true
 end
 
--- Load configuration
 local function loadConfig(configName)
 	clearLog()
 	addToLog("═══════════════════════════════════════════════════════════")
@@ -279,7 +250,6 @@ local function loadConfig(configName)
 	
 	addToLog("✅ Config JSON parsed successfully")
 	
-	-- Apply basic settings
 	_G.MobFarmConfig.enabled = configData.enabled or false
 	_G.MobFarmConfig.miningEnabled = configData.miningEnabled or false
 	_G.MobFarmConfig.autoSellEnabled = configData.autoSellEnabled or false
@@ -295,11 +265,7 @@ local function loadConfig(configName)
 	addToLog("  Farming Enabled: " .. tostring(_G.MobFarmConfig.enabled))
 	addToLog("  Mining Enabled: " .. tostring(_G.MobFarmConfig.miningEnabled))
 	addToLog("  AutoSell Enabled: " .. tostring(_G.MobFarmConfig.autoSellEnabled))
-	addToLog("  Hover Speed: " .. _G.MobFarmConfig.hoverSpeed)
-	addToLog("  Vertical Distance: " .. _G.MobFarmConfig.verticalDistance)
-	addToLog("  Lock Position: " .. _G.MobFarmConfig.lockPosition)
 	
-	-- Apply mob types
 	local loadedMobCount = 0
 	if configData.mobTypes then
 		for i, savedMob in ipairs(configData.mobTypes) do
@@ -314,14 +280,9 @@ local function loadConfig(configName)
 	end
 	addToLog("Total mobs enabled: " .. loadedMobCount)
 	
-	-- Apply mining settings
 	_G.MobFarmConfig.miningVerticalDistance = configData.miningVerticalDistance or 6
 	_G.MobFarmConfig.miningAngle = configData.miningAngle or 270
 	
-	addToLog("⛏️ Mining settings loaded:")
-	addToLog("  Mining Vertical Distance: " .. _G.MobFarmConfig.miningVerticalDistance)
-	
-	-- Apply rock types
 	local loadedRockCount = 0
 	if configData.rockTypes then
 		for i, savedRock in ipairs(configData.rockTypes) do
@@ -336,7 +297,6 @@ local function loadConfig(configName)
 	end
 	addToLog("Total rocks enabled: " .. loadedRockCount)
 	
-	-- Apply autosell items
 	if configData.selectedItems then
 		_G.MobFarmConfig.selectedItems = configData.selectedItems
 		
@@ -359,7 +319,6 @@ local function loadConfig(configName)
 	return true
 end
 
--- Get list of saved configs
 local function getConfigList()
 	if not isfile(CONFIG_LIST_FILE) then
 		return {}
@@ -376,7 +335,6 @@ local function getConfigList()
 	end
 end
 
--- Delete configuration
 local function deleteConfig(configName)
 	clearLog()
 	addToLog("🗑️ Deleting config: " .. configName)
@@ -388,7 +346,6 @@ local function deleteConfig(configName)
 		addToLog("✅ Deleted config file")
 	end
 	
-	-- Update config list
 	local configList = getConfigList()
 	for i, name in ipairs(configList) do
 		if name == configName then
@@ -399,7 +356,6 @@ local function deleteConfig(configName)
 		end
 	end
 	
-	-- Remove autoload if it was this config
 	if isfile(AUTOLOAD_FILE) and readfile(AUTOLOAD_FILE) == configName then
 		delfile(AUTOLOAD_FILE)
 		addToLog("✅ Removed from autoload")
@@ -410,25 +366,20 @@ local function deleteConfig(configName)
 	return true
 end
 
--- Set autoload config
 local function setAutoload(configName)
 	clearLog()
 	writefile(AUTOLOAD_FILE, configName)
 	addToLog("🔄 Autoload set to: " .. configName)
-	addToLog("📁 Written to: " .. AUTOLOAD_FILE)
 	setclipboard(configLog)
 end
 
--- Get autoload config
 local function getAutoload()
 	if isfile(AUTOLOAD_FILE) then
-		local autoloadName = readfile(AUTOLOAD_FILE)
-		return autoloadName
+		return readfile(AUTOLOAD_FILE)
 	end
 	return nil
 end
 
--- Config function to print current config state
 local function debugCurrentConfig()
 	clearLog()
 	addToLog("═══════════════════════════════════════════════════════════")
@@ -437,10 +388,6 @@ local function debugCurrentConfig()
 	addToLog("Farming Enabled: " .. tostring(_G.MobFarmConfig.enabled))
 	addToLog("Mining Enabled: " .. tostring(_G.MobFarmConfig.miningEnabled))
 	addToLog("AutoSell Enabled: " .. tostring(_G.MobFarmConfig.autoSellEnabled))
-	addToLog("Hover Speed: " .. _G.MobFarmConfig.hoverSpeed)
-	addToLog("Vertical Distance: " .. _G.MobFarmConfig.verticalDistance)
-	addToLog("Mining Vertical Distance: " .. _G.MobFarmConfig.miningVerticalDistance)
-	addToLog("Lock Position: " .. _G.MobFarmConfig.lockPosition)
 	
 	addToLog("\nEnabled Mobs:")
 	local mobCount = 0
@@ -450,9 +397,7 @@ local function debugCurrentConfig()
 			mobCount = mobCount + 1
 		end
 	end
-	if mobCount == 0 then
-		addToLog("  (none)")
-	end
+	if mobCount == 0 then addToLog("  (none)") end
 	
 	addToLog("\nEnabled Rocks:")
 	local rockCount = 0
@@ -462,27 +407,12 @@ local function debugCurrentConfig()
 			rockCount = rockCount + 1
 		end
 	end
-	if rockCount == 0 then
-		addToLog("  (none)")
-	end
+	if rockCount == 0 then addToLog("  (none)") end
 	
-	addToLog("\nAutoSell Items:")
-	local itemCount = 0
-	for rarity, items in pairs(_G.MobFarmConfig.selectedItems) do
-		if #items > 0 then
-			addToLog("  " .. rarity .. ": " .. table.concat(items, ", "))
-			itemCount = itemCount + #items
-		end
-	end
-	if itemCount == 0 then
-		addToLog("  (none)")
-	end
 	addToLog("═══════════════════════════════════════════════════════════")
-	
 	setclipboard(configLog)
 end
 
--- Store config functions globally
 _G.ConfigFunctions = {
 	saveConfig = saveConfig,
 	loadConfig = loadConfig,
@@ -494,10 +424,10 @@ _G.ConfigFunctions = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- GLOBAL CONFIG (WITH MINING DEFENSE VARIABLES)
+-- GLOBAL CONFIG
 -- ═══════════════════════════════════════════════════════════════════════════
+
 _G.MobFarmConfig = {
-	-- Farming settings
 	enabled = false,
 	behindDistance = 8,
 	verticalDistance = 8,
@@ -507,20 +437,17 @@ _G.MobFarmConfig = {
 	aboveAngle = 90,
 	belowAngle = 240,
 	
-	-- Hover sequence
 	hoverSequenceActive = false,
 	currentHoverTarget = 1,
 	hoverReachedThreshold = 3,
 	hoverPosition1 = nil,
 	
-	-- Attack settings
 	weaponRemote = nil,
 	lastAttackTime = 0,
 	attackCooldown = 0.25,
 	lastWeaponCheckTime = 0,
 	weaponCheckInterval = 0.5,
 	
-	-- State
 	currentMob = nil,
 	isLockedOn = false,
 	bodyVelocity = nil,
@@ -528,7 +455,6 @@ _G.MobFarmConfig = {
 	noclipLoop = nil,
 	isRespawning = false,
 	
-	-- Mob types (World 1: Stonewake's Cross)
 	mobTypes = {
 		{name = "Brute Zombie", pattern = "^Brute Zombie%d+$", enabled = false, priority = 1},
 		{name = "Elite Zombie", pattern = "^Elite Zombie%d+$", enabled = false, priority = 2},
@@ -536,7 +462,6 @@ _G.MobFarmConfig = {
 		{name = "Zombie", pattern = "^Zombie%d+$", enabled = false, priority = 4},
 	},
 	
-	-- Mining system
 	miningEnabled = false,
 	miningVerticalDistance = 6,
 	miningAngle = 270,
@@ -548,7 +473,6 @@ _G.MobFarmConfig = {
 	miningBodyVelocity = nil,
 	miningBodyGyro = nil,
 	
-	-- Mining defense system (NEW - CRITICAL FOR DEFENSE TO WORK)
 	miningDefenseEnabled = true,
 	miningDefenseDistance = 10,
 	defendingAgainstMob = nil,
@@ -557,20 +481,17 @@ _G.MobFarmConfig = {
 	lastDefenseAttackTime = 0,
 	defenseAttackCooldown = 0.1,
 	
-	-- Rock damage tracking
 	rockDurabilityCheck = 0,
 	rockDurabilityCheckInterval = 3,
 	lastRockDurability = nil,
 	ignoredRocks = {},
 	
-	-- Rock types (World 1: Stonewake's Cross)
 	rockTypes = {
 		{name = "Boulder", enabled = false, priority = 1},
 		{name = "Rock", enabled = false, priority = 2},
 		{name = "Pebble", enabled = false, priority = 3},
 	},
 	
-	-- AutoSell settings
 	autoSellEnabled = false,
 	sellCooldown = 1.5,
 	lastSellTime = 0,
@@ -590,14 +511,8 @@ _G.MobFarmConfig = {
 local config = _G.MobFarmConfig
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 2: NOCLIP & MOB/ROCK DETECTION (COMPLETE)
+-- PART 2: NOCLIP & MOB/ROCK DETECTION
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-local Living = workspace:WaitForChild("Living")
-local config = _G.MobFarmConfig
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NOCLIP SYSTEM
@@ -839,7 +754,10 @@ local function makeRockTransparent(rock)
 	end
 end
 
--- Store functions globally
+-- ═══════════════════════════════════════════════════════════════════════════
+-- STORE FUNCTIONS GLOBALLY
+-- ═══════════════════════════════════════════════════════════════════════════
+
 _G.FarmFunctions = {
 	startNoclip = startNoclip,
 	stopNoclip = stopNoclip,
@@ -854,16 +772,9 @@ _G.FarmFunctions = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 3: WEAPON SYSTEM, AUTOSELL & PHYSICS MOVEMENT (COMPLETE)
+-- PART 3: WEAPON SYSTEM, AUTOSELL & PHYSICS MOVEMENT
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
-local LocalPlayer = Players.LocalPlayer
-local config = _G.MobFarmConfig
 local funcs = _G.FarmFunctions
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -969,10 +880,7 @@ end
 -- AUTOSELL SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local SELLER_POSITION = Vector3.new(-113.83, 37.54, -35.20)
 local SELLER_PROXIMITY = workspace.Proximity["Greedy Cey"].ProximityPrompt
-local NO_BUTTON_X = 1200
-local NO_BUTTON_Y = 498
 local originalPosition = nil
 
 local RunCommand = ReplicatedStorage:WaitForChild("Shared", 10):WaitForChild("Packages", 10):WaitForChild("Knit", 10):WaitForChild("Services", 10):WaitForChild("DialogueService", 10):WaitForChild("RF", 10):WaitForChild("RunCommand", 10)
@@ -984,12 +892,10 @@ local function startAutoClickerAt(x, y, duration)
 	
 	config.autoClickerLoop = task.spawn(function()
 		local startTime = tick()
-		local clicks = 0
 		while config.autoClickerActive and (tick() - startTime) < duration do
 			VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
 			task.wait(0.01)
 			VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-			clicks = clicks + 1
 			task.wait(0.05)
 		end
 		config.autoClickerActive = false
@@ -1240,7 +1146,10 @@ local function cleanupPhysicsMovement()
 	config.isLockedOn = false
 end
 
--- Add to global functions
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ADD TO GLOBAL FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════════════════
+
 funcs.autoEquipWeapon = autoEquipWeapon
 funcs.autoEquipPickaxe = autoEquipPickaxe
 funcs.performAttack = performAttack
@@ -1251,15 +1160,8 @@ funcs.talkToSeller = talkToSeller
 funcs.sellItems = sellItems
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 4: MOVEMENT LOGIC & HOVERING (COMPLETE WITH FIXES)
+-- PART 4: MOVEMENT LOGIC & HOVERING
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-local config = _G.MobFarmConfig
-local funcs = _G.FarmFunctions
-
-local HOVER_POSITION_2 = Vector3.new(-44.71, -5.12, -273.02)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- POSITION CALCULATION
@@ -1364,18 +1266,14 @@ local function hoverToMob(targetPos, mob)
 	local direction = (targetPos - currentPos)
 	local distance = direction.Magnitude
 	
-	-- FIXED: More aggressive lock-on threshold
 	config.isLockedOn = distance < 12
 	
-	-- Handle Above/Below positions with improved stability
 	if (config.lockPosition == "Above" or config.lockPosition == "Below") then
 		if distance < 5 then
-			-- FIXED: Smoother follow movement
 			local followSpeed = math.max(5, distance * 2)
 			local desiredVelocity = direction.Unit * followSpeed
 			config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.3)
 		else
-			-- Approach position
 			local targetSpeed = config.hoverSpeed * math.min(distance / 10, 1)
 			local desiredVelocity = direction.Unit * targetSpeed
 			config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.4)
@@ -1399,22 +1297,17 @@ local function hoverToMob(targetPos, mob)
 		return
 	end
 	
-	-- FIXED: Improved Back/Front positioning
 	local targetSpeed
 	if distance < 3 then
-		-- Very close - minimal movement
 		targetSpeed = 3
 	elseif distance < 8 then
-		-- Close range - smooth tracking
 		targetSpeed = 12
 	else
-		-- Far range - fast approach
 		targetSpeed = config.hoverSpeed * math.min(distance / 8, 1)
 	end
 	
 	local desiredVelocity = direction.Unit * targetSpeed
 	
-	-- FIXED: Better lerp speed based on distance
 	local lerpSpeed
 	if distance < 3 then
 		lerpSpeed = 0.15
@@ -1427,19 +1320,16 @@ local function hoverToMob(targetPos, mob)
 	local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, lerpSpeed)
 	config.bodyVelocity.Velocity = newVelocity
 	
-	-- FIXED: Improved camera lock with predictive aiming
 	local mobVelocity = mobRoot.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
 	local predictedPos = mobRoot.Position + (mobVelocity * 0.1)
 	local lookCFrame = CFrame.new(currentPos, predictedPos)
 	
 	if distance < 8 then
-		-- Close range - tight lock
 		config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.8)
 		config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
 		config.bodyGyro.P = 80000
 		config.bodyGyro.D = 2500
 	else
-		-- Far range - smoother tracking
 		config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.5)
 		config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
 		config.bodyGyro.P = 50000
@@ -1491,7 +1381,10 @@ local function hoverToRock(targetPos, rock)
 	end
 end
 
--- Add to global functions
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ADD TO GLOBAL FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════════════════
+
 funcs.getLockPosition = getLockPosition
 funcs.getMiningPosition = getMiningPosition
 funcs.hoverToPosition = hoverToPosition
@@ -1499,26 +1392,15 @@ funcs.hoverToMob = hoverToMob
 funcs.hoverToRock = hoverToRock
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 4.5: LINORIA UI SETUP & TABS (CLEAN VERSION - NO DUPLICATES)
+-- PART 5: UI SETUP & TELEPORT SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local LocalPlayer = Players.LocalPlayer
-local Living = workspace:WaitForChild("Living")
-local HOVER_HEIGHT = -5
-local config = _G.MobFarmConfig
-local funcs = _G.FarmFunctions
-
-local HOVER_POSITION_2 = Vector3.new(-44.71, -5.12, -273.02)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- TELEPORT POSITIONS
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local teleportAreas = {
-    ["Forge"] = Vector3.new(-192.64, 29.57, 163.72),
+	["Forge"] = Vector3.new(-192.64, 29.57, 163.72),
 	["Cave 1"] = Vector3.new(26.77, -5.54, -92.99),
 	["Cave 2"] = Vector3.new(228.51, -13.58, -228.31),
 	["Cave 3"] = Vector3.new(-30.18, -5.65, -277.74),
@@ -1646,6 +1528,158 @@ local function startTeleportHover(position, locationName)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- WORLD 2 TELEPORT SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local FORGOTTEN_KINGDOM_SPAWN = Vector3.new(-260.62, 17.75, 100.27)
+local FORGOTTEN_KINGDOM_FRONT = Vector3.new(-260.62, 17.75, 93.27)
+local FORGOTTEN_KINGDOM_GUI_X = 602
+local FORGOTTEN_KINGDOM_GUI_Y = 459
+local TELEPORT_BUTTON_X = 1124
+local TELEPORT_BUTTON_Y = 682
+
+local world2AutoJoinActive = false
+local world2AutoJoinLoop = nil
+
+local function clickAt(x, y)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+	task.wait(0.01)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+end
+
+local function pressK()
+	VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.K, false, game)
+	task.wait(0.05)
+	VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.K, false, game)
+end
+
+local function checkForPortalTool()
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if backpack and backpack:FindFirstChild("PortalTool") then
+		return true
+	end
+	
+	local character = LocalPlayer.Character
+	if character and character:FindFirstChild("PortalTool") then
+		return true
+	end
+	
+	return false
+end
+
+local function teleportToWorld2()
+	local character = LocalPlayer.Character
+	if not character then return false end
+	
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	
+	if not rootPart or not humanoid then return false end
+	
+	local spawnPosition = FORGOTTEN_KINGDOM_SPAWN
+	
+	local startTime = tick()
+	while tick() - startTime < 1 do
+		rootPart.CFrame = CFrame.new(spawnPosition)
+		task.wait(0.05)
+	end
+	
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if not backpack then return false end
+	
+	local portalTool = backpack:FindFirstChild("PortalTool")
+	if not portalTool then return false end
+	
+	humanoid:EquipTool(portalTool)
+	task.wait(0.3)
+	
+	if not character:FindFirstChild("PortalTool") then return false end
+	
+	clickAt(0, 0)
+	task.wait(1)
+	
+	local proximityPrompt = nil
+	
+	for attempt = 1, 10 do
+		local debris = workspace:FindFirstChild("Debris")
+		if debris then
+			local portalForge = debris:FindFirstChild("PortalTheForge")
+			if portalForge then
+				local proximityContainer = portalForge:FindFirstChild("ProximityContainer")
+				if proximityContainer then
+					proximityPrompt = proximityContainer:FindFirstChild("ProximityPrompt")
+					if proximityPrompt then
+						break
+					end
+				end
+			end
+		end
+		task.wait(0.2)
+	end
+	
+	if not proximityPrompt then return false end
+	
+	local frontPosition = FORGOTTEN_KINGDOM_FRONT
+	
+	local lockStart = tick()
+	while tick() - lockStart < 1.5 do
+		rootPart.CFrame = CFrame.new(frontPosition)
+		task.wait(0.05)
+	end
+	
+	local targetPart = proximityPrompt.Parent
+	if targetPart and targetPart:IsA("BasePart") then
+		pcall(function()
+			proximityPrompt:InputHoldBegin()
+			proximityPrompt:InputHoldEnd()
+		end)
+	end
+	
+	task.wait(0.5)
+	
+	clickAt(FORGOTTEN_KINGDOM_GUI_X, FORGOTTEN_KINGDOM_GUI_Y)
+	task.wait(0.3)
+	
+	task.wait(0.5)
+	
+	for i = 1, 5 do
+		clickAt(TELEPORT_BUTTON_X, TELEPORT_BUTTON_Y)
+		task.wait(0.15)
+	end
+	
+	return true
+end
+
+local function startWorld2AutoJoin()
+	if world2AutoJoinActive then
+		return
+	end
+	
+	if not checkForPortalTool() then
+		return false
+	end
+	
+	world2AutoJoinActive = true
+	
+	world2AutoJoinLoop = task.spawn(function()
+		while world2AutoJoinActive do
+			teleportToWorld2()
+			task.wait(300)
+		end
+	end)
+	
+	return true
+end
+
+local function stopWorld2AutoJoin()
+	world2AutoJoinActive = false
+	if world2AutoJoinLoop then
+		task.cancel(world2AutoJoinLoop)
+		world2AutoJoinLoop = nil
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- LOAD LINORIA UI LIBRARY
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -1653,7 +1687,6 @@ local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main
 
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
-local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CREATE WINDOW
@@ -1668,7 +1701,7 @@ local Window = Library:CreateWindow({
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- INITIALIZE GLOBAL REFERENCES (CRITICAL!)
+-- INITIALIZE GLOBAL REFERENCES
 -- ═══════════════════════════════════════════════════════════════════════════
 
 getgenv().Toggles = {}
@@ -1685,6 +1718,10 @@ _G.UIReferences = {
 local Tabs = _G.UIReferences.Tabs
 local Toggles = getgenv().Toggles
 local Options = getgenv().Options
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PART 6: AUTO-LOOPS & TAB CREATION
+-- ═══════════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- AUTO-LOOPS
@@ -2008,7 +2045,7 @@ Options.RockSelection = MiningGroupBox:AddDropdown('RockSelection', {
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- AUTOSELL TAB
--- ══════════════════════════════════════════════════════════════════════════
+-- ═══════════════════════════════════════════════════════════════════════════
 
 local AutoSellGroupBox = Tabs.AutoSell:AddLeftGroupbox('Auto Sell')
 
@@ -2161,171 +2198,8 @@ Options.RuneItems = ItemSelectionGroupBox:AddDropdown('RuneItems', {
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 4.75: TELEPORT, SETTINGS, CONFIG TABS & KEYBINDS (CONTINUATION)
+-- PART 7: TELEPORT & SETTINGS TABS
 -- ═══════════════════════════════════════════════════════════════════════════
-
--- ═══════════════════════════════════════════════════════════════════════════
--- WORLD 2 TELEPORT FUNCTIONS
--- ═══════════════════════════════════════════════════════════════════════════
-
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
-local FORGOTTEN_KINGDOM_SPAWN = Vector3.new(-260.62, 17.75, 100.27)
-local FORGOTTEN_KINGDOM_FRONT = Vector3.new(-260.62, 17.75, 93.27)
-local FORGOTTEN_KINGDOM_GUI_X = 602
-local FORGOTTEN_KINGDOM_GUI_Y = 459
-local TELEPORT_BUTTON_X = 1124
-local TELEPORT_BUTTON_Y = 682
-
-local world2AutoJoinActive = false
-local world2AutoJoinLoop = nil
-
-local function clickAt(x, y)
-	VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-	task.wait(0.01)
-	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-end
-
-local function pressK()
-	VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.K, false, game)
-	task.wait(0.05)
-	VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.K, false, game)
-end
-
-local function checkForPortalTool()
-	local backpack = LocalPlayer:FindFirstChild("Backpack")
-	if backpack and backpack:FindFirstChild("PortalTool") then
-		return true
-	end
-	
-	local character = LocalPlayer.Character
-	if character and character:FindFirstChild("PortalTool") then
-		return true
-	end
-	
-	return false
-end
-
-local function teleportToWorld2()
-	local character = LocalPlayer.Character
-	if not character then return false end
-	
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	
-	if not rootPart or not humanoid then return false end
-	
-	local spawnPosition = FORGOTTEN_KINGDOM_SPAWN
-	
-	local startTime = tick()
-	while tick() - startTime < 1 do
-		rootPart.CFrame = CFrame.new(spawnPosition)
-		task.wait(0.05)
-	end
-	
-	local backpack = LocalPlayer:FindFirstChild("Backpack")
-	if not backpack then return false end
-	
-	local portalTool = backpack:FindFirstChild("PortalTool")
-	if not portalTool then return false end
-	
-	humanoid:EquipTool(portalTool)
-	task.wait(0.3)
-	
-	if not character:FindFirstChild("PortalTool") then return false end
-	
-	clickAt(0, 0)
-	task.wait(1)
-	
-	local proximityPrompt = nil
-	
-	for attempt = 1, 10 do
-		local debris = workspace:FindFirstChild("Debris")
-		if debris then
-			local portalForge = debris:FindFirstChild("PortalTheForge")
-			if portalForge then
-				local proximityContainer = portalForge:FindFirstChild("ProximityContainer")
-				if proximityContainer then
-					proximityPrompt = proximityContainer:FindFirstChild("ProximityPrompt")
-					if proximityPrompt then
-						break
-					end
-				end
-			end
-		end
-		task.wait(0.2)
-	end
-	
-	if not proximityPrompt then return false end
-	
-	local frontPosition = FORGOTTEN_KINGDOM_FRONT
-	
-	local lockStart = tick()
-	while tick() - lockStart < 1.5 do
-		rootPart.CFrame = CFrame.new(frontPosition)
-		task.wait(0.05)
-	end
-	
-	local targetPart = proximityPrompt.Parent
-	if targetPart and targetPart:IsA("BasePart") then
-		pcall(function()
-			proximityPrompt:InputHoldBegin()
-			proximityPrompt:InputHoldEnd()
-		end)
-	end
-	
-	task.wait(0.5)
-	
-	clickAt(FORGOTTEN_KINGDOM_GUI_X, FORGOTTEN_KINGDOM_GUI_Y)
-	task.wait(0.3)
-	
-	task.wait(0.5)
-	
-	for i = 1, 5 do
-		clickAt(TELEPORT_BUTTON_X, TELEPORT_BUTTON_Y)
-		task.wait(0.15)
-	end
-	
-	return true
-end
-
-local function startWorld2AutoJoin()
-	if world2AutoJoinActive then
-		Library:Notify("World 2 Auto-Join is already active!", 3)
-		return
-	end
-	
-	if not checkForPortalTool() then
-		Library:Notify("You must unlock the Portal first!", 3)
-		return false
-	end
-	
-	world2AutoJoinActive = true
-	
-	world2AutoJoinLoop = task.spawn(function()
-		while world2AutoJoinActive do
-			local success = teleportToWorld2()
-			
-			if success then
-				Library:Notify("Successfully joined Forgotten Kingdom!", 3)
-			else
-				Library:Notify("Failed to join Forgotten Kingdom!", 3)
-			end
-			
-			task.wait(300)
-		end
-	end)
-	
-	return true
-end
-
-local function stopWorld2AutoJoin()
-	world2AutoJoinActive = false
-	if world2AutoJoinLoop then
-		task.cancel(world2AutoJoinLoop)
-		world2AutoJoinLoop = nil
-	end
-end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- TELEPORT TAB
@@ -2409,7 +2283,10 @@ TeleportAreasBox:AddButton({
 	Tooltip = 'Hover travel to the selected NPC'
 })
 
--- World 2 Box
+-- ═══════════════════════════════════════════════════════════════════════════
+-- WORLD 2 BOX
+-- ═══════════════════════════════════════════════════════════════════════════
+
 local World2Box = Tabs.Teleport:AddRightGroupbox('World 2: Forgotten Kingdom')
 
 Toggles.AutoJoinWorld2 = World2Box:AddToggle('AutoJoinWorld2', {
@@ -2583,7 +2460,7 @@ Options.MiningVerticalDistance = MiningSettingsBox:AddSlider('MiningVerticalDist
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- CONFIG TAB
+-- PART 8: CONFIG MANAGEMENT TAB
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local configFuncs = _G.ConfigFunctions
@@ -2671,7 +2548,6 @@ ConfigManagementBox:AddButton({
 			
 			task.wait(0.3)
 			
-			-- Apply all settings
 			if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
 			if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
 			if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(config.autoSellEnabled) end
@@ -2870,7 +2746,6 @@ task.spawn(function()
 				Options.RockSelection:SetValue(enabledRocks)
 			end
 			
-			-- Apply all autosell items (shortened)
 			for rarity, optionName in pairs({
 				Common = "CommonItems",
 				Uncommon = "UncommonItems",
@@ -2896,7 +2771,11 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ KEYBIND SYSTEM (FINAL - WORKING VERSION)
+-- PART 9: KEYBINDS, MAIN LOOPS & FINALIZATION (FINAL)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- KEYBIND SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 Library:OnUnload(function()
@@ -2907,7 +2786,6 @@ Library:OnUnload(function()
 	end
 end)
 
--- Setup keybinds AFTER everything is loaded
 task.spawn(function()
 	task.wait(2)
 	
@@ -2916,7 +2794,6 @@ task.spawn(function()
 	_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		
-		-- F1 - Toggle Farming
 		if input.KeyCode == Enum.KeyCode.F1 then
 			if Toggles.FarmToggle then
 				local newValue = not config.enabled
@@ -2924,7 +2801,6 @@ task.spawn(function()
 				Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
 			end
 			
-		-- F2 - Toggle Mining
 		elseif input.KeyCode == Enum.KeyCode.F2 then
 			if Toggles.MineToggle then
 				local newValue = not config.miningEnabled
@@ -2945,1690 +2821,8 @@ ThemeManager:SetLibrary(Library)
 ThemeManager:SetFolder('RafsoHub')
 ThemeManager:ApplyToTab(Tabs.Settings)
 
-print("✅ UI Initialized!")
-
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 5: AUTOSELL, TELEPORT, SETTINGS & CONFIG TABS (FIXED)
--- ═══════════════════════════════════════════════════════════════════════════
-
--- ═══════════════════════════════════════════════════════════════════════════
--- WORLD 2 TELEPORT SYSTEM
--- ═══════════════════════════════════════════════════════════════════════════
-
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
-local FORGOTTEN_KINGDOM_SPAWN = Vector3.new(-260.62, 17.75, 100.27)
-local FORGOTTEN_KINGDOM_FRONT = Vector3.new(-260.62, 17.75, 93.27)
-local FORGOTTEN_KINGDOM_GUI_X = 602
-local FORGOTTEN_KINGDOM_GUI_Y = 459
-local TELEPORT_BUTTON_X = 1124
-local TELEPORT_BUTTON_Y = 682
-
-local world2AutoJoinActive = false
-local world2AutoJoinLoop = nil
-
-local function clickAt(x, y)
-	VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-	task.wait(0.01)
-	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-end
-
-local function pressK()
-	VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.K, false, game)
-	task.wait(0.05)
-	VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.K, false, game)
-end
-
-local function checkForPortalTool()
-	local backpack = LocalPlayer:FindFirstChild("Backpack")
-	if backpack and backpack:FindFirstChild("PortalTool") then
-		return true
-	end
-	
-	local character = LocalPlayer.Character
-	if character and character:FindFirstChild("PortalTool") then
-		return true
-	end
-	
-	return false
-end
-
-local function teleportToWorld2()
-	local character = LocalPlayer.Character
-	if not character then
-		warn("❌ Character not found!")
-		return false
-	end
-	
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	
-	if not rootPart or not humanoid then
-		warn("❌ Character components not found!")
-		return false
-	end
-	
-	print("\n" .. string.rep("═", 60))
-	print("🌟 STARTING WORLD 2 TELEPORT")
-	print(string.rep("═", 60))
-	
-	-- Step 1: Teleport to spawn portal position and LOCK
-	print("📍 Step 1: Teleporting to spawn portal...")
-	local spawnPosition = FORGOTTEN_KINGDOM_SPAWN
-	
-	local startTime = tick()
-	while tick() - startTime < 1 do
-		rootPart.CFrame = CFrame.new(spawnPosition)
-		task.wait(0.05)
-	end
-	print("✅ At spawn position")
-	
-	-- Step 2: Get PortalTool
-	print("🎒 Step 2: Getting PortalTool...")
-	local backpack = LocalPlayer:FindFirstChild("Backpack")
-	if not backpack then
-		warn("❌ Backpack not found!")
-		return false
-	end
-	
-	local portalTool = backpack:FindFirstChild("PortalTool")
-	if not portalTool then
-		warn("❌ PortalTool not found!")
-		return false
-	end
-	print("✅ Found PortalTool")
-	
-	-- Step 3: Equip PortalTool
-	print("⚙️ Step 3: Equipping...")
-	humanoid:EquipTool(portalTool)
-	task.wait(0.3)
-	
-	if not character:FindFirstChild("PortalTool") then
-		warn("❌ Failed to equip!")
-		return false
-	end
-	print("✅ Equipped")
-	
-	-- Step 4: Place portal
-	print("🔨 Step 4: Placing portal...")
-	clickAt(0, 0)
-	task.wait(1)
-	print("✅ Portal placed")
-	
-	-- Step 5: Find proximity prompt
-	print("🔍 Step 5: Finding prompt...")
-	local proximityPrompt = nil
-	
-	for attempt = 1, 10 do
-		local debris = workspace:FindFirstChild("Debris")
-		if debris then
-			local portalForge = debris:FindFirstChild("PortalTheForge")
-			if portalForge then
-				local proximityContainer = portalForge:FindFirstChild("ProximityContainer")
-				if proximityContainer then
-					proximityPrompt = proximityContainer:FindFirstChild("ProximityPrompt")
-					if proximityPrompt then
-						print("✅ Found prompt (attempt " .. attempt .. ")")
-						break
-					end
-				end
-			end
-		end
-		task.wait(0.2)
-	end
-	
-	if not proximityPrompt then
-		warn("❌ Prompt not found!")
-		return false
-	end
-	
-	-- Step 6: Teleport to front of portal and LOCK position
-	print("🚶 Step 6: Moving to front of portal...")
-	local frontPosition = FORGOTTEN_KINGDOM_FRONT
-	
-	local lockStart = tick()
-	while tick() - lockStart < 1.5 do
-		rootPart.CFrame = CFrame.new(frontPosition)
-		task.wait(0.05)
-	end
-	print("✅ Position locked at front")
-	
-	-- Step 7: Press proximity prompt
-	print("🔓 Step 7: Pressing prompt...")
-	
-	local targetPart = proximityPrompt.Parent
-	if targetPart and targetPart:IsA("BasePart") then
-		local distance = (targetPart.Position - rootPart.Position).Magnitude
-		local maxDist = proximityPrompt.MaxActivationDistance
-		
-		print("  Distance: " .. string.format("%.2f", distance) .. " / " .. maxDist)
-		
-		if distance <= maxDist then
-			local success = pcall(function()
-				proximityPrompt:InputHoldBegin()
-				proximityPrompt:InputHoldEnd()
-			end)
-			
-			if success then
-				print("✅ Pressed successfully")
-			else
-				warn("❌ Press failed!")
-				return false
-			end
-		else
-			print("  ⚠️ Too far! Moving closer...")
-			rootPart.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
-			task.wait(0.2)
-			
-			pcall(function()
-				proximityPrompt:InputHoldBegin()
-				proximityPrompt:InputHoldEnd()
-			end)
-			print("✅ Pressed (retry)")
-		end
-	end
-	
-	task.wait(0.5)
-	
-	-- Step 8: Click Forgotten Kingdom
-	print("🏰 Step 8: Clicking Forgotten Kingdom...")
-	print("  Position: X=" .. FORGOTTEN_KINGDOM_GUI_X .. ", Y=" .. FORGOTTEN_KINGDOM_GUI_Y)
-	clickAt(FORGOTTEN_KINGDOM_GUI_X, FORGOTTEN_KINGDOM_GUI_Y)
-	task.wait(0.3)
-	print("✅ Clicked Forgotten Kingdom")
-	
-	-- Step 9: Click Teleport button
-	print("🚀 Step 9: Clicking Teleport button...")
-	print("  Position: X=" .. TELEPORT_BUTTON_X .. ", Y=" .. TELEPORT_BUTTON_Y)
-	task.wait(0.5)
-	
-	for i = 1, 5 do
-		clickAt(TELEPORT_BUTTON_X, TELEPORT_BUTTON_Y)
-		task.wait(0.15)
-	end
-	
-	print("✅ Clicked Teleport (5 times)")
-	
-	print(string.rep("═", 60))
-	print("✅ WORLD 2 TELEPORT COMPLETE!")
-	print(string.rep("═", 60) .. "\n")
-	
-	return true
-end
-
-local function startWorld2AutoJoin()
-	if world2AutoJoinActive then
-		Library:Notify("World 2 Auto-Join is already active!", 3)
-		return
-	end
-	
-	if not checkForPortalTool() then
-		Library:Notify("You must unlock the Portal first!", 3)
-		return false
-	end
-	
-	world2AutoJoinActive = true
-	
-	world2AutoJoinLoop = task.spawn(function()
-		while world2AutoJoinActive do
-			local success = teleportToWorld2()
-			
-			if success then
-				Library:Notify("Successfully joined Forgotten Kingdom!", 3)
-			else
-				Library:Notify("Failed to join Forgotten Kingdom!", 3)
-			end
-			
-			task.wait(300)
-		end
-	end)
-	
-	return true
-end
-
-local function stopWorld2AutoJoin()
-	world2AutoJoinActive = false
-	if world2AutoJoinLoop then
-		task.cancel(world2AutoJoinLoop)
-		world2AutoJoinLoop = nil
-	end
-end
-
--- ═══════════════════════════════════════════════════════════════════════════
--- AUTOSELL TAB
--- ═══════════════════════════════════════════════════════════════════════════
-
-local AutoSellGroupBox = Tabs.AutoSell:AddLeftGroupbox('Auto Sell')
-
-Toggles.AutoSellToggle = AutoSellGroupBox:AddToggle('AutoSellToggle', {
-	Text = 'Enable Auto Sell',
-	Default = false,
-	Tooltip = 'Automatically sell selected items',
-	Callback = function(Value)
-		config.autoSellEnabled = Value
-		
-		if config.autoSellEnabled then
-			_G.AutoLoopFunctions.startAutoSell()
-		else
-			_G.AutoLoopFunctions.stopAutoSell()
-		end
-	end
-})
-
-AutoSellGroupBox:AddDivider()
-
-AutoSellGroupBox:AddButton({
-	Text = 'Talk to Buyer',
-	Func = function()
-		local success = funcs.talkToSeller()
-		
-		if success then
-			Library:Notify("Successfully talked to buyer!", 3)
-		else
-			Library:Notify("Failed to talk to buyer!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Teleport to buyer and open dialogue'
-})
-
-local ItemSelectionGroupBox = Tabs.AutoSell:AddRightGroupbox('Item Selection')
-
-ItemSelectionGroupBox:AddLabel('Select Items to Auto Sell:')
-
-Options.CommonItems = ItemSelectionGroupBox:AddDropdown('CommonItems', {
-	Values = ItemsByRarity.Common,
-	Default = 1,
-	Multi = true,
-	Text = 'Common Items',
-	Tooltip = 'Select common items to sell',
-	Callback = function(Value)
-		config.selectedItems.Common = {}
-		for itemName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.selectedItems.Common, itemName)
-			end
-		end
-	end
-})
-
-Options.UncommonItems = ItemSelectionGroupBox:AddDropdown('UncommonItems', {
-	Values = ItemsByRarity.Uncommon,
-	Default = 1,
-	Multi = true,
-	Text = 'Uncommon Items',
-	Tooltip = 'Select uncommon items to sell',
-	Callback = function(Value)
-		config.selectedItems.Uncommon = {}
-		for itemName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.selectedItems.Uncommon, itemName)
-			end
-		end
-	end
-})
-
-Options.RareItems = ItemSelectionGroupBox:AddDropdown('RareItems', {
-	Values = ItemsByRarity.Rare,
-	Default = 1,
-	Multi = true,
-	Text = 'Rare Items',
-	Tooltip = 'Select rare items to sell',
-	Callback = function(Value)
-		config.selectedItems.Rare = {}
-		for itemName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.selectedItems.Rare, itemName)
-			end
-		end
-	end
-})
-
-Options.EpicItems = ItemSelectionGroupBox:AddDropdown('EpicItems', {
-	Values = ItemsByRarity.Epic,
-	Default = 1,
-	Multi = true,
-	Text = 'Epic Items',
-	Tooltip = 'Select epic items to sell',
-	Callback = function(Value)
-		config.selectedItems.Epic = {}
-		for itemName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.selectedItems.Epic, itemName)
-			end
-		end
-	end
-})
-
-Options.LegendaryItems = ItemSelectionGroupBox:AddDropdown('LegendaryItems', {
-	Values = ItemsByRarity.Legendary,
-	Default = 1,
-	Multi = true,
-	Text = 'Legendary Items',
-	Tooltip = 'Select legendary items to sell',
-	Callback = function(Value)
-		config.selectedItems.Legendary = {}
-		for itemName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.selectedItems.Legendary, itemName)
-			end
-		end
-	end
-})
-
-Options.MythicalItems = ItemSelectionGroupBox:AddDropdown('MythicalItems', {
-	Values = ItemsByRarity.Mythical,
-	Default = 1,
-	Multi = true,
-	Text = 'Mythical Items',
-	Tooltip = 'Select mythical items to sell',
-	Callback = function(Value)
-		config.selectedItems.Mythical = {}
-		for itemName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.selectedItems.Mythical, itemName)
-			end
-		end
-	end
-})
-
-Options.RuneItems = ItemSelectionGroupBox:AddDropdown('RuneItems', {
-	Values = ItemsByRarity.Rune,
-	Default = 1,
-	Multi = true,
-	Text = 'Rune Items',
-	Tooltip = 'Select rune items to sell',
-	Callback = function(Value)
-		config.selectedItems.Rune = {}
-		for itemName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.selectedItems.Rune, itemName)
-			end
-		end
-	end
-})
-
--- ═══════════════════════════════════════════════════════════════════════════
--- TELEPORT TAB (UPDATED WITH WORLD 2)
--- ═══════════════════════════════════════════════════════════════════════════
-
-local TeleportAreasBox = Tabs.Teleport:AddLeftGroupbox('Areas')
-
-local areaOptions = {}
-for areaName, _ in pairs(teleportAreas) do
-	table.insert(areaOptions, areaName)
-end
-table.sort(areaOptions)
-
-TeleportAreasBox:AddLabel('Select an Area:')
-
-Options.AreaSelection = TeleportAreasBox:AddDropdown('AreaSelection', {
-	Values = areaOptions,
-	Default = 1,
-	Multi = false,
-	Tooltip = 'Choose an area to teleport to',
-	Callback = function(Value)
-		selectedArea = Value
-	end
-})
-
-TeleportAreasBox:AddDivider()
-
-TeleportAreasBox:AddButton({
-	Text = 'Travel to Area',
-	Func = function()
-		if not selectedArea or selectedArea == "" then
-			Library:Notify("Please select an area first!", 3)
-			return
-		end
-		
-		local position = teleportAreas[selectedArea]
-		if position then
-			startTeleportHover(position, selectedArea)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Hover travel to the selected area'
-})
-
-TeleportAreasBox:AddDivider()
-
--- NPCs Section (below Areas)
-TeleportAreasBox:AddLabel('─────────────────────')
-TeleportAreasBox:AddLabel('NPCs:')
-
-local npcOptions = {}
-for npcName, _ in pairs(teleportNPCs) do
-	table.insert(npcOptions, npcName)
-end
-table.sort(npcOptions)
-
-Options.NPCSelection = TeleportAreasBox:AddDropdown('NPCSelection', {
-	Values = npcOptions,
-	Default = 1,
-	Multi = false,
-	Tooltip = 'Choose an NPC to teleport to',
-	Callback = function(Value)
-		selectedNPC = Value
-	end
-})
-
-TeleportAreasBox:AddDivider()
-
-TeleportAreasBox:AddButton({
-	Text = 'Travel to NPC',
-	Func = function()
-		if not selectedNPC or selectedNPC == "" then
-			Library:Notify("Please select an NPC first!", 3)
-			return
-		end
-		
-		local position = teleportNPCs[selectedNPC]
-		if position then
-			startTeleportHover(position, selectedNPC)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Hover travel to the selected NPC'
-})
-
--- ═══════════════════════════════════════════════════════════════════════════
--- WORLD 2 FORGOTTEN KINGDOM (RIGHT SIDE)
--- ═══════════════════════════════════════════════════════════════════════════
-
-local World2Box = Tabs.Teleport:AddRightGroupbox('World 2: Forgotten Kingdom')
-
-Toggles.AutoJoinWorld2 = World2Box:AddToggle('AutoJoinWorld2', {
-	Text = 'Auto-Join Forgotten Kingdom',
-	Default = false,
-	Tooltip = 'Automatically join Forgotten Kingdom every 5 minutes',
-	Callback = function(Value)
-		if Value then
-			if not checkForPortalTool() then
-				Library:Notify("You must unlock the Portal first!", 3)
-				Toggles.AutoJoinWorld2:SetValue(false)
-				return
-			end
-			
-			Library:Notify("Starting in 5 seconds...", 3)
-			
-			-- Press K to hide GUI after 4.5 seconds
-			task.delay(4.5, function()
-				pressK()
-			end)
-			
-			task.wait(5)
-			
-			if Toggles.AutoJoinWorld2.Value then
-				local success = startWorld2AutoJoin()
-				if not success then
-					Toggles.AutoJoinWorld2:SetValue(false)
-					-- Press K again to show GUI if failed
-					pressK()
-				else
-					Library:Notify("World 2 Auto-Join started!", 3)
-				end
-			else
-				-- Press K to show GUI if cancelled during countdown
-				pressK()
-			end
-		else
-			stopWorld2AutoJoin()
-			Library:Notify("World 2 Auto-Join stopped!", 3)
-			-- Press K to show GUI when stopped
-			pressK()
-		end
-	end
-})
-
-World2Box:AddDivider()
-
-World2Box:AddButton({
-	Text = 'Join Forgotten Kingdom',
-	Func = function()
-		if not checkForPortalTool() then
-			Library:Notify("You must unlock the Portal first!", 3)
-			return
-		end
-		
-		Library:Notify("Teleporting to Forgotten Kingdom...", 3)
-		
-		-- Press K to hide GUI immediately
-		pressK()
-		
-		task.wait(0.5)
-		
-		local success = teleportToWorld2()
-		
-		if success then
-			Library:Notify("Successfully joined Forgotten Kingdom!", 3)
-		else
-			Library:Notify("Failed to join Forgotten Kingdom!", 3)
-			-- Press K to show GUI again if failed
-			task.wait(2)
-			pressK()
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Instantly teleport to Forgotten Kingdom'
-})
-
-World2Box:AddLabel('─────────────────────')
-World2Box:AddLabel('Requires Portal Tool unlocked')
-World2Box:AddLabel('from The Forge questline')
-
--- ═══════════════════════════════════════════════════════════════════════════
--- SETTINGS TAB
--- ═══════════════════════════════════════════════════════════════════════════
-
-local MenuGroup = Tabs.Settings:AddLeftGroupbox('Menu')
-
-MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', { Default = 'K', NoUI = true, Text = 'Menu keybind' })
-
-Library.ToggleKeybind = Options.MenuKeybind
-
-MenuGroup:AddDivider()
-
-MenuGroup:AddButton({
-	Text = 'Destroy GUI',
-	Func = function()
-		if Toggles.FarmToggle then
-			Toggles.FarmToggle:SetValue(false)
-		end
-		if Toggles.MineToggle then
-			Toggles.MineToggle:SetValue(false)
-		end
-		if Toggles.AutoSellToggle then
-			Toggles.AutoSellToggle:SetValue(false)
-		end
-		if Toggles.AutoJoinWorld2 then
-			Toggles.AutoJoinWorld2:SetValue(false)
-		end
-		
-		task.wait(0.5)
-		
-		if _G.KeybindConnection then
-			_G.KeybindConnection:Disconnect()
-			_G.KeybindConnection = nil
-		end
-		
-		_G.AutoLoopFunctions.stopAutoAttack()
-		_G.AutoLoopFunctions.stopAutoMine()
-		_G.AutoLoopFunctions.stopAutoSell()
-		stopWorld2AutoJoin()
-		
-		funcs.stopNoclip()
-		funcs.cleanupPhysicsMovement()
-		
-		_G.MobFarmConfig = nil
-		_G.FarmFunctions = nil
-		_G.AutoLoopFunctions = nil
-		_G.ConfigFunctions = nil
-		_G.UIReferences = nil
-		
-		Library:Unload()
-	end,
-	DoubleClick = false,
-	Tooltip = 'Close and destroy the GUI'
-})
-
-local GeneralSettingsBox = Tabs.Settings:AddRightGroupbox('General Settings')
-
-Options.HoverSpeed = GeneralSettingsBox:AddSlider('HoverSpeed', {
-	Text = 'Hover Speed',
-	Default = 80,
-	Min = 20,
-	Max = 140,
-	Rounding = 0,
-	Compact = false,
-	Callback = function(Value)
-		config.hoverSpeed = Value
-	end
-})
-
-local FarmSettingsBox = Tabs.Settings:AddRightGroupbox('Farm Settings')
-
-Options.VerticalDistance = FarmSettingsBox:AddSlider('VerticalDistance', {
-	Text = 'Vertical Distance',
-	Default = 8,
-	Min = 1,
-	Max = 10,
-	Rounding = 0,
-	Compact = false,
-	Callback = function(Value)
-		config.verticalDistance = Value
-	end
-})
-
-local MiningSettingsBox = Tabs.Settings:AddRightGroupbox('Mining Settings')
-
-Options.MiningVerticalDistance = MiningSettingsBox:AddSlider('MiningVerticalDistance', {
-	Text = 'Mining Vertical Distance',
-	Default = 6,
-	Min = 1,
-	Max = 10,
-	Rounding = 0,
-	Compact = false,
-	Callback = function(Value)
-		config.miningVerticalDistance = Value
-	end
-})
-
--- ═══════════════════════════════════════════════════════════════════════════
--- CONFIG MANAGEMENT TAB
--- ═══════════════════════════════════════════════════════════════════════════
-
-local configFuncs = _G.ConfigFunctions
-
-local ConfigManagementBox = Tabs.Configs:AddLeftGroupbox('Config Management')
-
-local selectedConfig = nil
-
-Options.ConfigName = ConfigManagementBox:AddInput('ConfigName', {
-	Default = '',
-	Numeric = false,
-	Finished = false,
-	Text = 'Config Name',
-	Tooltip = 'Enter a name for your config',
-	Placeholder = 'Enter config name...',
-})
-
-Options.ConfigSelector = ConfigManagementBox:AddDropdown('ConfigSelector', {
-	Values = configFuncs.getConfigList(),
-	Default = 1,
-	Multi = false,
-	Text = 'Select Config',
-	Tooltip = 'Choose a config to load/delete',
-	Callback = function(Value)
-		selectedConfig = Value
-	end
-})
-
-ConfigManagementBox:AddDivider()
-
-ConfigManagementBox:AddButton({
-	Text = 'Refresh Configs',
-	Func = function()
-		local configList = configFuncs.getConfigList()
-		Options.ConfigSelector:SetValues(configList)
-		Library:Notify("Found " .. #configList .. " config(s)", 2)
-	end,
-	DoubleClick = false,
-	Tooltip = 'Refresh the config list'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Create Config',
-	Func = function()
-		local configName = Options.ConfigName.Value
-		
-		if configName == "" or configName == nil then
-			Library:Notify("Please enter a config name!", 3)
-			return
-		end
-		
-		configName = configName:gsub("%s+", "_")
-		
-		local success = configFuncs.saveConfig(configName)
-		
-		if success then
-			Library:Notify("Config '" .. configName .. "' created!", 3)
-			
-			local configList = configFuncs.getConfigList()
-			Options.ConfigSelector:SetValues(configList)
-			Options.ConfigSelector:SetValue(configName)
-			selectedConfig = configName
-			
-			Options.ConfigName:SetValue("")
-		else
-			Library:Notify("Failed to create config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Create a new config with current settings'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Load Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local success = configFuncs.loadConfig(selectedConfig)
-		
-		if success then
-			Library:Notify("Config '" .. selectedConfig .. "' loaded!", 3)
-			
-			-- ✅ FIX: Wait for config to fully load
-			task.wait(0.3)
-			
-			-- Apply all settings to UI
-			if Toggles.FarmToggle then
-				Toggles.FarmToggle:SetValue(config.enabled)
-			end
-			
-			if Toggles.MineToggle then
-				Toggles.MineToggle:SetValue(config.miningEnabled)
-			end
-			
-			if Toggles.AutoSellToggle then
-				Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
-			end
-			
-			if Options.HoverSpeed then
-				Options.HoverSpeed:SetValue(config.hoverSpeed)
-			end
-			
-			if Options.VerticalDistance then
-				Options.VerticalDistance:SetValue(config.verticalDistance)
-			end
-			
-			if Options.MiningVerticalDistance then
-				Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
-			end
-			
-			if Options.LockPosition then
-				Options.LockPosition:SetValue(config.lockPosition)
-			end
-			
-			-- Apply mob selection
-			if Options.MobSelection then
-				local enabledMobs = {}
-				for _, mobData in ipairs(config.mobTypes) do
-					if mobData.enabled then
-						enabledMobs[mobData.name] = true
-					end
-				end
-				Options.MobSelection:SetValue(enabledMobs)
-			end
-			
-			-- Apply rock selection
-			if Options.RockSelection then
-				local enabledRocks = {}
-				for _, rockData in ipairs(config.rockTypes) do
-					if rockData.enabled then
-						enabledRocks[rockData.name] = true
-					end
-				end
-				Options.RockSelection:SetValue(enabledRocks)
-			end
-			
-			-- Apply autosell items
-			if Options.CommonItems then
-				local commonItems = {}
-				for _, item in ipairs(config.selectedItems.Common or {}) do
-					commonItems[item] = true
-				end
-				Options.CommonItems:SetValue(commonItems)
-			end
-			
-			if Options.UncommonItems then
-				local uncommonItems = {}
-				for _, item in ipairs(config.selectedItems.Uncommon or {}) do
-					uncommonItems[item] = true
-				end
-				Options.UncommonItems:SetValue(uncommonItems)
-			end
-			
-			if Options.RareItems then
-				local rareItems = {}
-				for _, item in ipairs(config.selectedItems.Rare or {}) do
-					rareItems[item] = true
-				end
-				Options.RareItems:SetValue(rareItems)
-			end
-			
-			if Options.EpicItems then
-				local epicItems = {}
-				for _, item in ipairs(config.selectedItems.Epic or {}) do
-					epicItems[item] = true
-				end
-				Options.EpicItems:SetValue(epicItems)
-			end
-			
-			if Options.LegendaryItems then
-				local legendaryItems = {}
-				for _, item in ipairs(config.selectedItems.Legendary or {}) do
-					legendaryItems[item] = true
-				end
-				Options.LegendaryItems:SetValue(legendaryItems)
-			end
-			
-			if Options.MythicalItems then
-				local mythicalItems = {}
-				for _, item in ipairs(config.selectedItems.Mythical or {}) do
-					mythicalItems[item] = true
-				end
-				Options.MythicalItems:SetValue(mythicalItems)
-			end
-			
-			if Options.RuneItems then
-				local runeItems = {}
-				for _, item in ipairs(config.selectedItems.Rune or {}) do
-					runeItems[item] = true
-				end
-				Options.RuneItems:SetValue(runeItems)
-			end
-			
-			Library:Notify("All settings applied!", 2)
-		else
-			Library:Notify("Failed to load config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Load the selected config'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Overwrite Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local success = configFuncs.saveConfig(selectedConfig)
-		
-		if success then
-			Library:Notify("Config '" .. selectedConfig .. "' overwritten!", 3)
-		else
-			Library:Notify("Failed to overwrite config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Overwrite selected config with current settings'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Set as Autoload',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		configFuncs.setAutoload(selectedConfig)
-		Library:Notify("Config '" .. selectedConfig .. "' set as autoload!", 3)
-	end,
-	DoubleClick = false,
-	Tooltip = 'This config will load automatically on startup'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Destroy Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local configToDelete = selectedConfig
-		local success = configFuncs.deleteConfig(configToDelete)
-		
-		if success then
-			Library:Notify("Config '" .. configToDelete .. "' deleted!", 3)
-			
-			local configList = configFuncs.getConfigList()
-			Options.ConfigSelector:SetValues(configList)
-			selectedConfig = nil
-		else
-			Library:Notify("Failed to delete config!", 3)
-		end
-	end,
-	DoubleClick = true,
-	Tooltip = 'Double-click to delete the selected config'
-})
-
-local DebugBox = Tabs.Configs:AddRightGroupbox('Debug')
-
-DebugBox:AddButton({
-	Text = 'Print Current Config',
-	Func = function()
-		configFuncs.debugCurrentConfig()
-		Library:Notify("Config info copied to clipboard!", 3)
-	end,
-	DoubleClick = false,
-	Tooltip = 'Copy current config state to clipboard'
-})
-
-local autoloadConfig = configFuncs.getAutoload()
-if autoloadConfig then
-	DebugBox:AddLabel('Autoload: ' .. autoloadConfig)
-else
-	DebugBox:AddLabel('Autoload: None')
-end
-
--- ═══════════════════════════════════════════════════════════════════════════
--- AUTO-LOAD CONFIG ON STARTUP
--- ═══════════════════════════════════════════════════════════════════════════
-
-task.spawn(function()
-	task.wait(2)
-	
-	local autoloadName = configFuncs.getAutoload()
-	if autoloadName then
-		print("🔄 Loading autoload config: " .. autoloadName)
-		
-		local success = configFuncs.loadConfig(autoloadName)
-		
-		if success then
-			task.wait(0.5)
-			
-			-- Apply all settings (same as manual load)
-			if Toggles.FarmToggle then
-				Toggles.FarmToggle:SetValue(config.enabled)
-			end
-			
-			if Toggles.MineToggle then
-				Toggles.MineToggle:SetValue(config.miningEnabled)
-			end
-			
-			if Toggles.AutoSellToggle then
-				Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
-			end
-			
-			if Options.HoverSpeed then
-				Options.HoverSpeed:SetValue(config.hoverSpeed)
-			end
-			
-			if Options.VerticalDistance then
-				Options.VerticalDistance:SetValue(config.verticalDistance)
-			end
-			
-			if Options.MiningVerticalDistance then
-				Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
-			end
-			
-			if Options.LockPosition then
-				Options.LockPosition:SetValue(config.lockPosition)
-			end
-			
-			if Options.MobSelection then
-				local enabledMobs = {}
-				for _, mobData in ipairs(config.mobTypes) do
-					if mobData.enabled then
-						enabledMobs[mobData.name] = true
-					end
-				end
-				Options.MobSelection:SetValue(enabledMobs)
-			end
-			
-			if Options.RockSelection then
-				local enabledRocks = {}
-				for _, rockData in ipairs(config.rockTypes) do
-					if rockData.enabled then
-						enabledRocks[rockData.name] = true
-					end
-				end
-				Options.RockSelection:SetValue(enabledRocks)
-			end
-			
-			if Options.CommonItems then
-				local commonItems = {}
-				for _, item in ipairs(config.selectedItems.Common or {}) do
-					commonItems[item] = true
-				end
-				Options.CommonItems:SetValue(commonItems)
-			end
-			
-			if Options.UncommonItems then
-				local uncommonItems = {}
-				for _, item in ipairs(config.selectedItems.Uncommon or {}) do
-					uncommonItems[item] = true
-				end
-				Options.UncommonItems:SetValue(uncommonItems)
-			end
-			
-			if Options.RareItems then
-				local rareItems = {}
-				for _, item in ipairs(config.selectedItems.Rare or {}) do
-					rareItems[item] = true
-				end
-				Options.RareItems:SetValue(rareItems)
-			end
-			
-			if Options.EpicItems then
-				local epicItems = {}
-				for _, item in ipairs(config.selectedItems.Epic or {}) do
-					epicItems[item] = true
-				end
-				Options.EpicItems:SetValue(epicItems)
-			end
-			
-			if Options.LegendaryItems then
-				local legendaryItems = {}
-				for _, item in ipairs(config.selectedItems.Legendary or {}) do
-					legendaryItems[item] = true
-				end
-				Options.LegendaryItems:SetValue(legendaryItems)
-			end
-			
-			if Options.MythicalItems then
-				local mythicalItems = {}
-				for _, item in ipairs(config.selectedItems.Mythical or {}) do
-					mythicalItems[item] = true
-				end
-				Options.MythicalItems:SetValue(mythicalItems)
-			end
-			
-			if Options.RuneItems then
-				local runeItems = {}
-				for _, item in ipairs(config.selectedItems.Rune or {}) do
-					runeItems[item] = true
-				end
-				Options.RuneItems:SetValue(runeItems)
-			end
-			
-			Library:Notify("Autoload config '" .. autoloadName .. "' loaded!", 4)
-			print("✅ Autoload complete!")
-		else
-			print("❌ Autoload failed!")
-		end
-	end
-end)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- ✅ FIXED KEYBIND SYSTEM (F1 = FARM, F2 = MINE)
--- ═══════════════════════════════════════════════════════════════════════════
-
-Library:OnUnload(function()
-	Library.Unloaded = true
-	
-	if _G.KeybindConnection then
-		_G.KeybindConnection:Disconnect()
-		_G.KeybindConnection = nil
-	end
-end)
-
--- ✅ FIX: Setup keybinds after UI is fully ready
-local function setupKeybinds()
-	if _G.KeybindConnection then
-		_G.KeybindConnection:Disconnect()
-	end
-	
-	_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
-		
-		-- Safety checks
-		if not config then 
-			warn("⚠️ Config not loaded")
-			return 
-		end
-		
-		if not Toggles then
-			warn("⚠️ Toggles not initialized")
-			return
-		end
-		
-		-- F1 - Toggle Farming
-		if input.KeyCode == Enum.KeyCode.F1 then
-			if Toggles.FarmToggle then
-				local newValue = not config.enabled
-				Toggles.FarmToggle:SetValue(newValue)
-				Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
-			else
-				warn("⚠️ FarmToggle not found")
-			end
-			
-		-- F2 - Toggle Mining
-		elseif input.KeyCode == Enum.KeyCode.F2 then
-			if Toggles.MineToggle then
-				local newValue = not config.miningEnabled
-				Toggles.MineToggle:SetValue(newValue)
-				Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
-			else
-				warn("⚠️ MineToggle not found")
-			end
-		end
-	end)
-	
-	print("✅ Keybinds ready: F1 = Farming | F2 = Mining")
-end
-
--- ✅ FIX: Delay keybind setup until everything is ready
-task.spawn(function()
-	task.wait(1.5)
-	setupKeybinds()
-	print("✅ Keybind system initialized!")
-end)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- THEME MANAGER
--- ═══════════════════════════════════════════════════════════════════════════
-
-ThemeManager:SetLibrary(Library)
-ThemeManager:SetFolder('RafsoHub')
-ThemeManager:ApplyToTab(Tabs.Settings)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- PART 5.5: SETTINGS & CONFIG MANAGEMENT TABS
--- ═══════════════════════════════════════════════════════════════════════════
-
--- ═══════════════════════════════════════════════════════════════════════════
--- SETTINGS TAB
--- ═══════════════════════════════════════════════════════════════════════════
-
-local MenuGroup = Tabs.Settings:AddLeftGroupbox('Menu')
-
-MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', { Default = 'K', NoUI = true, Text = 'Menu keybind' })
-
-Library.ToggleKeybind = Options.MenuKeybind
-
-MenuGroup:AddDivider()
-
-MenuGroup:AddButton({
-	Text = 'Destroy GUI',
-	Func = function()
-		if Toggles.FarmToggle then
-			Toggles.FarmToggle:SetValue(false)
-		end
-		if Toggles.MineToggle then
-			Toggles.MineToggle:SetValue(false)
-		end
-		if Toggles.AutoSellToggle then
-			Toggles.AutoSellToggle:SetValue(false)
-		end
-		if Toggles.AutoJoinWorld2 then
-			Toggles.AutoJoinWorld2:SetValue(false)
-		end
-		
-		task.wait(0.5)
-		
-		if _G.KeybindConnection then
-			_G.KeybindConnection:Disconnect()
-			_G.KeybindConnection = nil
-		end
-		
-		_G.AutoLoopFunctions.stopAutoAttack()
-		_G.AutoLoopFunctions.stopAutoMine()
-		_G.AutoLoopFunctions.stopAutoSell()
-		stopWorld2AutoJoin()
-		
-		funcs.stopNoclip()
-		funcs.cleanupPhysicsMovement()
-		
-		_G.MobFarmConfig = nil
-		_G.FarmFunctions = nil
-		_G.AutoLoopFunctions = nil
-		_G.ConfigFunctions = nil
-		_G.UIReferences = nil
-		
-		Library:Unload()
-	end,
-	DoubleClick = false,
-	Tooltip = 'Close and destroy the GUI'
-})
-
-local GeneralSettingsBox = Tabs.Settings:AddRightGroupbox('General Settings')
-
-GeneralSettingsBox:AddSlider('HoverSpeed', {
-	Text = 'Hover Speed',
-	Default = 80,
-	Min = 20,
-	Max = 140,
-	Rounding = 0,
-	Compact = false,
-	Callback = function(Value)
-		config.hoverSpeed = Value
-	end
-})
-
-local FarmSettingsBox = Tabs.Settings:AddRightGroupbox('Farm Settings')
-
-FarmSettingsBox:AddSlider('VerticalDistance', {
-	Text = 'Vertical Distance',
-	Default = 8,
-	Min = 1,
-	Max = 10,
-	Rounding = 0,
-	Compact = false,
-	Callback = function(Value)
-		config.verticalDistance = Value
-	end
-})
-
-local MiningSettingsBox = Tabs.Settings:AddRightGroupbox('Mining Settings')
-
-MiningSettingsBox:AddSlider('MiningVerticalDistance', {
-	Text = 'Mining Vertical Distance',
-	Default = 6,
-	Min = 1,
-	Max = 10,
-	Rounding = 0,
-	Compact = false,
-	Callback = function(Value)
-		config.miningVerticalDistance = Value
-	end
-})
-
--- ═══════════════════════════════════════════════════════════════════════════
--- CONFIG MANAGEMENT TAB
--- ═══════════════════════════════════════════════════════════════════════════
-
-local configFuncs = _G.ConfigFunctions
-
-local ConfigManagementBox = Tabs.Configs:AddLeftGroupbox('Config Management')
-
-local selectedConfig = nil
-
-ConfigManagementBox:AddInput('ConfigName', {
-	Default = '',
-	Numeric = false,
-	Finished = false,
-	Text = 'Config Name',
-	Tooltip = 'Enter a name for your config',
-	Placeholder = 'Enter config name...',
-})
-
-ConfigManagementBox:AddDropdown('ConfigSelector', {
-	Values = configFuncs.getConfigList(),
-	Default = 1,
-	Multi = false,
-	Text = 'Select Config',
-	Tooltip = 'Choose a config to load/delete',
-	Callback = function(Value)
-		selectedConfig = Value
-	end
-})
-
-ConfigManagementBox:AddDivider()
-
-ConfigManagementBox:AddButton({
-	Text = 'Refresh Configs',
-	Func = function()
-		local configList = configFuncs.getConfigList()
-		Options.ConfigSelector:SetValues(configList)
-		Library:Notify("Found " .. #configList .. " config(s)", 2)
-	end,
-	DoubleClick = false,
-	Tooltip = 'Refresh the config list'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Create Config',
-	Func = function()
-		local configName = Options.ConfigName.Value
-		
-		if configName == "" or configName == nil then
-			Library:Notify("Please enter a config name!", 3)
-			return
-		end
-		
-		configName = configName:gsub("%s+", "_")
-		
-		local success = configFuncs.saveConfig(configName)
-		
-		if success then
-			Library:Notify("Config '" .. configName .. "' created!", 3)
-			
-			local configList = configFuncs.getConfigList()
-			Options.ConfigSelector:SetValues(configList)
-			Options.ConfigSelector:SetValue(configName)
-			selectedConfig = configName
-			
-			Options.ConfigName:SetValue("")
-		else
-			Library:Notify("Failed to create config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Create a new config with current settings'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Load Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local success = configFuncs.loadConfig(selectedConfig)
-		
-		if success then
-			Library:Notify("Config '" .. selectedConfig .. "' loaded!", 3)
-			
-			task.wait(0.2)
-			
-			Toggles.FarmToggle:SetValue(config.enabled)
-			Toggles.MineToggle:SetValue(config.miningEnabled)
-			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
-			Options.HoverSpeed:SetValue(config.hoverSpeed)
-			Options.VerticalDistance:SetValue(config.verticalDistance)
-			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
-			Options.LockPosition:SetValue(config.lockPosition)
-			
-			local enabledMobs = {}
-			for _, mobData in ipairs(config.mobTypes) do
-				if mobData.enabled then
-					enabledMobs[mobData.name] = true
-				end
-			end
-			Options.MobSelection:SetValue(enabledMobs)
-			
-			local enabledRocks = {}
-			for _, rockData in ipairs(config.rockTypes) do
-				if rockData.enabled then
-					enabledRocks[rockData.name] = true
-				end
-			end
-			Options.RockSelection:SetValue(enabledRocks)
-			
-			local commonItems = {}
-			for _, item in ipairs(config.selectedItems.Common or {}) do
-				commonItems[item] = true
-			end
-			Options.CommonItems:SetValue(commonItems)
-			
-			local uncommonItems = {}
-			for _, item in ipairs(config.selectedItems.Uncommon or {}) do
-				uncommonItems[item] = true
-			end
-			Options.UncommonItems:SetValue(uncommonItems)
-			
-			local rareItems = {}
-			for _, item in ipairs(config.selectedItems.Rare or {}) do
-				rareItems[item] = true
-			end
-			Options.RareItems:SetValue(rareItems)
-			
-			local epicItems = {}
-			for _, item in ipairs(config.selectedItems.Epic or {}) do
-				epicItems[item] = true
-			end
-			Options.EpicItems:SetValue(epicItems)
-			
-			local legendaryItems = {}
-			for _, item in ipairs(config.selectedItems.Legendary or {}) do
-				legendaryItems[item] = true
-			end
-			Options.LegendaryItems:SetValue(legendaryItems)
-			
-			local mythicalItems = {}
-			for _, item in ipairs(config.selectedItems.Mythical or {}) do
-				mythicalItems[item] = true
-			end
-			Options.MythicalItems:SetValue(mythicalItems)
-			
-			local runeItems = {}
-			for _, item in ipairs(config.selectedItems.Rune or {}) do
-				runeItems[item] = true
-			end
-			Options.RuneItems:SetValue(runeItems)
-		else
-			Library:Notify("Failed to load config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Load the selected config'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Overwrite Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local success = configFuncs.saveConfig(selectedConfig)
-		
-		if success then
-			Library:Notify("Config '" .. selectedConfig .. "' overwritten!", 3)
-		else
-			Library:Notify("Failed to overwrite config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Overwrite selected config with current settings'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Set as Autoload',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		configFuncs.setAutoload(selectedConfig)
-		Library:Notify("Config '" .. selectedConfig .. "' set as autoload!", 3)
-	end,
-	DoubleClick = false,
-	Tooltip = 'This config will load automatically on startup'
-})
-
-ConfigManagementBox:AddButton({
-	Text = 'Destroy Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local configToDelete = selectedConfig
-		local success = configFuncs.deleteConfig(configToDelete)
-		
-		if success then
-			Library:Notify("Config '" .. configToDelete .. "' deleted!", 3)
-			
-			local configList = configFuncs.getConfigList()
-			Options.ConfigSelector:SetValues(configList)
-			selectedConfig = nil
-		else
-			Library:Notify("Failed to delete config!", 3)
-		end
-	end,
-	DoubleClick = true,
-	Tooltip = 'Double-click to delete the selected config'
-})
-
-local DebugBox = Tabs.Configs:AddRightGroupbox('Debug')
-
-DebugBox:AddButton({
-	Text = 'Print Current Config',
-	Func = function()
-		configFuncs.debugCurrentConfig()
-		Library:Notify("Config info copied to clipboard!", 3)
-	end,
-	DoubleClick = false,
-	Tooltip = 'Copy current config state to clipboard'
-})
-
-local autoloadConfig = configFuncs.getAutoload()
-if autoloadConfig then
-	DebugBox:AddLabel('Autoload: ' .. autoloadConfig)
-else
-	DebugBox:AddLabel('Autoload: None')
-end
-
--- ═══════════════════════════════════════════════════════════════════════════
--- STORE REFERENCES
--- ═══════════════════════════════════════════════════════════════════════════
-
-_G.UIReferences.mobOptions = mobOptions
-_G.UIReferences.rockOptions = rockOptions
-_G.UIReferences.Toggles = Toggles
-_G.UIReferences.Options = Options
-
--- ═══════════════════════════════════════════════════════════════════════════
--- AUTO-LOAD CONFIG ON STARTUP
--- ═══════════════════════════════════════════════════════════════════════════
-
-task.spawn(function()
-	task.wait(3)
-	
-	local autoloadName = configFuncs.getAutoload()
-	if autoloadName then
-		local success = configFuncs.loadConfig(autoloadName)
-		
-		if success then
-			task.wait(0.5)
-			
-			Toggles.FarmToggle:SetValue(config.enabled)
-			Toggles.MineToggle:SetValue(config.miningEnabled)
-			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
-			Options.HoverSpeed:SetValue(config.hoverSpeed)
-			Options.VerticalDistance:SetValue(config.verticalDistance)
-			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
-			Options.LockPosition:SetValue(config.lockPosition)
-			
-			local enabledMobs = {}
-			for _, mobData in ipairs(config.mobTypes) do
-				if mobData.enabled then
-					enabledMobs[mobData.name] = true
-				end
-			end
-			Options.MobSelection:SetValue(enabledMobs)
-			
-			local enabledRocks = {}
-			for _, rockData in ipairs(config.rockTypes) do
-				if rockData.enabled then
-					enabledRocks[rockData.name] = true
-				end
-			end
-			Options.RockSelection:SetValue(enabledRocks)
-			
-			local commonItems = {}
-			for _, item in ipairs(config.selectedItems.Common or {}) do
-				commonItems[item] = true
-			end
-			Options.CommonItems:SetValue(commonItems)
-			
-			local uncommonItems = {}
-			for _, item in ipairs(config.selectedItems.Uncommon or {}) do
-				uncommonItems[item] = true
-			end
-			Options.UncommonItems:SetValue(uncommonItems)
-			
-			local rareItems = {}
-			for _, item in ipairs(config.selectedItems.Rare or {}) do
-				rareItems[item] = true
-			end
-			Options.RareItems:SetValue(rareItems)
-			
-			local epicItems = {}
-			for _, item in ipairs(config.selectedItems.Epic or {}) do
-				epicItems[item] = true
-			end
-			Options.EpicItems:SetValue(epicItems)
-			
-			local legendaryItems = {}
-			for _, item in ipairs(config.selectedItems.Legendary or {}) do
-				legendaryItems[item] = true
-			end
-			Options.LegendaryItems:SetValue(legendaryItems)
-			
-			local mythicalItems = {}
-			for _, item in ipairs(config.selectedItems.Mythical or {}) do
-				mythicalItems[item] = true
-			end
-			Options.MythicalItems:SetValue(mythicalItems)
-			
-			local runeItems = {}
-			for _, item in ipairs(config.selectedItems.Rune or {}) do
-				runeItems[item] = true
-			end
-			Options.RuneItems:SetValue(runeItems)
-			
-			Library:Notify("Autoload config '" .. autoloadName .. "' loaded!", 4)
-		end
-	end
-end)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- ✅ FIXED KEYBIND SYSTEM (F1 = FARM, F2 = MINE)
--- ═══════════════════════════════════════════════════════════════════════════
-
-Library:OnUnload(function()
-	Library.Unloaded = true
-	
-	-- Disconnect keybinds on unload
-	if _G.KeybindConnection then
-		_G.KeybindConnection:Disconnect()
-		_G.KeybindConnection = nil
-	end
-end)
-
-local UserInputService = game:GetService("UserInputService")
-
--- ✅ FIX: Wrap in pcall and add safety checks
-local function setupKeybinds()
-	if _G.KeybindConnection then
-		_G.KeybindConnection:Disconnect()
-	end
-	
-	_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		-- Don't trigger if typing in chat/textbox
-		if gameProcessed then return end
-		
-		-- ✅ FIX: Add safety checks
-		if not _G.MobFarmConfig then 
-			print("⚠️ Config not loaded yet")
-			return 
-		end
-		if not Toggles then
-			print("⚠️ Toggles not initialized yet")
-			return
-		end
-		
-		-- F1 - Toggle Farming
-		if input.KeyCode == Enum.KeyCode.F1 then
-			if Toggles.FarmToggle then
-				local newValue = not config.enabled
-				Toggles.FarmToggle:SetValue(newValue)
-				Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
-			else
-				print("⚠️ FarmToggle not found")
-			end
-			
-		-- F2 - Toggle Mining
-		elseif input.KeyCode == Enum.KeyCode.F2 then
-			if Toggles.MineToggle then
-				local newValue = not config.miningEnabled
-				Toggles.MineToggle:SetValue(newValue)
-				Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
-			else
-				print("⚠️ MineToggle not found")
-			end
-		end
-	end)
-	
-	print("✅ Keybinds initialized: F1 = Farming | F2 = Mining")
-end
-
--- ✅ FIX: Delay keybind setup until UI is ready
-task.spawn(function()
-	task.wait(1) -- Wait for UI to fully initialize
-	setupKeybinds()
-end)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- THEME MANAGER
--- ═══════════════════════════════════════════════════════════════════════════
-
-ThemeManager:SetLibrary(Library)
-ThemeManager:SetFolder('RafsoHub')
-ThemeManager:ApplyToTab(Tabs.Settings)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- PART 6: MAIN LOOPS & CHARACTER RESPAWN (WITH MINING DEFENSE)
--- ═══════════════════════════════════════════════════════════════════════════
-
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-
-local config = _G.MobFarmConfig
-local funcs = _G.FarmFunctions
-
-Vector3.new(-44.71, -5.12, -273.02)
-local SKIP_HOVER_DISTANCE = 150
-
--- ═══════════════════════════════════════════════════════════════════════════
--- IMPROVED MESSAGE DETECTION SYSTEM (INSTANT ROCK SWITCH)
+-- ROCK OCCUPATION DETECTION SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local lastMessageTime = 0
@@ -4659,8 +2853,7 @@ local function setupTextLabelMonitoring()
 	local function monitorTextLabel(textLabel)
 		if not textLabel:IsA("TextLabel") then return end
 		
-		local connection
-		connection = textLabel:GetPropertyChangedSignal("Text"):Connect(function()
+		textLabel:GetPropertyChangedSignal("Text"):Connect(function()
 			if (tick() - lastMessageTime) < MESSAGE_COOLDOWN then return end
 			
 			local text = textLabel.Text:lower()
@@ -4686,93 +2879,16 @@ local function setupTextLabelMonitoring()
 	end)
 end
 
-local function setupStarterGuiMonitoring()
-	local starterGui = game:GetService("StarterGui")
-	
-	local oldSetCore = starterGui.SetCore
-	starterGui.SetCore = function(self, ...)
-		local args = {...}
-		if args[1] == "ChatMakeSystemMessage" or args[1] == "SendNotification" then
-			local message = ""
-			if type(args[2]) == "table" then
-				message = tostring(args[2].Text or ""):lower()
-			else
-				message = tostring(args[2] or ""):lower()
-			end
-			
-			if message:find("already mining") or 
-			   message:find("someone else") or 
-			   message:find("being mined") then
-				
-				switchToNewRock("Detected notification: Rock being mined by another player!")
-			end
-		end
-		return oldSetCore(self, ...)
-	end
-end
-
-local function setupCommonGuiMonitoring()
-	local playerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
-	if not playerGui then return end
-	
-	local commonPaths = {
-		"Notifications",
-		"SystemMessages", 
-		"Messages",
-		"Hints",
-		"Popups",
-		"ErrorMessages",
-		"Chat"
-	}
-	
-	for _, guiName in ipairs(commonPaths) do
-		local gui = playerGui:FindFirstChild(guiName)
-		if gui then
-			gui.DescendantAdded:Connect(function(descendant)
-				if descendant:IsA("TextLabel") or descendant:IsA("TextBox") then
-					task.wait(0.05)
-					local text = descendant.Text:lower()
-					
-					if text:find("already mining") or 
-					   text:find("someone else") or 
-					   text:find("being mined") then
-						
-						switchToNewRock("Detected in " .. guiName .. ": Rock occupied!")
-					end
-				end
-			end)
-		end
-	end
-end
-
-local function setupChatMonitoring()
-	local textChatService = game:GetService("TextChatService")
-	
-	pcall(function()
-		textChatService.MessageReceived:Connect(function(message)
-			local text = message.Text:lower()
-			if text:find("already mining") or 
-			   text:find("someone else") or 
-			   text:find("being mined") then
-				
-				switchToNewRock("Detected in chat: Rock occupied!")
-			end
-		end)
-	end)
-end
-
 task.spawn(function()
 	task.wait(1)
-	
 	setupTextLabelMonitoring()
-	setupStarterGuiMonitoring()
-	setupCommonGuiMonitoring()
-	setupChatMonitoring()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PROXIMITY CHECK
 -- ═══════════════════════════════════════════════════════════════════════════
+
+local SKIP_HOVER_DISTANCE = 150
 
 local function checkProximityToTarget()
 	local character = LocalPlayer.Character
@@ -4816,22 +2932,17 @@ end
 -- DEFENSE ATTACK FUNCTION
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
 local function clickMouseForDefense()
-	local success = pcall(function()
+	pcall(function()
 		VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
 		task.wait(0.01)
 		VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
 	end)
-	return success
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- MAIN FARMING LOOP
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local Living = workspace:WaitForChild("Living")
 
 local farmLoop = RunService.Heartbeat:Connect(function()
 	if not config.enabled or config.isRespawning then return end
@@ -4841,7 +2952,6 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- Check proximity for hover skip
 	if config.hoverSequenceActive and config.currentHoverTarget == 1 then
 		if checkProximityToTarget() then
 			config.hoverSequenceActive = false
@@ -4850,7 +2960,6 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		end
 	end
 	
-	-- Execute hover sequence
 	if config.hoverSequenceActive then
 		if config.currentHoverTarget == 1 then
 			if funcs.hoverToPosition(config.hoverPosition1, HOVER_POSITION_2) then
@@ -4865,7 +2974,6 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- Check if current mob is still valid
 	local needNewMob = not config.currentMob or not config.currentMob.Parent or not funcs.isValidMob(config.currentMob)
 	
 	if needNewMob then
@@ -4873,7 +2981,6 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- Move to mob
 	if config.currentMob then
 		local lockPos = funcs.getLockPosition(config.currentMob)
 		if lockPos then
@@ -4914,14 +3021,10 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	if not rootPart then return end
 	
-	-- ═══════════════════════════════════════════════════════════════════════
-	-- MINING DEFENSE SYSTEM - Check for nearby mobs
-	-- ═══════════════════════════════════════════════════════════════════════
 	if config.miningDefenseEnabled then
 		local closestThreat = nil
 		local closestDistance = config.miningDefenseDistance
 		
-		-- Scan for nearby hostile mobs
 		for _, child in pairs(Living:GetChildren()) do
 			if funcs.isValidMob(child) then
 				local mobRoot = child:FindFirstChild("HumanoidRootPart")
@@ -4935,7 +3038,6 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			end
 		end
 		
-		-- Start defending if threat detected and not already defending
 		if closestThreat and not config.defendingAgainstMob then
 			config.defendingAgainstMob = closestThreat
 			config.savedMiningRock = config.currentRock
@@ -4943,7 +3045,6 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			config.isLockedOn = false
 			config.weaponEquipped = false
 			
-			-- Stop pickaxe check loop
 			if pickaxeCheckLoop then
 				pickaxeCheckLoop:Disconnect()
 				pickaxeCheckLoop = nil
@@ -4952,40 +3053,31 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			return
 		end
 		
-		-- Update threat if already defending
 		if closestThreat and config.defendingAgainstMob then
 			config.defendingAgainstMob = closestThreat
 		end
 	end
 	
-	-- ═══════════════════════════════════════════════════════════════════════
-	-- DEFENSE MODE - Fight the mob
-	-- ═══════════════════════════════════════════════════════════════════════
 	if config.defendingAgainstMob then
-		-- Check if mob is still valid
 		if not config.defendingAgainstMob.Parent or not funcs.isValidMob(config.defendingAgainstMob) then
 			config.defendingAgainstMob = nil
 			config.weaponEquipped = false
 			config.isLockedOn = false
 			
-			-- Unequip weapon
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				humanoid:UnequipTools()
 				task.wait(0.2)
 			end
 			
-			-- Restore mining rock
 			config.currentRock = config.savedMiningRock
 			config.savedMiningRock = nil
 			
-			-- Restart pickaxe check loop
 			_G.AutoLoopFunctions.startAutoMine()
 			
 			return
 		end
 		
-		-- Equip weapon if not equipped
 		if not config.weaponEquipped then
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
@@ -5005,7 +3097,6 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			return
 		end
 		
-		-- Move to mob and attack
 		local lockPos = funcs.getLockPosition(config.defendingAgainstMob)
 		if lockPos then
 			local distance = (rootPart.Position - lockPos).Magnitude
@@ -5026,11 +3117,6 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- ═══════════════════════════════════════════════════════════════════════
-	-- NORMAL MINING MODE
-	-- ═══════════════════════════════════════════════════════════════════════
-	
-	-- Check proximity for hover skip
 	if config.hoverSequenceActive and config.currentHoverTarget == 1 then
 		if checkProximityToTarget() then
 			config.hoverSequenceActive = false
@@ -5039,7 +3125,6 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		end
 	end
 	
-	-- Execute hover sequence
 	if config.hoverSequenceActive then
 		if config.currentHoverTarget == 1 then
 			if funcs.hoverToPosition(config.hoverPosition1, HOVER_POSITION_2) then
@@ -5054,14 +3139,12 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- Check if current rock is still valid
 	if config.currentRock and (not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)) then
 		config.currentRock = nil
 		config.lastRockDurability = nil
 		return
 	end
 	
-	-- Get new rock if needed
 	if not config.currentRock then
 		config.currentRock = funcs.getClosestRock()
 		
@@ -5073,7 +3156,6 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- Move to rock
 	if config.currentRock then
 		local rockPos = funcs.getMiningPosition(config.currentRock)
 		if rockPos then
@@ -5133,10 +3215,12 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- AUTO-INITIALIZATION FOR AUTOSELL
+-- AUTO-INITIALIZATION
 -- ═══════════════════════════════════════════════════════════════════════════
 
 task.spawn(function()
-	task.wait(0)
+	task.wait(0.5)
 	funcs.talkToSeller()
 end)
+
+print("✅ Script fully loaded!")
