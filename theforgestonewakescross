@@ -2511,10 +2511,15 @@ World2Box:AddToggle('AutoJoinWorld2', {
 				return
 			end
 			
-			-- Hide the GUI
-			Library:ToggleOpen()
-			
 			Library:Notify("Starting in 5 seconds...", 3)
+			
+			-- Hide GUI after 5 seconds
+			task.delay(4.5, function()
+				if Library.Toggled then
+					Library:Toggle()
+				end
+			end)
+			
 			task.wait(5)
 			
 			if Toggles.AutoJoinWorld2.Value then
@@ -2522,20 +2527,24 @@ World2Box:AddToggle('AutoJoinWorld2', {
 				if not success then
 					Toggles.AutoJoinWorld2:SetValue(false)
 					-- Show GUI again if failed
-					Library:ToggleOpen()
+					if not Library.Toggled then
+						Library:Toggle()
+					end
 				else
 					Library:Notify("World 2 Auto-Join started!", 3)
 				end
 			else
 				-- Show GUI again if cancelled during countdown
-				Library:ToggleOpen()
+				if not Library.Toggled then
+					Library:Toggle()
+				end
 			end
 		else
 			stopWorld2AutoJoin()
 			Library:Notify("World 2 Auto-Join stopped!", 3)
 			-- Show GUI again when stopped
 			if not Library.Toggled then
-				Library:ToggleOpen()
+				Library:Toggle()
 			end
 		end
 	end
@@ -2551,10 +2560,15 @@ World2Box:AddButton({
 			return
 		end
 		
-		-- Hide the GUI
-		Library:ToggleOpen()
-		
 		Library:Notify("Teleporting to Forgotten Kingdom...", 3)
+		
+		-- Hide GUI immediately
+		if Library.Toggled then
+			Library:Toggle()
+		end
+		
+		task.wait(0.5)
+		
 		local success = teleportToWorld2()
 		
 		if success then
@@ -2563,7 +2577,9 @@ World2Box:AddButton({
 			Library:Notify("Failed to join Forgotten Kingdom!", 3)
 			-- Show GUI again if failed
 			task.wait(2)
-			Library:ToggleOpen()
+			if not Library.Toggled then
+				Library:Toggle()
+			end
 		end
 	end,
 	DoubleClick = false,
@@ -2918,122 +2934,113 @@ end
 
 _G.UIReferences.mobOptions = mobOptions
 _G.UIReferences.rockOptions = rockOptions
-_G.UIReferences.Toggles = Toggles
+_G.UIReferences.Toggles = Toggle
 _G.UIReferences.Options = Options
-
 -- ═══════════════════════════════════════════════════════════════════════════
 -- AUTO-LOAD CONFIG ON STARTUP
 -- ═══════════════════════════════════════════════════════════════════════════
-
 task.spawn(function()
-	task.wait(3)
+task.wait(3)
+local autoloadName = configFuncs.getAutoload()
+if autoloadName then
+	local success = configFuncs.loadConfig(autoloadName)
 	
-	local autoloadName = configFuncs.getAutoload()
-	if autoloadName then
-		local success = configFuncs.loadConfig(autoloadName)
+	if success then
+		task.wait(0.5)
 		
-		if success then
-			task.wait(0.5)
-			
-			Toggles.FarmToggle:SetValue(config.enabled)
-			Toggles.MineToggle:SetValue(config.miningEnabled)
-			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
-			Options.HoverSpeed:SetValue(config.hoverSpeed)
-			Options.VerticalDistance:SetValue(config.verticalDistance)
-			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
-			Options.LockPosition:SetValue(config.lockPosition)
-			
-			local enabledMobs = {}
-			for _, mobData in ipairs(config.mobTypes) do
-				if mobData.enabled then
-					enabledMobs[mobData.name] = true
-				end
+		Toggles.FarmToggle:SetValue(config.enabled)
+		Toggles.MineToggle:SetValue(config.miningEnabled)
+		Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
+		Options.HoverSpeed:SetValue(config.hoverSpeed)
+		Options.VerticalDistance:SetValue(config.verticalDistance)
+		Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
+		Options.LockPosition:SetValue(config.lockPosition)
+		
+		local enabledMobs = {}
+		for _, mobData in ipairs(config.mobTypes) do
+			if mobData.enabled then
+				enabledMobs[mobData.name] = true
 			end
-			Options.MobSelection:SetValue(enabledMobs)
-			
-			local enabledRocks = {}
-			for _, rockData in ipairs(config.rockTypes) do
-				if rockData.enabled then
-					enabledRocks[rockData.name] = true
-				end
-			end
-			Options.RockSelection:SetValue(enabledRocks)
-			
-			local commonItems = {}
-			for _, item in ipairs(config.selectedItems.Common or {}) do
-				commonItems[item] = true
-			end
-			Options.CommonItems:SetValue(commonItems)
-			
-			local uncommonItems = {}
-			for _, item in ipairs(config.selectedItems.Uncommon or {}) do
-				uncommonItems[item] = true
-			end
-			Options.UncommonItems:SetValue(uncommonItems)
-			
-			local rareItems = {}
-			for _, item in ipairs(config.selectedItems.Rare or {}) do
-				rareItems[item] = true
-			end
-			Options.RareItems:SetValue(rareItems)
-			
-			local epicItems = {}
-			for _, item in ipairs(config.selectedItems.Epic or {}) do
-				epicItems[item] = true
-			end
-			Options.EpicItems:SetValue(epicItems)
-			
-			local legendaryItems = {}
-			for _, item in ipairs(config.selectedItems.Legendary or {}) do
-				legendaryItems[item] = true
-			end
-			Options.LegendaryItems:SetValue(legendaryItems)
-			
-			local mythicalItems = {}
-			for _, item in ipairs(config.selectedItems.Mythical or {}) do
-				mythicalItems[item] = true
-			end
-			Options.MythicalItems:SetValue(mythicalItems)
-			
-			local runeItems = {}
-			for _, item in ipairs(config.selectedItems.Rune or {}) do
-				runeItems[item] = true
-			end
-			Options.RuneItems:SetValue(runeItems)
-			
-			Library:Notify("Autoload config '" .. autoloadName .. "' loaded!", 4)
 		end
+		Options.MobSelection:SetValue(enabledMobs)
+		
+		local enabledRocks = {}
+		for _, rockData in ipairs(config.rockTypes) do
+			if rockData.enabled then
+				enabledRocks[rockData.name] = true
+			end
+		end
+		Options.RockSelection:SetValue(enabledRocks)
+		
+		local commonItems = {}
+		for _, item in ipairs(config.selectedItems.Common or {}) do
+			commonItems[item] = true
+		end
+		Options.CommonItems:SetValue(commonItems)
+		
+		local uncommonItems = {}
+		for _, item in ipairs(config.selectedItems.Uncommon or {}) do
+			uncommonItems[item] = true
+		end
+		Options.UncommonItems:SetValue(uncommonItems)
+		
+		local rareItems = {}
+		for _, item in ipairs(config.selectedItems.Rare or {}) do
+			rareItems[item] = true
+		end
+		Options.RareItems:SetValue(rareItems)
+		
+		local epicItems = {}
+		for _, item in ipairs(config.selectedItems.Epic or {}) do
+			epicItems[item] = true
+		end
+		Options.EpicItems:SetValue(epicItems)
+		
+		local legendaryItems = {}
+		for _, item in ipairs(config.selectedItems.Legendary or {}) do
+			legendaryItems[item] = true
+		end
+		Options.LegendaryItems:SetValue(legendaryItems)
+		
+		local mythicalItems = {}
+		for _, item in ipairs(config.selectedItems.Mythical or {}) do
+			mythicalItems[item] = true
+		end
+		Options.MythicalItems:SetValue(mythicalItems)
+		
+		local runeItems = {}
+		for _, item in ipairs(config.selectedItems.Rune or {}) do
+			runeItems[item] = true
+		end
+		Options.RuneItems:SetValue(runeItems)
+		
+		Library:Notify("Autoload config '" .. autoloadName .. "' loaded!", 4)
 	end
+end
 end)
-
 -- ═══════════════════════════════════════════════════════════════════════════
 -- KEYBIND SYSTEM (F1 = FARM, F2 = MINE)
 -- ═══════════════════════════════════════════════════════════════════════════
-
 Library:OnUnload(function()
-	Library.Unloaded = true
+Library.Unloaded = true
 end)
-
 _G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if not _G.MobFarmConfig or not _G.FarmFunctions then
-		return
-	end
+if gameProcessed then return end
+if not _G.MobFarmConfig or not _G.FarmFunctions then
+return
+end
+if input.KeyCode == Enum.KeyCode.F1 then
+	local newValue = not config.enabled
+	Toggles.FarmToggle:SetValue(newValue)
 	
-	if input.KeyCode == Enum.KeyCode.F1 then
-		local newValue = not config.enabled
-		Toggles.FarmToggle:SetValue(newValue)
-		
-	elseif input.KeyCode == Enum.KeyCode.F2 then
-		local newValue = not config.miningEnabled
-		Toggles.MineToggle:SetValue(newValue)
-	end
+elseif input.KeyCode == Enum.KeyCode.F2 then
+	local newValue = not config.miningEnabled
+	Toggles.MineToggle:SetValue(newValue)
+end
 end)
-
 -- ═══════════════════════════════════════════════════════════════════════════
 -- THEME MANAGER
 -- ═══════════════════════════════════════════════════════════════════════════
-
 ThemeManager:SetLibrary(Library)
 ThemeManager:SetFolder('RafsoHub')
 ThemeManager:ApplyToTab(Tabs.Settings)
