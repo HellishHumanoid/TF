@@ -2792,7 +2792,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 9: KEYBINDS, MAIN LOOPS & FINALIZATION (FINAL)
+-- PART 9: KEYBINDS, MAIN LOOPS & FINALIZATION (FIXED HOVERING)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2851,6 +2851,7 @@ local MESSAGE_COOLDOWN = 0.5
 
 local function switchToNewRock(reason)
 	if config.currentRock and config.miningEnabled then
+		print("🔄 " .. reason)
 		table.insert(config.ignoredRocks, config.currentRock)
 		
 		config.currentRock = nil
@@ -2885,7 +2886,7 @@ local function setupTextLabelMonitoring()
 			   text:find("another player") then
 				
 				lastMessageTime = tick()
-				switchToNewRock("Detected: Another player is mining this rock!")
+				switchToNewRock("⚠️ Rock occupied by another player!")
 			end
 		end)
 	end
@@ -2903,50 +2904,18 @@ end
 task.spawn(function()
 	task.wait(1)
 	setupTextLabelMonitoring()
+	print("✅ Rock occupation detection active")
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PROXIMITY CHECK
+-- PROXIMITY CHECK (FIXED - ALWAYS SKIP HOVER SEQUENCE)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local SKIP_HOVER_DISTANCE = 150
+local SKIP_HOVER_DISTANCE = 9999 -- CRITICAL FIX: Always skip hover sequence
 
 local function checkProximityToTarget()
-	local character = LocalPlayer.Character
-	if not character then return false end
-	
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return false end
-	
-	local currentPos = rootPart.Position
-	
-	if config.enabled then
-		local closestMob = funcs.getClosestMob()
-		if closestMob then
-			local mobRoot = closestMob:FindFirstChild("HumanoidRootPart")
-			if mobRoot then
-				local distance = (currentPos - mobRoot.Position).Magnitude
-				if distance <= SKIP_HOVER_DISTANCE then
-					return true
-				end
-			end
-		end
-	end
-	
-	if config.miningEnabled then
-		local closestRock = funcs.getClosestRock()
-		if closestRock then
-			local positionPart = funcs.getRockPosition(closestRock)
-			if positionPart then
-				local distance = (currentPos - positionPart.Position).Magnitude
-				if distance <= SKIP_HOVER_DISTANCE then
-					return true
-				end
-			end
-		end
-	end
-	
-	return false
+	-- ALWAYS return true to skip hover sequence
+	return true
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2962,7 +2931,7 @@ local function clickMouseForDefense()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN FARMING LOOP
+-- MAIN FARMING LOOP (FIXED - DIRECT HOVER)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local farmLoop = RunService.Heartbeat:Connect(function()
@@ -2973,32 +2942,16 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	if config.hoverSequenceActive and config.currentHoverTarget == 1 then
-		if checkProximityToTarget() then
-			config.hoverSequenceActive = false
-			config.currentHoverTarget = 3
-			return
-		end
-	end
-	
-	if config.hoverSequenceActive then
-		if config.currentHoverTarget == 1 then
-			if funcs.hoverToPosition(config.hoverPosition1, HOVER_POSITION_2) then
-				config.currentHoverTarget = 2
-			end
-		elseif config.currentHoverTarget == 2 then
-			if funcs.hoverToPosition(HOVER_POSITION_2, nil) then
-				config.currentHoverTarget = 3
-				config.hoverSequenceActive = false
-			end
-		end
-		return
-	end
+	-- SKIP hover sequence entirely - go directly to mob
+	config.hoverSequenceActive = false
 	
 	local needNewMob = not config.currentMob or not config.currentMob.Parent or not funcs.isValidMob(config.currentMob)
 	
 	if needNewMob then
 		config.currentMob = funcs.getClosestMob()
+		if config.currentMob then
+			print("🎯 Locked onto: " .. config.currentMob.Name)
+		end
 		return
 	end
 	
@@ -3010,8 +2963,10 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 	end
 end)
 
+print("✅ Farming loop active")
+
 -- ═══════════════════════════════════════════════════════════════════════════
--- MAIN MINING LOOP (WITH DEFENSE SYSTEM)
+-- MAIN MINING LOOP (FIXED - DIRECT HOVER WITH DEFENSE)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local miningLoop = RunService.Heartbeat:Connect(function()
@@ -3042,6 +2997,13 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	if not rootPart then return end
 	
+	-- SKIP hover sequence entirely
+	config.hoverSequenceActive = false
+	
+	-- ═══════════════════════════════════════════════════════════════════════
+	-- MINING DEFENSE SYSTEM
+	-- ═══════════════════════════════════════════════════════════════════════
+	
 	if config.miningDefenseEnabled then
 		local closestThreat = nil
 		local closestDistance = config.miningDefenseDistance
@@ -3060,6 +3022,7 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		end
 		
 		if closestThreat and not config.defendingAgainstMob then
+			print("🛡️ DEFENSE MODE: Attacking " .. closestThreat.Name)
 			config.defendingAgainstMob = closestThreat
 			config.savedMiningRock = config.currentRock
 			config.currentRock = nil
@@ -3081,6 +3044,7 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	
 	if config.defendingAgainstMob then
 		if not config.defendingAgainstMob.Parent or not funcs.isValidMob(config.defendingAgainstMob) then
+			print("✅ Threat eliminated - resuming mining")
 			config.defendingAgainstMob = nil
 			config.weaponEquipped = false
 			config.isLockedOn = false
@@ -3138,29 +3102,12 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	if config.hoverSequenceActive and config.currentHoverTarget == 1 then
-		if checkProximityToTarget() then
-			config.hoverSequenceActive = false
-			config.currentHoverTarget = 3
-			return
-		end
-	end
-	
-	if config.hoverSequenceActive then
-		if config.currentHoverTarget == 1 then
-			if funcs.hoverToPosition(config.hoverPosition1, HOVER_POSITION_2) then
-				config.currentHoverTarget = 2
-			end
-		elseif config.currentHoverTarget == 2 then
-			if funcs.hoverToPosition(HOVER_POSITION_2, nil) then
-				config.currentHoverTarget = 3
-				config.hoverSequenceActive = false
-			end
-		end
-		return
-	end
+	-- ═══════════════════════════════════════════════════════════════════════
+	-- NORMAL MINING MODE
+	-- ═══════════════════════════════════════════════════════════════════════
 	
 	if config.currentRock and (not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)) then
+		print("⚠️ Rock destroyed or invalid")
 		config.currentRock = nil
 		config.lastRockDurability = nil
 		return
@@ -3170,6 +3117,7 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		config.currentRock = funcs.getClosestRock()
 		
 		if config.currentRock then
+			print("⛏️ Locked onto rock: " .. config.currentRock.Name)
 			config.lastRockDurability = funcs.getRockDurability(config.currentRock)
 			config.rockDurabilityCheck = tick()
 			funcs.makeRockTransparent(config.currentRock)
@@ -3185,11 +3133,15 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	end
 end)
 
+print("✅ Mining loop active")
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CHARACTER RESPAWN HANDLER
 -- ═══════════════════════════════════════════════════════════════════════════
 
 LocalPlayer.CharacterAdded:Connect(function(character)
+	print("💀 Character respawned - resetting state")
+	
 	config.currentMob = nil
 	config.currentRock = nil
 	config.isLockedOn = false
@@ -3207,25 +3159,23 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 	
 	if wasFarming or wasMining then
 		character:WaitForChild("HumanoidRootPart", 10)
-		task.wait(3)
+		task.wait(2)
 		
 		local rootPart = character:FindFirstChild("HumanoidRootPart")
 		if rootPart then
-			config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
-			config.hoverSequenceActive = true
-			config.currentHoverTarget = 1
-			
 			funcs.setupPhysicsMovement()
 			funcs.startNoclip()
 			
 			if wasFarming then 
 				funcs.autoEquipWeapon()
+				print("🗡️ Weapon equipped")
 			end
 			if wasMining then 
 				funcs.autoEquipPickaxe()
 				config.ignoredRocks = {}
 				config.lastRockDurability = nil
 				config.rockDurabilityCheck = tick()
+				print("⛏️ Pickaxe equipped")
 			end
 		end
 		
@@ -3244,23 +3194,17 @@ task.spawn(function()
 	funcs.talkToSeller()
 end)
 
-print("✅ Script fully loaded!")
-
 -- ═══════════════════════════════════════════════════════════════════════════
--- FINAL INITIALIZATION CHECK
+-- FINAL CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════
 
 task.wait(1)
 
-if not Library then
-	error("❌ Library failed to load!")
-end
-
-if not Toggles.FarmToggle then
-	error("❌ UI elements failed to create!")
-end
-
-print("✅ All systems operational!")
-print("✅ Press F1 to toggle farming")
-print("✅ Press F2 to toggle mining")
-print("✅ Press K to toggle menu")
+print("═══════════════════════════════════════════════════════════")
+print("✅ SCRIPT FULLY LOADED!")
+print("═══════════════════════════════════════════════════════════")
+print("🎮 Controls:")
+print("   F1 = Toggle Farming")
+print("   F2 = Toggle Mining")
+print("   K  = Toggle Menu")
+print("═══════════════════════════════════════════════════════════")
