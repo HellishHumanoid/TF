@@ -1392,7 +1392,7 @@ funcs.hoverToMob = hoverToMob
 funcs.hoverToRock = hoverToRock
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 5: UI SETUP & TELEPORT SYSTEM
+-- PART 5: UI SETUP & TELEPORT SYSTEM (FIXED)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1435,97 +1435,6 @@ _G.teleportHoverActive = false
 local teleportHoverTarget = nil
 local teleportHoverLoop = nil
 local teleportNoclipEnabled = false
-
-local function hoverToTeleportPosition(targetPos)
-	local character = LocalPlayer.Character
-	if not character then return false end
-	
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	
-	if not rootPart or not config.bodyVelocity or not config.bodyGyro then
-		return false
-	end
-	
-	local currentPos = rootPart.Position
-	local direction = (targetPos - currentPos)
-	local distance = direction.Magnitude
-	
-	if distance < 3 then
-		config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-		return true
-	end
-	
-	local speedMultiplier = math.min(distance / 10, 1)
-	local targetSpeed = config.hoverSpeed * speedMultiplier
-	
-	local desiredVelocity = direction.Unit * targetSpeed
-	local currentVelocity = config.bodyVelocity.Velocity
-	local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)
-	
-	config.bodyVelocity.Velocity = newVelocity
-	
-	local lookCFrame = CFrame.new(currentPos, targetPos)
-	config.bodyGyro.CFrame = lookCFrame
-	
-	return false
-end
-
-local function startTeleportHover(position, locationName)
-	if _G.teleportHoverActive then
-		_G.UIReferences.Library:Notify("Already traveling to a location!", 2)
-		return
-	end
-	
-	if not config.bodyVelocity or not config.bodyGyro then
-		funcs.setupPhysicsMovement()
-		task.wait(0.1)
-	end
-	
-	_G.teleportHoverActive = true
-	
-	if not config.noclipLoop then
-		funcs.startNoclip()
-		teleportNoclipEnabled = true
-	end
-	
-	teleportHoverTarget = position
-	
-	_G.UIReferences.Library:Notify("Traveling to " .. locationName .. "...", 2)
-	
-	teleportHoverLoop = RunService.Heartbeat:Connect(function()
-		if not _G.teleportHoverActive then
-			if teleportHoverLoop then
-				teleportHoverLoop:Disconnect()
-				teleportHoverLoop = nil
-			end
-			return
-		end
-		
-		local reached = hoverToTeleportPosition(teleportHoverTarget)
-		
-		if reached then
-			_G.teleportHoverActive = false
-			
-			if teleportHoverLoop then
-				teleportHoverLoop:Disconnect()
-				teleportHoverLoop = nil
-			end
-			
-			_G.UIReferences.Library:Notify("Arrived at " .. locationName .. "!", 2)
-			
-			if not config.enabled and not config.miningEnabled then
-				task.wait(0.5)
-				
-				if teleportNoclipEnabled then
-					funcs.stopNoclip()
-					teleportNoclipEnabled = false
-				end
-				
-				funcs.cleanupPhysicsMovement()
-			end
-		end
-	end)
-end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WORLD 2 TELEPORT SYSTEM
@@ -1680,13 +1589,26 @@ local function stopWorld2AutoJoin()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- LOAD LINORIA UI LIBRARY
+-- LOAD LINORIA UI LIBRARY (WITH ERROR HANDLING)
 -- ═══════════════════════════════════════════════════════════════════════════
+
+print("📦 Loading Linoria UI Library...")
 
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 
-local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
-local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local Library, ThemeManager
+
+local librarySuccess = pcall(function()
+	Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+	ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+end)
+
+if not librarySuccess or not Library then
+	error("❌ Failed to load Linoria UI Library! Check your internet connection.")
+	return
+end
+
+print("✅ Linoria UI Library loaded successfully")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- CREATE WINDOW
@@ -1699,6 +1621,8 @@ local Window = Library:CreateWindow({
 	TabPadding = 8,
 	MenuFadeTime = 0.2
 })
+
+print("✅ Window created")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- INITIALIZE GLOBAL REFERENCES
@@ -1718,6 +1642,103 @@ _G.UIReferences = {
 local Tabs = _G.UIReferences.Tabs
 local Toggles = getgenv().Toggles
 local Options = getgenv().Options
+
+print("✅ Global references initialized")
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- TELEPORT HOVER FUNCTION (NEEDS UI REFERENCE)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function hoverToTeleportPosition(targetPos)
+	local character = LocalPlayer.Character
+	if not character then return false end
+	
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	
+	if not rootPart or not config.bodyVelocity or not config.bodyGyro then
+		return false
+	end
+	
+	local currentPos = rootPart.Position
+	local direction = (targetPos - currentPos)
+	local distance = direction.Magnitude
+	
+	if distance < 3 then
+		config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		return true
+	end
+	
+	local speedMultiplier = math.min(distance / 10, 1)
+	local targetSpeed = config.hoverSpeed * speedMultiplier
+	
+	local desiredVelocity = direction.Unit * targetSpeed
+	local currentVelocity = config.bodyVelocity.Velocity
+	local newVelocity = currentVelocity:Lerp(desiredVelocity, 0.5)
+	
+	config.bodyVelocity.Velocity = newVelocity
+	
+	local lookCFrame = CFrame.new(currentPos, targetPos)
+	config.bodyGyro.CFrame = lookCFrame
+	
+	return false
+end
+
+local function startTeleportHover(position, locationName)
+	if _G.teleportHoverActive then
+		Library:Notify("Already traveling to a location!", 2)
+		return
+	end
+	
+	if not config.bodyVelocity or not config.bodyGyro then
+		funcs.setupPhysicsMovement()
+		task.wait(0.1)
+	end
+	
+	_G.teleportHoverActive = true
+	
+	if not config.noclipLoop then
+		funcs.startNoclip()
+		teleportNoclipEnabled = true
+	end
+	
+	teleportHoverTarget = position
+	
+	Library:Notify("Traveling to " .. locationName .. "...", 2)
+	
+	teleportHoverLoop = RunService.Heartbeat:Connect(function()
+		if not _G.teleportHoverActive then
+			if teleportHoverLoop then
+				teleportHoverLoop:Disconnect()
+				teleportHoverLoop = nil
+			end
+			return
+		end
+		
+		local reached = hoverToTeleportPosition(teleportHoverTarget)
+		
+		if reached then
+			_G.teleportHoverActive = false
+			
+			if teleportHoverLoop then
+				teleportHoverLoop:Disconnect()
+				teleportHoverLoop = nil
+			end
+			
+			Library:Notify("Arrived at " .. locationName .. "!", 2)
+			
+			if not config.enabled and not config.miningEnabled then
+				task.wait(0.5)
+				
+				if teleportNoclipEnabled then
+					funcs.stopNoclip()
+					teleportNoclipEnabled = false
+				end
+				
+				funcs.cleanupPhysicsMovement()
+			end
+		end
+	end)
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PART 6: AUTO-LOOPS & TAB CREATION
