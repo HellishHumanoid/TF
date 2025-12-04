@@ -1,6 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- THE FORGE - WORLD DETECTION + AUTO-REJOIN + ANTI-AFK SYSTEM
 -- Automatically detects which world you're in and loads the correct script
+-- Re-executes on server teleport like Infinite Yield
 -- Created by Rafso [literalh]
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -9,6 +10,40 @@ local GuiService = game:GetService("GuiService")
 local TeleportService = game:GetService("TeleportService")
 local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- PERSISTENT SCRIPT RE-EXECUTION ON TELEPORT
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local SCRIPT_URL = 'https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemainloader'
+
+local function setupTeleportPersistence()
+	-- Store the script in queue_on_teleport so it re-executes
+	local queueScript = string.format([[
+		repeat task.wait() until game:IsLoaded()
+		task.wait(2)
+		pcall(function()
+			loadstring(game:HttpGet('%s'))()
+		end)
+	]], SCRIPT_URL)
+	
+	-- Queue the script to run on teleport
+	pcall(function()
+		queue_on_teleport(queueScript)
+	end)
+	
+	-- Listen for teleport events
+	TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
+		if player == LocalPlayer then
+			warn("Teleport failed: " .. errorMessage)
+			pcall(function()
+				queue_on_teleport(queueScript)
+			end)
+		end
+	end)
+	
+	print("✅ Teleport persistence enabled - script will re-execute on server join")
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NOTIFICATION SYSTEM
@@ -203,6 +238,12 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 sendNotification("The Forge", "Initializing by Rafso...", 3)
+
+-- Setup Teleport Persistence (FIRST - so it's ready before any teleports)
+task.spawn(function()
+	pcall(setupTeleportPersistence)
+	sendNotification("Persistence", "Script will re-execute on server join!", 3)
+end)
 
 -- Setup Auto-Rejoin System
 task.spawn(function()
