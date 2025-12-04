@@ -1892,6 +1892,7 @@ Tabs.Configs = Window:AddTab('Config')
 
 local InfoLeftBox = Tabs.Info:AddLeftGroupbox('Script Information')
 
+InfoLeftBox:AddLabel('World 2: Forgotten Kingdom')
 InfoLeftBox:AddLabel('Tested on Xeno')  -- ✅ FIXED: Added closing quote
 InfoLeftBox:AddLabel('Created by Rafso [literalh]')
 InfoLeftBox:AddDivider()
@@ -1912,6 +1913,7 @@ InfoRightBox:AddLabel('• Auto-Mine has built-in')
 InfoRightBox:AddLabel('  Lava Check')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('if not automatically done')
+InfoRightBox:AddLabel('This Script is in BETA')
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- FARMING TAB
