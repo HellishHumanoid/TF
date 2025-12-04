@@ -447,7 +447,7 @@ _G.OreTypes = OreTypes
 local config = _G.MobFarmConfig
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 2: NOCLIP & MOB/ROCK DETECTION (OPTIMIZED OCCUPIED CHECK)
+-- PART 2: NOCLIP & MOB/ROCK DETECTION (NO CACHE - REAL-TIME)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -561,31 +561,17 @@ local function getClosestMob()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ OPTIMIZED OCCUPIED ORE DETECTION (SHORT CACHE)
+-- ✅ REAL-TIME OCCUPIED CHECK (NO CACHE)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local OCCUPIED_CHECK_DISTANCE = 15
-local occupiedCache = {}
-local OCCUPIED_CACHE_LIFETIME = 0.5  -- ✅ Very short cache (0.5 seconds)
 
 local function isOreOccupied(rock)
 	if not config.avoidOccupied then return false end
 	if not rock then return false end
 	
-	-- ✅ Check cache (very short - 0.3 seconds)
-	local rockId = tostring(rock)
-	local cachedResult = occupiedCache[rockId]
-	if cachedResult then
-		if tick() - cachedResult.time < 0.3 then
-			return cachedResult.occupied
-		end
-	end
-	
 	local positionPart = _G.FarmFunctions.getRockPosition(rock)
-	if not positionPart then 
-		occupiedCache[rockId] = {occupied = false, time = tick()}
-		return false 
-	end
+	if not positionPart then return false end
 	
 	local rockPos = positionPart.Position
 	
@@ -595,7 +581,7 @@ local function isOreOccupied(rock)
 	local myRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not myRootPart then return false end
 	
-	-- Check all players
+	-- ✅ CHECK ALL PLAYERS IN REAL-TIME (NO CACHE)
 	for _, player in pairs(Players:GetPlayers()) do
 		if player ~= LocalPlayer then
 			local otherChar = player.Character
@@ -605,10 +591,9 @@ local function isOreOccupied(rock)
 					local distance = (otherRoot.Position - rockPos).Magnitude
 					
 					if distance <= OCCUPIED_CHECK_DISTANCE then
+						-- ✅ Check if they have pickaxe equipped
 						local hasPickaxe = otherChar:FindFirstChild("Pickaxe")
 						if hasPickaxe then
-							-- ✅ Rock is OCCUPIED
-							occupiedCache[rockId] = {occupied = true, time = tick()}
 							return true
 						end
 					end
@@ -617,23 +602,8 @@ local function isOreOccupied(rock)
 		end
 	end
 	
-	-- ✅ Rock is FREE
-	occupiedCache[rockId] = {occupied = false, time = tick()}
 	return false
 end
-
--- ✅ Cleanup cache every 2 seconds
-task.spawn(function()
-	while true do
-		task.wait(2)
-		local currentTime = tick()
-		for rockId, data in pairs(occupiedCache) do
-			if currentTime - data.time > OCCUPIED_CACHE_LIFETIME then
-				occupiedCache[rockId] = nil
-			end
-		end
-	end
-end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ROCK DETECTION
@@ -735,7 +705,7 @@ local function getClosestRock()
 												local distance = (rootPart.Position - positionPart.Position).Magnitude
 												
 												if distance <= config.farmDistance then
-													-- ✅ Check if occupied (uses optimized cache)
+													-- ✅ Real-time occupied check
 													if not isOreOccupied(durabilityModel) then
 														if priority < highestPriority or (priority == highestPriority and distance < closestDistance) then
 															closestRock = durabilityModel
@@ -792,7 +762,7 @@ _G.FarmFunctions.isRockIgnored = isRockIgnored
 _G.FarmFunctions.makeRockTransparent = makeRockTransparent
 _G.FarmFunctions.isOreOccupied = isOreOccupied
 
-print("✅ Part 2 loaded - Occupied detection: 0.3s cache")
+print("✅ Part 2 loaded - Real-time occupied detection (no cache)")
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PART 3: WEAPON SYSTEM, AUTOSELL & PHYSICS MOVEMENT
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1828,7 +1798,7 @@ local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 InfoRightBox:AddLabel('• [Lifesteal] needed if')
 InfoRightBox:AddLabel('  Lava Check disabled')
 InfoRightBox:AddLabel('• Auto-Mine has built-in')
-InfoRightBox:AddLabel('  Lava Check')
+InfoRightBox:AddLabel('  Lava Check [Works on Mining]')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('  if not automatically done')
 InfoRightBox:AddLabel('• This Script is in BETA')
@@ -2883,7 +2853,7 @@ ThemeManager:SetFolder('RafsoHub')
 ThemeManager:ApplyToTab(Tabs.Settings)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 7A: ORE CHECK FUNCTIONS & LAVA CHECK (WANTED ORES SYSTEM)
+-- PART 7A: ORE CHECK FUNCTIONS & LAVA CHECK (WANTED ORES SYSTEM) - FIXED
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -2905,6 +2875,7 @@ local SKIP_HOVER_DISTANCE = 150
 
 config.miningDefenseEnabled = true
 config.miningDefenseDistance = 10
+config.miningDefenseVerticalDistance = 6
 config.defendingAgainstMob = nil
 config.savedMiningRock = nil
 config.weaponEquipped = false
@@ -2912,7 +2883,7 @@ config.lastDefenseAttackTime = 0
 config.defenseAttackCooldown = 0.1
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ SIMPLIFIED: LAVA CHECK - SWITCH TO ABOVE, RESET ON NEW ROCK
+-- ✅ FIXED: LAVA CHECK - SWITCH TO ABOVE ON DAMAGE, RESET ON NEW ROCK
 -- ═══════════════════════════════════════════════════════════════════════════
 
 config.lavaCheckEnabled = true
@@ -2920,27 +2891,27 @@ config.lastHealth = nil
 config.inLavaMode = false
 config.currentRockModel = nil
 config.lavaCheckCooldown = false
-config.lavaCooldownTime = 1
+config.lavaCooldownTime = 0.5
 
 -- ✅ Store original mining settings
 config.normalMiningDistance = 6
 config.normalMiningAngle = 270
 
 -- ✅ Above position settings for lava
-config.lavaMiningDistance = 6  -- Same distance but above
-config.lavaMiningAngle = 90    -- Look down at rock from above
+config.lavaMiningDistance = 6
+config.lavaMiningAngle = 90
+
+-- ✅ NEW: Track the rock ID to detect when we switch rocks
+config.currentRockId = nil
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WANTED ORES SYSTEM FUNCTIONS
 -- ═══════════════════════════════════════════════════════════════════════════
 
--- Fixed threshold at 40%
 local ORE_CHECK_THRESHOLD = 40
 
--- ✅ NEW: Track if we've already checked this rock
 config.rocksCheckedForOre = {}
 
--- Get rock HP from the game's infoFrame
 local function getRockHPPercent(rock)
 	if not rock or not rock.Parent then return 100 end
 	
@@ -2971,21 +2942,17 @@ local function getRockHPPercent(rock)
 	return 100
 end
 
--- Get texture ID from Ore model's FIRST CHILD only
 local function getOreTextureFromRock(rock)
 	if not rock or not rock.Parent then return nil end
 	
 	local rockTypeModel = rock.Parent
 	
-	-- Search for Ore model in rock and its parent
 	local function findOreTexture(parent)
 		for _, child in pairs(parent:GetChildren()) do
 			if child:IsA("Model") and child.Name == "Ore" then
-				-- Get the FIRST CHILD of the Ore model
 				local firstChild = child:GetChildren()[1]
 				if firstChild and firstChild:IsA("MeshPart") then
 					if firstChild.TextureId and firstChild.TextureId ~= "" then
-						-- Extract just the number from the texture ID
 						local textureNum = firstChild.TextureId:match("(%d+)")
 						return textureNum
 					end
@@ -2996,11 +2963,9 @@ local function getOreTextureFromRock(rock)
 		return nil
 	end
 	
-	-- Check in durability model first
 	local texture = findOreTexture(rock)
 	if texture then return texture end
 	
-	-- Then check in rock type model
 	if rockTypeModel and rockTypeModel ~= rock then
 		texture = findOreTexture(rockTypeModel)
 		if texture then return texture end
@@ -3009,7 +2974,6 @@ local function getOreTextureFromRock(rock)
 	return nil
 end
 
--- Get ore name from texture ID using predefined OreTypes
 local function getOreNameFromTexture(textureNum)
 	if not textureNum then return nil end
 	
@@ -3022,23 +2986,19 @@ local function getOreNameFromTexture(textureNum)
 	return nil
 end
 
--- Check if rock contains a wanted ore
 local function rockHasWantedOre(rock)
 	if not config.oreCheckEnabled then return true end
 	if not rock then return true end
 	
-	-- If no wanted ores selected, accept all rocks
 	if #config.wantedOres == 0 then return true end
 	
 	local textureNum = getOreTextureFromRock(rock)
 	
-	-- If no ore found yet, keep mining (ore hasn't spawned)
 	if not textureNum then return true end
 	
 	local oreName = getOreNameFromTexture(textureNum)
 	
 	if oreName then
-		-- Check if this ore is in the wanted list
 		for _, wantedOreName in ipairs(config.wantedOres) do
 			if oreName == wantedOreName then
 				print("💎 Found wanted ore: " .. oreName)
@@ -3051,39 +3011,30 @@ local function rockHasWantedOre(rock)
 	return false
 end
 
--- ✅ IMPROVED: Continuous ore monitoring system - ONLY CHECK AT 50% HP AND BELOW
 local function performOreCheck()
 	if not config.miningEnabled or not config.oreCheckEnabled then return end
 	if not config.currentRock or config.defendingAgainstMob then return end
 	
-	-- If no wanted ores selected, skip check entirely
 	if #config.wantedOres == 0 then return end
 	
 	local currentTime = tick()
 	if currentTime - config.lastOreCheckTime < config.oreCheckInterval then return end
 	config.lastOreCheckTime = currentTime
 	
-	-- Get rock HP
 	local rockHP = getRockHPPercent(config.currentRock)
 	
-	-- ✅ NEW: Check if we've already verified this rock
 	local rockId = tostring(config.currentRock)
 	if config.rocksCheckedForOre[rockId] then
-		-- Already checked and passed
 		return
 	end
 	
-	-- ✅ CRITICAL FIX: ONLY CHECK WHEN ORE IS VISIBLE (50% HP AND BELOW)
-	-- Before 50% HP, ores haven't spawned yet, so don't check
 	if rockHP > 50 then
-		return -- Too early to check, ore hasn't spawned yet
+		return
 	end
 	
-	-- ✅ IMPROVED: Check at 50%, 40%, 30% for reliability
 	if rockHP <= 50 then
 		local textureNum = getOreTextureFromRock(config.currentRock)
 		
-		-- If ore is now visible, check it
 		if textureNum then
 			local oreName = getOreNameFromTexture(textureNum)
 			local isWanted = false
@@ -3093,24 +3044,22 @@ local function performOreCheck()
 					if oreName == wantedOreName then
 						isWanted = true
 						print("💎 Found wanted ore: " .. oreName .. " at " .. math.floor(rockHP) .. "% HP")
-						-- Mark this rock as verified
 						config.rocksCheckedForOre[rockId] = true
 						break
 					end
 				end
 			end
 			
-			-- Skip if ore is visible and NOT wanted
 			if not isWanted then
 				print("❌ Skipping rock - Wrong ore: " .. (oreName or "Unknown (ID: " .. textureNum .. ")") .. " at " .. math.floor(rockHP) .. "% HP")
 				
 				table.insert(config.ignoredRocks, config.currentRock)
 				
-				-- Clear the rock check cache entry
 				config.rocksCheckedForOre[rockId] = nil
 				
 				config.currentRock = nil
 				config.currentRockModel = nil
+				config.currentRockId = nil
 				config.lastRockDurability = nil
 				config.isLockedOn = false
 				
@@ -3123,14 +3072,13 @@ local function performOreCheck()
 				end
 			end
 		else
-			-- ✅ CRITICAL: If ore isn't visible yet at 50% HP, something is wrong
-			-- This means the rock might not have an ore, so skip it
 			if rockHP <= 40 then
 				print("❌ No ore detected at 40% HP - skipping rock")
 				table.insert(config.ignoredRocks, config.currentRock)
 				config.rocksCheckedForOre[rockId] = nil
 				config.currentRock = nil
 				config.currentRockModel = nil
+				config.currentRockId = nil
 				config.lastRockDurability = nil
 				config.isLockedOn = false
 				
@@ -3146,7 +3094,6 @@ local function performOreCheck()
 	end
 end
 
--- Debug function
 local function debugCurrentRock()
 	if not config.currentRock then
 		print("❌ No rock selected")
@@ -3173,7 +3120,6 @@ local function debugCurrentRock()
 	end
 end
 
--- Store globally
 _G.OreCheck = { 
 	perform = performOreCheck, 
 	debug = debugCurrentRock,
@@ -3183,91 +3129,117 @@ _G.OreCheck = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ SIMPLIFIED: LAVA CHECK FUNCTIONS
+-- ✅ FIXED: LAVA CHECK FUNCTIONS - IMMEDIATE RESPONSE TO DAMAGE
 -- ═══════════════════════════════════════════════════════════════════════════
 
 config.lastTrackedMob = nil
 
+-- ✅ FIXED: This now only resets when explicitly called for new rock
 local function resetLavaMode()
-	if config.lockPosition == "Above" and config.savedLockPosition == "Below" then
-		config.lockPosition = config.savedLockPosition
-		config.savedLockPosition = nil
+	if config.inLavaMode then
 		config.inLavaMode = false
+		config.miningVerticalDistance = config.normalMiningDistance
+		config.miningAngle = config.normalMiningAngle
+		
+		print("🔄 Lava mode RESET - Back to BELOW position")
+		print("   Vertical Distance: " .. config.miningVerticalDistance)
+		print("   Angle: " .. config.miningAngle .. "°")
 		
 		local character = LocalPlayer.Character
 		if character then
 			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then config.farmingLastHealth = humanoid.Health end
-		end
-	end
-end
-
-local function checkFarmingLavaDamage()
-	if not config.enabled or not config.lavaCheckEnabled or config.hoverSequenceActive then return end
-	if config.lockPosition ~= "Below" and not config.inLavaMode then return end
-	if config.lavaCheckCooldown then return end
-	
-	local character = LocalPlayer.Character
-	if not character then return end
-	
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return end
-	
-	local currentHealth = humanoid.Health
-	
-	if not config.farmingLastHealth then
-		config.farmingLastHealth = currentHealth
-		return
-	end
-	
-	if currentHealth < config.farmingLastHealth and not config.inLavaMode and config.currentMob then
-		config.inLavaMode = true
-		if not config.savedLockPosition then config.savedLockPosition = "Below" end
-		config.lockPosition = "Above"
-		
-		config.lavaCheckCooldown = true
-		task.delay(config.lavaCooldownTime, function() config.lavaCheckCooldown = false end)
-	end
-	
-	config.farmingLastHealth = currentHealth
-end
-
--- ✅ SIMPLIFIED: Just check for damage, switch to above
-local function checkLavaDamage()
-	if not config.miningEnabled or config.defendingAgainstMob or not config.lavaCheckEnabled then return end
-	if config.lavaCheckCooldown then return end
-	
-	local character = LocalPlayer.Character
-	if not character then return end
-	
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return end
-	
-	local currentHealth = humanoid.Health
-	
-	if not config.lastHealth then
-		config.lastHealth = currentHealth
-		return
-	end
-	
-	-- ✅ SIMPLE: Detect ANY damage and switch to above
-	if currentHealth < config.lastHealth and not config.inLavaMode then
-		config.inLavaMode = true
-		
-		-- ✅ SWITCH TO ABOVE POSITION
-		config.miningVerticalDistance = config.lavaMiningDistance  -- 6 studs above
-		config.miningAngle = config.lavaMiningAngle                -- 90 degrees (look down)
-		
-		print("🔥 DAMAGE DETECTED - Switching to ABOVE position")
-		print("   Vertical Distance: " .. config.miningVerticalDistance)
-		print("   Angle: " .. config.miningAngle .. "°")
-		
-		if config.currentRock then 
-			config.currentRockModel = config.currentRock.Parent 
+			if humanoid then 
+				config.lastHealth = humanoid.Health 
+			end
 		end
 		
 		if Library then
-			Library:Notify("🔥 Damage detected - mining from above!", 3)
+			Library:Notify("✅ Back to below position", 2)
+		end
+	end
+end
+
+-- ✅ FIXED: Farming lava check - ULTRA AGGRESSIVE DAMAGE DETECTION
+local farmingHealthInitialized = false
+
+local function checkFarmingLavaDamage()
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	
+	local currentHealth = humanoid.Health
+	
+	-- Debug every second
+	if tick() % 1 < 0.05 then
+		print("🔍 Farming Check: Enabled=" .. tostring(config.enabled) .. " | LavaCheckEnabled=" .. tostring(config.lavaCheckEnabled) .. " | Position=" .. config.lockPosition .. " | InLavaMode=" .. tostring(config.inLavaMode))
+	end
+	
+	if not config.enabled then 
+		print("❌ Farming check: config.enabled = false")
+		return 
+	end
+	
+	if not config.lavaCheckEnabled then 
+		print("❌ Farming check: lavaCheckEnabled = false")
+		return 
+	end
+	
+	if config.hoverSequenceActive then 
+		return 
+	end
+	
+	if config.lavaCheckCooldown then 
+		return 
+	end
+	
+	-- ✅ REMOVED: Don't check position - allow check regardless of current position
+	
+	-- ✅ Initialize health if not set (only print once)
+	if not config.farmingLastHealth then
+		config.farmingLastHealth = currentHealth
+		if not farmingHealthInitialized then
+			print("💚 Farming health initialized: " .. math.floor(currentHealth))
+			farmingHealthInitialized = true
+		end
+		return
+	end
+	
+	-- ✅ Detect ANY health decrease
+	local healthDifference = config.farmingLastHealth - currentHealth
+	
+	-- Debug health changes
+	if healthDifference ~= 0 then
+		print("💔 Health change detected: " .. math.floor(healthDifference) .. " HP")
+	end
+	
+	if healthDifference > 0 and not config.inLavaMode then
+		print("═══════════════════════════════════════════════════════════")
+		print("🔥 FARMING DAMAGE DETECTED: -" .. math.floor(healthDifference) .. " HP")
+		print("   Current: " .. math.floor(currentHealth) .. " | Previous: " .. math.floor(config.farmingLastHealth))
+		print("   Current Position: " .. config.lockPosition)
+		print("   Current Mob: " .. tostring(config.currentMob and config.currentMob.Name or "None"))
+		print("═══════════════════════════════════════════════════════════")
+		
+		config.inLavaMode = true
+		
+		-- ✅ Save original position and switch to Above
+		if not config.savedLockPosition then 
+			config.savedLockPosition = config.lockPosition
+			print("💾 Saved position: " .. config.savedLockPosition)
+		end
+		
+		config.lockPosition = "Above"
+		
+		print("🔥 SWITCHED TO ABOVE POSITION FOR FARMING")
+		print("   Previous: " .. config.savedLockPosition)
+		print("   Current: " .. config.lockPosition)
+		print("   inLavaMode: " .. tostring(config.inLavaMode))
+		print("═══════════════════════════════════════════════════════════")
+		
+		if Library then
+			Library:Notify("🔥 DAMAGE! Farming from ABOVE", 3)
 		end
 		
 		config.lavaCheckCooldown = true
@@ -3276,6 +3248,88 @@ local function checkLavaDamage()
 		end)
 	end
 	
+	-- ✅ Always update last health
+	config.farmingLastHealth = currentHealth
+end
+
+-- ✅ FIXED: Mining lava check - MORE AGGRESSIVE DAMAGE DETECTION WITH DEBUG
+local function checkLavaDamage()
+	-- Debug: Print every 2 seconds that check is running
+	if tick() % 2 < 0.05 then
+		print("🔍 Lava check running - Enabled: " .. tostring(config.lavaCheckEnabled) .. " | In Lava Mode: " .. tostring(config.inLavaMode))
+	end
+	
+	if not config.miningEnabled then 
+		return 
+	end
+	
+	if not config.lavaCheckEnabled then 
+		return 
+	end
+	
+	if config.defendingAgainstMob then 
+		return 
+	end
+	
+	if config.lavaCheckCooldown then 
+		return 
+	end
+	
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+	
+	local currentHealth = humanoid.Health
+	
+	-- ✅ Initialize health if not set
+	if not config.lastHealth then
+		config.lastHealth = currentHealth
+		print("💚 Initial health set: " .. math.floor(currentHealth))
+		return
+	end
+	
+	-- ✅ CRITICAL FIX: Detect ANY health decrease (even 0.1 damage)
+	local healthDifference = config.lastHealth - currentHealth
+	
+	if healthDifference > 0 and not config.inLavaMode then
+		print("═══════════════════════════════════════════════════════════")
+		print("🔥 DAMAGE DETECTED: -" .. math.floor(healthDifference) .. " HP")
+		print("   Current: " .. math.floor(currentHealth) .. " | Previous: " .. math.floor(config.lastHealth))
+		print("   Mining Enabled: " .. tostring(config.miningEnabled))
+		print("   Lava Check Enabled: " .. tostring(config.lavaCheckEnabled))
+		print("═══════════════════════════════════════════════════════════")
+		
+		config.inLavaMode = true
+		
+		-- ✅ IMMEDIATELY SWITCH TO ABOVE POSITION
+		config.miningVerticalDistance = config.lavaMiningDistance
+		config.miningAngle = config.lavaMiningAngle
+		
+		print("🔥 CONFIG UPDATED:")
+		print("   miningVerticalDistance: " .. config.miningVerticalDistance .. " studs")
+		print("   miningAngle: " .. config.miningAngle .. "°")
+		print("   inLavaMode: " .. tostring(config.inLavaMode))
+		print("═══════════════════════════════════════════════════════════")
+		
+		if config.currentRock then 
+			config.currentRockModel = config.currentRock.Parent 
+			print("✅ Rock saved for lava mode")
+		end
+		
+		if Library then
+			Library:Notify("🔥 DAMAGE! Mining from ABOVE", 3)
+		end
+		
+		-- ✅ Short cooldown to prevent spam
+		config.lavaCheckCooldown = true
+		task.delay(config.lavaCooldownTime, function() 
+			config.lavaCheckCooldown = false 
+		end)
+	end
+	
+	-- ✅ Always update last health
 	config.lastHealth = currentHealth
 end
 
@@ -3328,13 +3382,13 @@ local MESSAGE_COOLDOWN = 0.5
 
 local function switchToNewRock(reason)
 	if config.currentRock and config.miningEnabled and not config.defendingAgainstMob then
-		-- ✅ NEW: Clear rock from checked cache when switching
 		local rockId = tostring(config.currentRock)
 		config.rocksCheckedForOre[rockId] = nil
 		
 		table.insert(config.ignoredRocks, config.currentRock)
 		config.currentRock = nil
 		config.currentRockModel = nil
+		config.currentRockId = nil
 		config.lastRockDurability = nil
 		config.isLockedOn = false
 		
@@ -3397,8 +3451,10 @@ _G.Part7AFunctions = {
 	getOreNameFromTexture = getOreNameFromTexture,
 }
 
+print("✅ Part 7A loaded - Fixed aggressive lava detection")
+
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 7B: MAIN LOOPS (ALL FIXES - NUCLEAR PICKAXE BLOCK)
+-- PART 7B: FIXED - DEFENSE MODE + AUTO-RESET LAVA MODE ON NEW ROCK
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -3418,6 +3474,10 @@ local Living = workspace:WaitForChild("Living")
 -- DEFENSE SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
+local defenseAttackLoop = nil
+local lastToolEquipTime = 0
+local TOOL_EQUIP_COOLDOWN = 0.5
+
 local function performDefenseAttack()
 	if not config.defendingAgainstMob then return end
 	
@@ -3429,8 +3489,6 @@ local function performDefenseAttack()
 	config.lastDefenseAttackTime = currentTime
 	part7a.clickMouseForDefense()
 end
-
-local defenseAttackLoop = nil
 
 local function startDefenseAttack()
 	if defenseAttackLoop then return end
@@ -3456,61 +3514,79 @@ local function stopDefenseAttack()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ NUCLEAR PICKAXE BLOCKING SYSTEM
+-- ✅ FIXED: WEAPON/PICKAXE MANAGEMENT - FORCE CORRECT TOOL
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local lastToolEquipTime = 0
-local TOOL_EQUIP_COOLDOWN = 1
-
--- ✅ NUCLEAR: Force unequip pickaxe every frame during defense
-local pickaxeBlockLoop = nil
-
-local function startPickaxeBlock()
-	if pickaxeBlockLoop then return end
-	
-	print("🚫 NUCLEAR PICKAXE BLOCK ACTIVATED")
-	
-	pickaxeBlockLoop = RunService.Heartbeat:Connect(function()
-		if not config.defendingAgainstMob then
-			if pickaxeBlockLoop then
-				pickaxeBlockLoop:Disconnect()
-				pickaxeBlockLoop = nil
-				print("✅ PICKAXE BLOCK DEACTIVATED")
-			end
-			return
-		end
-		
-		-- ✅ FORCE UNEQUIP PICKAXE EVERY FRAME
-		local character = LocalPlayer.Character
-		if character then
-			local pickaxe = character:FindFirstChild("Pickaxe")
-			if pickaxe then
-				print("🚫🚫🚫 PICKAXE DETECTED - FORCE REMOVING!")
-				local humanoid = character:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					humanoid:UnequipTools()
-				end
-			end
-		end
-	end)
-end
-
-local function stopPickaxeBlock()
-	if pickaxeBlockLoop then
-		pickaxeBlockLoop:Disconnect()
-		pickaxeBlockLoop = nil
-		print("✅ PICKAXE BLOCK STOPPED")
-	end
-end
-
-local function ensureWeaponEquipped()
+local function forceEquipWeapon()
 	local character = LocalPlayer.Character
 	if not character then return false end
 	
-	if config.isRespawning then return false end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return false end
+	
+	-- Check if weapon already equipped
+	local weaponInChar = character:FindFirstChild("Weapon")
+	if weaponInChar and weaponInChar:IsA("Tool") then
+		return true
+	end
+	
+	-- Force unequip everything first
+	humanoid:UnequipTools()
+	task.wait(0.15)
+	
+	-- Equip weapon
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if backpack then
+		local weapon = backpack:FindFirstChild("Weapon")
+		if weapon and weapon:IsA("Tool") then
+			humanoid:EquipTool(weapon)
+			task.wait(0.2)
+			print("⚔️ WEAPON EQUIPPED")
+			return true
+		end
+	end
+	
+	return false
+end
+
+local function forceEquipPickaxe()
+	local character = LocalPlayer.Character
+	if not character then return false end
 	
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return false end
+	
+	-- Check if pickaxe already equipped
+	local pickaxeInChar = character:FindFirstChild("Pickaxe")
+	if pickaxeInChar and pickaxeInChar:IsA("Tool") then
+		return true
+	end
+	
+	-- Force unequip everything first
+	humanoid:UnequipTools()
+	task.wait(0.15)
+	
+	-- Equip pickaxe
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if backpack then
+		local pickaxe = backpack:FindFirstChild("Pickaxe")
+		if pickaxe and pickaxe:IsA("Tool") then
+			humanoid:EquipTool(pickaxe)
+			task.wait(0.2)
+			print("⛏️ PICKAXE EQUIPPED")
+			return true
+		end
+	end
+	
+	return false
+end
+
+local function ensureWeaponEquipped()
+	if not config.defendingAgainstMob then return false end
+	if config.isRespawning then return false end
+	
+	local character = LocalPlayer.Character
+	if not character then return false end
 	
 	local weaponInChar = character:FindFirstChild("Weapon")
 	if weaponInChar and weaponInChar:IsA("Tool") then
@@ -3522,46 +3598,19 @@ local function ensureWeaponEquipped()
 		return false
 	end
 	
-	humanoid:UnequipTools()
-	task.wait(0.1)
-	
-	local backpack = LocalPlayer:FindFirstChild("Backpack")
-	if backpack then
-		local weapon = backpack:FindFirstChild("Weapon")
-		if weapon and weapon:IsA("Tool") then
-			humanoid:EquipTool(weapon)
-			lastToolEquipTime = currentTime
-			task.wait(0.2)
-			return true
-		end
-	end
-	
-	return false
+	lastToolEquipTime = currentTime
+	return forceEquipWeapon()
 end
 
 local function ensurePickaxeEquipped()
-	-- ✅ ABSOLUTE BLOCK #1
-	if config.defendingAgainstMob then 
-		return false 
-	end
-	
-	local character = LocalPlayer.Character
-	if not character then return false end
-	
-	-- ✅ ABSOLUTE BLOCK #2
 	if config.defendingAgainstMob then 
 		return false 
 	end
 	
 	if config.isRespawning then return false end
 	
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 then return false end
-	
-	-- ✅ ABSOLUTE BLOCK #3
-	if config.defendingAgainstMob then 
-		return false 
-	end
+	local character = LocalPlayer.Character
+	if not character then return false end
 	
 	local pickaxeInChar = character:FindFirstChild("Pickaxe")
 	if pickaxeInChar and pickaxeInChar:IsA("Tool") then
@@ -3573,36 +3622,8 @@ local function ensurePickaxeEquipped()
 		return false
 	end
 	
-	-- ✅ ABSOLUTE BLOCK #4
-	if config.defendingAgainstMob then 
-		return false 
-	end
-	
-	humanoid:UnequipTools()
-	task.wait(0.1)
-	
-	-- ✅ ABSOLUTE BLOCK #5
-	if config.defendingAgainstMob then 
-		return false 
-	end
-	
-	local backpack = LocalPlayer:FindFirstChild("Backpack")
-	if backpack then
-		local pickaxe = backpack:FindFirstChild("Pickaxe")
-		if pickaxe and pickaxe:IsA("Tool") then
-			-- ✅ ABSOLUTE BLOCK #6
-			if config.defendingAgainstMob then 
-				return false 
-			end
-			
-			humanoid:EquipTool(pickaxe)
-			lastToolEquipTime = currentTime
-			task.wait(0.2)
-			return true
-		end
-	end
-	
-	return false
+	lastToolEquipTime = currentTime
+	return forceEquipPickaxe()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -3647,8 +3668,31 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		local newMob = funcs.getClosestMob()
 		
 		if newMob then
+			-- ✅ FIXED: Reset lava mode when switching to NEW mob
 			if newMob ~= config.lastTrackedMob then
-				part7a.resetLavaMode()
+				print("🔄 NEW MOB DETECTED: " .. newMob.Name)
+				
+				-- Reset farming lava mode
+				if config.inLavaMode and config.savedLockPosition then
+					print("🔄 Resetting farming position from Above to " .. config.savedLockPosition)
+					config.lockPosition = config.savedLockPosition
+					config.savedLockPosition = nil
+					config.inLavaMode = false
+					
+					local character = LocalPlayer.Character
+					if character then
+						local humanoid = character:FindFirstChildOfClass("Humanoid")
+						if humanoid then
+							config.farmingLastHealth = humanoid.Health
+							print("💚 Reset farming health: " .. math.floor(config.farmingLastHealth))
+						end
+					end
+					
+					if Library then
+						Library:Notify("✅ Back to Below position", 2)
+					end
+				end
+				
 				config.lastTrackedMob = newMob
 			end
 		end
@@ -3666,7 +3710,7 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ MINING LOOP WITH ALL FIXES
+-- ✅ FIXED: MINING LOOP - PROPER DEFENSE SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local miningLoop = RunService.Heartbeat:Connect(function()
@@ -3674,12 +3718,12 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		if config.currentRock then
 			config.currentRock = nil
 			config.currentRockModel = nil
+			config.currentRockId = nil
 			config.lastRockDurability = nil
 			config.isLockedOn = false
 		end
 		if config.defendingAgainstMob then
 			stopDefenseAttack()
-			stopPickaxeBlock()
 			config.defendingAgainstMob = nil
 			config.savedMiningRock = nil
 			config.weaponEquipped = false
@@ -3688,6 +3732,9 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		config.inLavaMode = false
 		config.miningVerticalDistance = config.normalMiningDistance
 		config.miningAngle = config.normalMiningAngle
+		config.lavaCheckCooldown = false
+		config.farmingLastHealth = nil
+		config.savedLockPosition = nil
 		return 
 	end
 	
@@ -3712,10 +3759,10 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	end
 	
 	-- ═══════════════════════════════════════════════════════════════════════════
-	-- ✅ PRIORITY 1: CHECK FOR THREATS
+	-- ✅ FIXED: CHECK FOR THREATS - ONLY WHEN LOCKED ON ROCK
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
-	if config.miningDefenseEnabled and not config.defendingAgainstMob then
+	if config.miningDefenseEnabled and not config.defendingAgainstMob and config.isLockedOn and config.currentRock then
 		local closestThreat = nil
 		local closestDistance = math.huge
 		
@@ -3735,79 +3782,97 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		end
 		
 		if closestThreat then
-			print("⚔️ THREAT DETECTED: " .. closestThreat.Name .. " at " .. math.floor(closestDistance) .. " studs")
+			print("⚔️ THREAT DETECTED: " .. closestThreat.Name .. " (" .. math.floor(closestDistance) .. " studs)")
 			
-			-- Enter defense mode
-			config.defendingAgainstMob = closestThreat
+			-- ✅ SAVE CURRENT ROCK
 			config.savedMiningRock = config.currentRock
+			local savedRockId = config.currentRockId
+			
+			-- ✅ UNLOCK FROM ROCK
 			config.currentRock = nil
 			config.currentRockModel = nil
+			config.currentRockId = nil
 			config.isLockedOn = false
+			
+			-- ✅ ENTER DEFENSE MODE
+			config.defendingAgainstMob = closestThreat
 			config.weaponEquipped = false
 			
+			-- ✅ FORCE WEAPON EQUIP
 			lastToolEquipTime = 0
+			humanoid:UnequipTools()
+			task.wait(0.3)
 			
-			-- ✅ START NUCLEAR PICKAXE BLOCK
-			startPickaxeBlock()
-			
-			-- Equip weapon
 			task.spawn(function()
-				task.wait(0.2)
-				ensureWeaponEquipped()
-				config.weaponEquipped = true
+				task.wait(0.1)
+				if forceEquipWeapon() then
+					config.weaponEquipped = true
+					print("✅ Weapon equipped for defense")
+				end
 			end)
 			
 			startDefenseAttack()
 			
 			if Library then
-				Library:Notify("⚔️ Defending: " .. closestThreat.Name, 2)
+				Library:Notify("⚔️ Defending against " .. closestThreat.Name, 2)
 			end
 		end
 	end
 	
 	-- ═══════════════════════════════════════════════════════════════════════════
-	-- ✅ PRIORITY 2: DEFENSE MODE - FROM ABOVE WITH DEBUG
+	-- ✅ FIXED: DEFENSE MODE - PROPER MOB TRACKING
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
 	if config.defendingAgainstMob then
-		-- Check if mob is still alive
+		-- ✅ ENSURE NO PICKAXE
+		local pickaxe = character:FindFirstChild("Pickaxe")
+		if pickaxe then
+			print("🚫 REMOVING PICKAXE IN DEFENSE")
+			humanoid:UnequipTools()
+			task.wait(0.1)
+			forceEquipWeapon()
+		end
+		
+		-- ✅ CHECK IF MOB STILL ALIVE
 		local mobStillAlive = config.defendingAgainstMob.Parent and funcs.isValidMob(config.defendingAgainstMob)
 		
 		if not mobStillAlive then
 			print("✅ THREAT ELIMINATED")
 			
 			stopDefenseAttack()
-			stopPickaxeBlock()
 			
-			-- Reset defense state
-			local wasDefending = config.defendingAgainstMob
 			config.defendingAgainstMob = nil
 			config.weaponEquipped = false
-			config.isLockedOn = false
 			
+			-- ✅ STOP MOVEMENT
 			if config.bodyVelocity then
 				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 			end
 			
+			-- ✅ WAIT BEFORE SWITCHING TO PICKAXE
 			lastToolEquipTime = 0
+			humanoid:UnequipTools()
 			
-			-- Wait then equip pickaxe
 			task.spawn(function()
-				task.wait(1.5)
-				-- Triple check defense is OFF
+				task.wait(1)
 				if not config.defendingAgainstMob and config.miningEnabled then
-					print("🔧 Defense over - equipping pickaxe")
-					ensurePickaxeEquipped()
+					print("⛏️ Switching back to pickaxe")
+					forceEquipPickaxe()
 				end
 			end)
 			
-			-- Restore mining
-			config.currentRock = config.savedMiningRock
-			if config.currentRock then
-				config.currentRockModel = config.currentRock.Parent
-				print("🪨 Resuming mining")
+			-- ✅ RESTORE ROCK
+			if config.savedMiningRock then
+				config.currentRock = config.savedMiningRock
+				if config.currentRock then
+					config.currentRockModel = config.currentRock.Parent
+					config.currentRockId = tostring(config.currentRock)
+					print("🎯 Re-locked onto saved rock: " .. config.currentRockId)
+				end
+				config.savedMiningRock = nil
 			end
-			config.savedMiningRock = nil
+			
+			config.isLockedOn = false
 			
 			if humanoid then
 				config.lastHealth = humanoid.Health
@@ -3820,78 +3885,47 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			return
 		end
 		
-		-- Make sure weapon is equipped
+		-- ✅ ENSURE WEAPON EQUIPPED
 		local weaponEquipped = character:FindFirstChild("Weapon") ~= nil
-		if not weaponEquipped and not config.weaponEquipped then
+		if not weaponEquipped then
 			if tick() - lastToolEquipTime >= TOOL_EQUIP_COOLDOWN then
 				ensureWeaponEquipped()
-				config.weaponEquipped = true
 			end
 			return
 		end
 		
-		-- ✅ MOVE ABOVE MOB WITH DEBUG
+		-- ✅ MOVE TO MOB AND ATTACK
 		local mobRoot = config.defendingAgainstMob:FindFirstChild("HumanoidRootPart")
 		if mobRoot then
 			local mobPos = mobRoot.Position
-			
-			-- ✅ POSITION ABOVE MOB (POSITIVE Y)
-			local targetPos = mobPos + Vector3.new(0, config.miningDefenseVerticalDistance, 0)
-			
 			local currentPos = rootPart.Position
+			
+			local verticalDist = config.miningDefenseVerticalDistance
+			local targetPos = Vector3.new(mobPos.X, mobPos.Y + verticalDist, mobPos.Z)
+			
 			local direction = (targetPos - currentPos)
 			local distance = direction.Magnitude
 			
-			-- ✅ DEBUG (print every 2 seconds)
-			if tick() % 2 < 0.1 then
-				print("═══════ DEFENSE DEBUG ═══════")
-				print("Defense Vertical Distance: " .. config.miningDefenseVerticalDistance)
-				print("Mob Y: " .. math.floor(mobPos.Y))
-				print("Target Y: " .. math.floor(targetPos.Y))
-				print("My Y: " .. math.floor(currentPos.Y))
-				print("Y Difference: " .. math.floor(targetPos.Y - currentPos.Y))
-				print("Distance: " .. math.floor(distance))
-				print("═══════════════════════════")
-			end
-			
-			-- Movement control
-			if distance > 50 then
-				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-				config.isLockedOn = false
-			elseif distance > 5 then
-				local targetSpeed = 30
-				local desiredVelocity = direction.Unit * targetSpeed
-				config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.25)
-				config.isLockedOn = false
-			elseif distance > 2 then
-				local targetSpeed = 12
-				local desiredVelocity = direction.Unit * targetSpeed
-				config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.15)
-				config.isLockedOn = true
+			-- Movement
+			if distance > 3 then
+				local speed = 30
+				config.bodyVelocity.Velocity = direction.Unit * speed
 			else
 				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-				config.isLockedOn = true
 			end
 			
-			-- ✅ LOOK DOWN AT ENEMY
-			if distance < 10 then
-				local angle = math.rad(config.aboveAngle or 90)
-				local downCFrame = CFrame.new(currentPos) * CFrame.Angles(-angle, 0, 0)
-				config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(downCFrame, 0.4)
-				config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-				config.bodyGyro.P = 40000
-			else
-				local lookCFrame = CFrame.new(currentPos, mobRoot.Position)
-				config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.3)
-			end
+			-- Look at mob
+			local lookCFrame = CFrame.new(currentPos, mobPos)
+			config.bodyGyro.CFrame = lookCFrame
+			config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+			config.bodyGyro.P = 30000
 		end
 		
-		-- ✅ STAY IN DEFENSE MODE
 		return
 	end
 	
 	-- ═══════════════════════════════════════════════════════════════════════════
-	-- NORMAL MINING LOGIC
+	-- NORMAL MINING
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
 	-- ✅ ONLY EQUIP PICKAXE IF NOT DEFENDING
@@ -3931,81 +3965,88 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	if config.currentRock and (not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)) then
 		config.currentRock = nil
 		config.currentRockModel = nil
+		config.currentRockId = nil
 		config.lastRockDurability = nil
 		return
 	end
 	
--- ═══════════════════════════════════════════════════════════════════════════
--- ✅ FIND NEW ROCK - WITH OCCUPIED CHECK
--- ═══════════════════════════════════════════════════════════════════════════
-
-if not config.currentRock then
-	local potentialRock = funcs.getClosestRock()
-	
-	if potentialRock then
-		-- Reset lava mode on new rock
-		if config.inLavaMode then
-			config.inLavaMode = false
-			config.miningVerticalDistance = config.normalMiningDistance
-			config.miningAngle = config.normalMiningAngle
+	-- ✅ FIXED: Find new rock - AUTO RESET LAVA MODE
+	if not config.currentRock then
+		local potentialRock = funcs.getClosestRock()
+		
+		if potentialRock then
+			-- ✅ NEW: Get the new rock ID
+			local newRockId = tostring(potentialRock)
 			
-			print("✅ New rock - Position reset to BELOW")
-			
-			if Library then
-				Library:Notify("✅ Back to normal mining", 2)
+			-- ✅ CRITICAL FIX: Reset lava mode if this is a DIFFERENT rock
+			if config.inLavaMode and newRockId ~= config.currentRockId then
+				print("🔄 NEW ROCK DETECTED - Resetting lava mode")
+				part7a.resetLavaMode()
 			end
 			
-			if humanoid then 
-				config.lastHealth = humanoid.Health 
+			-- Check occupied
+			if funcs.isOreOccupied(potentialRock) then
+				table.insert(config.ignoredRocks, potentialRock)
+				return
 			end
-		end
-		
-		-- ✅ CHECK IF OCCUPIED (DOUBLE CHECK)
-		if funcs.isOreOccupied(potentialRock) then
-			print("⏭️ Skipping occupied rock")
-			table.insert(config.ignoredRocks, potentialRock)
-			return
-		end
-		
-		-- Check for wanted ores
-		if config.oreCheckEnabled and #config.wantedOres > 0 then
-			local textureNum = part7a.getOreTextureFromRock(potentialRock)
 			
-			if textureNum then
-				local oreName = part7a.getOreNameFromTexture(textureNum)
-				local isWanted = false
+			-- Check wanted ores
+			if config.oreCheckEnabled and #config.wantedOres > 0 then
+				local textureNum = part7a.getOreTextureFromRock(potentialRock)
 				
-				if oreName then
-					for _, wantedOreName in ipairs(config.wantedOres) do
-						if oreName == wantedOreName then
-							isWanted = true
-							print("💎 Locked onto wanted ore: " .. oreName)
-							break
+				if textureNum then
+					local oreName = part7a.getOreNameFromTexture(textureNum)
+					local isWanted = false
+					
+					if oreName then
+						for _, wantedOreName in ipairs(config.wantedOres) do
+							if oreName == wantedOreName then
+								isWanted = true
+								break
+							end
 						end
 					end
-				end
-				
-				if not isWanted then
-					print("❌ Skipping - Wrong ore: " .. (oreName or "Unknown"))
-					table.insert(config.ignoredRocks, potentialRock)
 					
-					if Library then 
-						Library:Notify("Skipped - Wrong ore!", 1) 
+					if not isWanted then
+						table.insert(config.ignoredRocks, potentialRock)
+						
+						if Library then 
+							Library:Notify("Skipped - Wrong ore!", 1) 
+						end
+						return
 					end
-					return
 				end
 			end
+			
+			-- ✅ Lock onto NEW rock
+			config.currentRock = potentialRock
+			config.currentRockModel = config.currentRock.Parent
+			config.currentRockId = newRockId
+			config.lastRockDurability = funcs.getRockDurability(config.currentRock)
+			config.rockDurabilityCheck = tick()
+			funcs.makeRockTransparent(config.currentRock)
+			
+			print("🎯 Locked onto new rock: " .. config.currentRockId)
 		end
-		
-		-- Rock passed all checks
-		config.currentRock = potentialRock
-		config.currentRockModel = config.currentRock.Parent
-		config.lastRockDurability = funcs.getRockDurability(config.currentRock)
-		config.rockDurabilityCheck = tick()
-		funcs.makeRockTransparent(config.currentRock)
+		return
 	end
-	return
-end
+	
+	-- Check occupied while mining
+	if config.currentRock and config.isLockedOn then
+		if funcs.isOreOccupied(config.currentRock) then
+			table.insert(config.ignoredRocks, config.currentRock)
+			config.currentRock = nil
+			config.currentRockModel = nil
+			config.currentRockId = nil
+			config.lastRockDurability = nil
+			config.isLockedOn = false
+			
+			if Library then
+				Library:Notify("⚠️ Rock stolen!", 2)
+			end
+			return
+		end
+	end
 	
 	-- Move to rock and mine
 	if config.currentRock then
@@ -4017,21 +4058,19 @@ end
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- CHARACTER RESPAWN HANDLER
+-- CHARACTER RESPAWN
 -- ═══════════════════════════════════════════════════════════════════════════
 
 LocalPlayer.CharacterAdded:Connect(function(character)
 	config.isRespawning = true
 	
-	print("💀 Character died - Cleaning up...")
-	
 	stopDefenseAttack()
-	stopPickaxeBlock()
 	
 	config.currentMob = nil
 	config.lastTrackedMob = nil
 	config.currentRock = nil
 	config.currentRockModel = nil
+	config.currentRockId = nil
 	config.isLockedOn = false
 	config.hoverSequenceActive = false
 	config.defendingAgainstMob = nil
@@ -4075,8 +4114,6 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 			return
 		end
 		
-		print("✅ Respawn complete - Restarting...")
-		
 		config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
 		config.hoverSequenceActive = true
 		config.currentHoverTarget = 1
@@ -4088,7 +4125,6 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 		lastToolEquipTime = 0
 		
 		if wasFarming then 
-			print("🗡️ Re-equipping weapon...")
 			funcs.autoEquipWeapon()
 			if humanoid then
 				config.farmingLastHealth = humanoid.Health
@@ -4096,8 +4132,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 		end
 		
 		if wasMining then 
-			print("⛏️ Re-equipping pickaxe...")
-			ensurePickaxeEquipped()
+			forceEquipPickaxe()
 			config.ignoredRocks = {}
 			config.lastRockDurability = nil
 			config.rockDurabilityCheck = tick()
@@ -4109,24 +4144,14 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 		
 		task.wait(1)
 		config.isRespawning = false
-		print("✅ Fully operational")
 	else
 		config.isRespawning = false
 	end
 end)
-
--- ═══════════════════════════════════════════════════════════════════════════
--- AUTO-INITIALIZATION
--- ═══════════════════════════════════════════════════════════════════════════
 
 task.spawn(function()
 	task.wait(0)
 	funcs.talkToSeller()
 end)
 
-print("✅ Mining script loaded successfully!")
-print("✅ Occupied rock detection: OPTIMIZED (cached)")
-print("✅ Ore filter: " .. (config.oreCheckEnabled and "ENABLED" or "DISABLED"))
-print("✅ Lava mode: Take damage → Above | New rock → Below")
-print("✅ Defense mode: NUCLEAR PICKAXE BLOCK - ATTACKS FROM ABOVE!")
-print("✅ F1 = Toggle Farming | F2 = Toggle Mining")
+print("✅ Part 7B loaded - Fixed defense + lava reset!")
