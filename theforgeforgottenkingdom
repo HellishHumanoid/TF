@@ -1906,7 +1906,6 @@ InfoLeftBox:AddLabel('• Config System')
 
 local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 
-InfoRightBox:AddLabel('Important Tips:')
 InfoRightBox:AddLabel('• [Lifesteal] needed if')
 InfoRightBox:AddLabel('  Lava Check disabled')
 InfoRightBox:AddLabel('• Auto-Mine has built-in')
