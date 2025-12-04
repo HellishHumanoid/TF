@@ -1821,7 +1821,7 @@ Tabs.Configs = Window:AddTab('Config')
 
 local InfoLeftBox = Tabs.Info:AddLeftGroupbox('Script Information')
 
-InfoLeftBox:AddLabel('World 1: Stonewake\'s Cross')
+InfoLeftBox:AddLabel('World 1: Stonewake's Cross')
 InfoLeftBox:AddLabel('Tested on Xeno')
 InfoLeftBox:AddLabel('Created by Rafso [literalh]')
 InfoLeftBox:AddDivider()
@@ -1836,10 +1836,9 @@ InfoLeftBox:AddLabel('• Config System')
 local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 
 InfoRightBox:AddLabel('Important Tips:')
-InfoRightBox:AddLabel('• No lava in World 1')
-InfoRightBox:AddLabel('• Simple cave system')
-InfoRightBox:AddLabel('• Press Talk to Buyer')
-InfoRightBox:AddLabel('  if not auto done')
+InfoRightBox:AddLabel('• Manually press Talk to Buyer')
+InfoRightBox:AddLabel('if not automatically done')
+InfoRightBox:AddLabel('This Script is in BETA')
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- FARMING TAB
