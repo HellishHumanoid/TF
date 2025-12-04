@@ -439,6 +439,12 @@ _G.MobFarmConfig = {
 	
 	-- Selected wanted ore names from dropdown
 	wantedOres = {},
+	
+	-- ✅ FIXED: Updated lava mining distance to 8
+	normalMiningDistance = 6,
+	normalMiningAngle = 270,
+	lavaMiningDistance = 8,  -- ✅ CHANGED FROM 6 TO 8
+	lavaMiningAngle = 90,
 }
 
 -- Store OreTypes globally for UI and ore check functions
@@ -1796,9 +1802,9 @@ InfoLeftBox:AddLabel('• Wanted Ores System [Broken]')
 local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 
 InfoRightBox:AddLabel('• [Lifesteal] needed if')
-InfoRightBox:AddLabel('  Lava Check disabled')
+InfoRightBox:AddLabel('  Lava Check')
 InfoRightBox:AddLabel('• Auto-Mine has built-in')
-InfoRightBox:AddLabel('  Lava Check [Works on Mining]')
+InfoRightBox:AddLabel('  Lava Check')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('  if not automatically done')
 InfoRightBox:AddLabel('• This Script is in BETA')
