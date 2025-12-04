@@ -1,0 +1,249 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- THE FORGE - WORLD DETECTION + AUTO-REJOIN + ANTI-AFK SYSTEM
+-- Automatically detects which world you're in and loads the correct script
+-- Created by Rafso [literalh]
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local Players = game:GetService("Players")
+local GuiService = game:GetService("GuiService")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- NOTIFICATION SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function sendNotification(title, text, duration)
+	pcall(function()
+		game:GetService("StarterGui"):SetCore("SendNotification", {
+			Title = title;
+			Text = text;
+			Duration = duration or 5;
+		})
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTO-REJOIN SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function setupAutoRejoin()
+	sendNotification("Auto-Rejoin", "Auto-Rejoin system enabled!", 3)
+	
+	local function onErrorMessageChanged(errorMessage)
+		if errorMessage and errorMessage ~= "" then
+			print("Error detected: " .. errorMessage)
+			sendNotification("Auto-Rejoin", "Error detected! Rejoining...", 3)
+			
+			if LocalPlayer then
+				wait()
+				TeleportService:Teleport(game.PlaceId, LocalPlayer)
+			end
+		end
+	end
+	
+	GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ANTI-AFK SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function setupAntiAFK()
+	sendNotification("Anti-AFK", "Anti-AFK system enabled!", 3)
+	
+	-- Connection to prevent AFK kick
+	LocalPlayer.Idled:Connect(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+		print("Anti-AFK: Prevented idle kick")
+	end)
+	
+	-- Additional anti-AFK measures
+	task.spawn(function()
+		while true do
+			task.wait(300) -- Every 5 minutes
+			
+			pcall(function()
+				VirtualUser:CaptureController()
+				VirtualUser:ClickButton2(Vector2.new())
+			end)
+			
+			print("Anti-AFK: Activity simulated")
+		end
+	end)
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- WORLD DETECTION LOGIC
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function detectWorld()
+	sendNotification("The Forge", "Detecting world...", 3)
+	
+	-- Wait for workspace to load
+	local workspace = game:GetService("Workspace")
+	local proximity = workspace:WaitForChild("Proximity", 10)
+	
+	if not proximity then
+		sendNotification("Detection Failed", "Could not find Proximity folder!", 5)
+		return nil
+	end
+	
+	-- Check for World 1: Stonewake's Cross (Arcane Pickaxe)
+	local arcanePickaxe = proximity:FindFirstChild("Arcane Pickaxe")
+	if arcanePickaxe then
+		sendNotification("World Detected", "Stonewake's Cross (World 1)", 4)
+		return "World1"
+	end
+	
+	-- Check for World 2: Forgotten Kingdom (Demonic Pickaxe)
+	local demonicPickaxe = proximity:FindFirstChild("Demonic Pickaxe")
+	if demonicPickaxe then
+		sendNotification("World Detected", "Forgotten Kingdom (World 2)", 4)
+		return "World2"
+	end
+	
+	-- Unknown world
+	sendNotification("Detection Failed", "Unknown world or pickaxes not found!", 5)
+	return nil
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- SCRIPT LOADER WITH ENHANCED ERROR HANDLING
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function loadWorldScript(world)
+	if world == "World1" then
+		sendNotification("Loading Script", "Stonewake's Cross loading...", 3)
+		
+		-- Wait a bit for world to fully load
+		task.wait(2)
+		
+		local success, result = pcall(function()
+			local scriptContent = game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgestonewakescross')
+			
+			-- Check if content was retrieved
+			if scriptContent and scriptContent ~= "" then
+				local loadFunc, loadErr = loadstring(scriptContent)
+				
+				if loadFunc then
+					loadFunc()
+					return true
+				else
+					error("Failed to compile script: " .. tostring(loadErr))
+				end
+			else
+				error("Failed to retrieve script from GitHub")
+			end
+		end)
+		
+		if success then
+			sendNotification("Success!", "Stonewake's Cross loaded!", 4)
+		else
+			sendNotification("Load Failed", "Please check console for details", 5)
+			warn("Stonewake's Cross Load Error: " .. tostring(result))
+			
+			-- Retry after 5 seconds
+			task.wait(5)
+			sendNotification("Retry", "Attempting to reload script...", 3)
+			
+			pcall(function()
+				loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgestonewake\'scross'))()
+			end)
+		end
+		
+	elseif world == "World2" then
+		sendNotification("Loading Script", "Forgotten Kingdom loading...", 3)
+		
+		-- Wait a bit for world to fully load
+		task.wait(2)
+		
+		local success, result = pcall(function()
+			local scriptContent = game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom')
+			
+			-- Check if content was retrieved
+			if scriptContent and scriptContent ~= "" then
+				local loadFunc, loadErr = loadstring(scriptContent)
+				
+				if loadFunc then
+					loadFunc()
+					return true
+				else
+					error("Failed to compile script: " .. tostring(loadErr))
+				end
+			else
+				error("Failed to retrieve script from GitHub")
+			end
+		end)
+		
+		if success then
+			sendNotification("Success!", "Forgotten Kingdom loaded!", 4)
+		else
+			sendNotification("Load Failed", "Please check console for details", 5)
+			warn("Forgotten Kingdom Load Error: " .. tostring(result))
+			
+			-- Retry after 5 seconds
+			task.wait(5)
+			sendNotification("Retry", "Attempting to reload script...", 3)
+			
+			pcall(function()
+				loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
+			end)
+		end
+		
+	else
+		sendNotification("Error", "Invalid world detected!", 5)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- MAIN EXECUTION
+-- ═══════════════════════════════════════════════════════════════════════════
+
+sendNotification("The Forge", "Initializing by Rafso...", 3)
+
+-- Setup Auto-Rejoin System
+task.spawn(function()
+	task.wait(0.5)
+	pcall(setupAutoRejoin)
+end)
+
+-- Setup Anti-AFK System
+task.spawn(function()
+	task.wait(1)
+	pcall(setupAntiAFK)
+end)
+
+-- Wait for character to load
+if not LocalPlayer.Character then
+	LocalPlayer.CharacterAdded:Wait()
+end
+
+-- Small delay to ensure everything is loaded
+task.wait(3)
+
+-- Detect world and load appropriate script
+local detectedWorld = detectWorld()
+
+if detectedWorld then
+	task.wait(1)
+	loadWorldScript(detectedWorld)
+else
+	sendNotification("Manual Selection", "Retrying detection...", 5)
+	
+	-- Fallback: Try to detect again after 5 seconds
+	task.wait(5)
+	local retryWorld = detectWorld()
+	if retryWorld then
+		task.wait(1)
+		loadWorldScript(retryWorld)
+	else
+		sendNotification("Failed", "Could not detect world!", 5)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- END OF WORLD DETECTION + AUTO-REJOIN + ANTI-AFK SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
