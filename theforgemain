@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- THE FORGE - WORLD DETECTION + AUTO-REJOIN + ANTI-AFK SYSTEM
 -- Automatically detects which world you're in and loads the correct script
--- Re-executes on server teleport like Infinite Yield
+-- Re-executes on server teleport/rejoin
 -- Created by Rafso [literalh]
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -12,10 +12,10 @@ local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PERSISTENT SCRIPT RE-EXECUTION ON TELEPORT (UPDATED)
+-- PERSISTENT SCRIPT RE-EXECUTION ON TELEPORT (FIXED URL)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local SCRIPT_URL = 'https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemainloader'
+local SCRIPT_URL = 'https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemain'
 
 local function setupTeleportPersistence()
 	local queueScript = [[
@@ -24,7 +24,7 @@ local function setupTeleportPersistence()
 		task.wait(3)
 		
 		local success, err = pcall(function()
-			loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemainloader'))()
+			loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemain'))()
 		end)
 		
 		if not success then
@@ -32,15 +32,39 @@ local function setupTeleportPersistence()
 		end
 	]]
 	
-	-- Use syn/fluxus queue_on_teleport
+	-- Try multiple queue_on_teleport methods for compatibility
+	local success = false
+	
+	-- Method 1: syn.queue_on_teleport (Synapse)
 	if syn and syn.queue_on_teleport then
-		syn.queue_on_teleport(queueScript)
-		print("✅ Teleport persistence enabled (Synapse)")
-	elseif queue_on_teleport then
-		queue_on_teleport(queueScript)
-		print("✅ Teleport persistence enabled")
-	else
+		pcall(function()
+			syn.queue_on_teleport(queueScript)
+			success = true
+			print("✅ Teleport persistence enabled (Synapse)")
+		end)
+	end
+	
+	-- Method 2: queue_on_teleport (Standard)
+	if not success and queue_on_teleport then
+		pcall(function()
+			queue_on_teleport(queueScript)
+			success = true
+			print("✅ Teleport persistence enabled (Standard)")
+		end)
+	end
+	
+	-- Method 3: queueonteleport (Alternative naming)
+	if not success and queueonteleport then
+		pcall(function()
+			queueonteleport(queueScript)
+			success = true
+			print("✅ Teleport persistence enabled (Alternative)")
+		end)
+	end
+	
+	if not success then
 		warn("⚠️ queue_on_teleport not supported on this executor")
+		sendNotification("Warning", "Auto re-execute may not work on this executor", 5)
 	end
 end
 
@@ -71,7 +95,7 @@ local function setupAutoRejoin()
 			sendNotification("Auto-Rejoin", "Error detected! Rejoining...", 3)
 			
 			if LocalPlayer then
-				wait()
+				wait(1)
 				TeleportService:Teleport(game.PlaceId, LocalPlayer)
 			end
 		end
@@ -184,7 +208,7 @@ local function loadWorldScript(world)
 			sendNotification("Retry", "Attempting to reload script...", 3)
 			
 			pcall(function()
-				loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgestonewake\'scross'))()
+				loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgestonewakescross'))()
 			end)
 		end
 		
