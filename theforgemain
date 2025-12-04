@@ -12,37 +12,36 @@ local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PERSISTENT SCRIPT RE-EXECUTION ON TELEPORT
+-- PERSISTENT SCRIPT RE-EXECUTION ON TELEPORT (UPDATED)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local SCRIPT_URL = 'https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemainloader'
 
 local function setupTeleportPersistence()
-	-- Store the script in queue_on_teleport so it re-executes
-	local queueScript = string.format([[
+	local queueScript = [[
 		repeat task.wait() until game:IsLoaded()
-		task.wait(2)
-		pcall(function()
-			loadstring(game:HttpGet('%s'))()
+		repeat task.wait() until game.Players.LocalPlayer
+		task.wait(3)
+		
+		local success, err = pcall(function()
+			loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemainloader'))()
 		end)
-	]], SCRIPT_URL)
-	
-	-- Queue the script to run on teleport
-	pcall(function()
-		queue_on_teleport(queueScript)
-	end)
-	
-	-- Listen for teleport events
-	TeleportService.TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
-		if player == LocalPlayer then
-			warn("Teleport failed: " .. errorMessage)
-			pcall(function()
-				queue_on_teleport(queueScript)
-			end)
+		
+		if not success then
+			warn("Failed to re-execute script: " .. tostring(err))
 		end
-	end)
+	]]
 	
-	print("✅ Teleport persistence enabled - script will re-execute on server join")
+	-- Use syn/fluxus queue_on_teleport
+	if syn and syn.queue_on_teleport then
+		syn.queue_on_teleport(queueScript)
+		print("✅ Teleport persistence enabled (Synapse)")
+	elseif queue_on_teleport then
+		queue_on_teleport(queueScript)
+		print("✅ Teleport persistence enabled")
+	else
+		warn("⚠️ queue_on_teleport not supported on this executor")
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -240,8 +239,8 @@ end
 sendNotification("The Forge", "Initializing by Rafso...", 3)
 
 -- Setup Teleport Persistence (FIRST - so it's ready before any teleports)
-task.spawn(function()
-	pcall(setupTeleportPersistence)
+pcall(function()
+	setupTeleportPersistence()
 	sendNotification("Persistence", "Script will re-execute on server join!", 3)
 end)
 
