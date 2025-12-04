@@ -1912,7 +1912,7 @@ InfoRightBox:AddLabel('• Auto-Mine has built-in')
 InfoRightBox:AddLabel('  Lava Check')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('if not automatically done')
-InfoRightBox:AddLabel('This Script is in BETA')
+InfoRightBox:AddLabel('• This Script is in BETA')
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- FARMING TAB
