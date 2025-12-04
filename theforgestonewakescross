@@ -2041,6 +2041,12 @@ local function clickAt(x, y)
 	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
 end
 
+local function pressK()
+	VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.K, false, game)
+	task.wait(0.05)
+	VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.K, false, game)
+end
+
 local function checkForPortalTool()
 	local backpack = LocalPlayer:FindFirstChild("Backpack")
 	if backpack and backpack:FindFirstChild("PortalTool") then
@@ -2495,7 +2501,7 @@ TeleportAreasBox:AddButton({
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- WORLD 2 FORGOTTEN KINGDOM (RIGHT SIDE) - FIXED UI HIDE
+-- WORLD 2 FORGOTTEN KINGDOM (RIGHT SIDE) - FIXED WITH K PRESS
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local World2Box = Tabs.Teleport:AddRightGroupbox('World 2: Forgotten Kingdom')
@@ -2514,11 +2520,9 @@ World2Box:AddToggle('AutoJoinWorld2', {
 			
 			Library:Notify("Starting in 5 seconds...", 3)
 			
-			-- Hide GUI after 4.5 seconds (before teleport starts)
+			-- Press K to hide GUI after 4.5 seconds
 			task.delay(4.5, function()
-				if Library.Toggled then
-					Library:Toggle()
-				end
+				pressK()
 			end)
 			
 			task.wait(5)
@@ -2527,26 +2531,20 @@ World2Box:AddToggle('AutoJoinWorld2', {
 				local success = startWorld2AutoJoin()
 				if not success then
 					Toggles.AutoJoinWorld2:SetValue(false)
-					-- Show GUI again if failed
-					if not Library.Toggled then
-						Library:Toggle()
-					end
+					-- Press K again to show GUI if failed
+					pressK()
 				else
 					Library:Notify("World 2 Auto-Join started!", 3)
 				end
 			else
-				-- Show GUI again if cancelled during countdown
-				if not Library.Toggled then
-					Library:Toggle()
-				end
+				-- Press K to show GUI if cancelled during countdown
+				pressK()
 			end
 		else
 			stopWorld2AutoJoin()
 			Library:Notify("World 2 Auto-Join stopped!", 3)
-			-- Show GUI again when stopped
-			if not Library.Toggled then
-				Library:Toggle()
-			end
+			-- Press K to show GUI when stopped
+			pressK()
 		end
 	end
 })
@@ -2563,10 +2561,8 @@ World2Box:AddButton({
 		
 		Library:Notify("Teleporting to Forgotten Kingdom...", 3)
 		
-		-- Hide GUI immediately
-		if Library.Toggled then
-			Library:Toggle()
-		end
+		-- Press K to hide GUI immediately
+		pressK()
 		
 		task.wait(0.5)
 		
@@ -2576,11 +2572,9 @@ World2Box:AddButton({
 			Library:Notify("Successfully joined Forgotten Kingdom!", 3)
 		else
 			Library:Notify("Failed to join Forgotten Kingdom!", 3)
-			-- Show GUI again if failed
+			-- Press K to show GUI again if failed
 			task.wait(2)
-			if not Library.Toggled then
-				Library:Toggle()
-			end
+			pressK()
 		end
 	end,
 	DoubleClick = false,
