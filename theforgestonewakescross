@@ -3245,3 +3245,22 @@ task.spawn(function()
 end)
 
 print("✅ Script fully loaded!")
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- FINAL INITIALIZATION CHECK
+-- ═══════════════════════════════════════════════════════════════════════════
+
+task.wait(1)
+
+if not Library then
+	error("❌ Library failed to load!")
+end
+
+if not Toggles.FarmToggle then
+	error("❌ UI elements failed to create!")
+end
+
+print("✅ All systems operational!")
+print("✅ Press F1 to toggle farming")
+print("✅ Press F2 to toggle mining")
+print("✅ Press K to toggle menu")
