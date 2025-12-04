@@ -3022,27 +3022,70 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- KEYBIND SYSTEM (F1 = FARM, F2 = MINE)
+-- ✅ FIXED KEYBIND SYSTEM (F1 = FARM, F2 = MINE)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 Library:OnUnload(function()
 	Library.Unloaded = true
+	
+	-- Disconnect keybinds on unload
+	if _G.KeybindConnection then
+		_G.KeybindConnection:Disconnect()
+		_G.KeybindConnection = nil
+	end
 end)
 
-_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if not _G.MobFarmConfig or not _G.FarmFunctions then
-		return
+local UserInputService = game:GetService("UserInputService")
+
+-- ✅ FIX: Wrap in pcall and add safety checks
+local function setupKeybinds()
+	if _G.KeybindConnection then
+		_G.KeybindConnection:Disconnect()
 	end
 	
-	if input.KeyCode == Enum.KeyCode.F1 then
-		local newValue = not config.enabled
-		Toggles.FarmToggle:SetValue(newValue)
+	_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		-- Don't trigger if typing in chat/textbox
+		if gameProcessed then return end
 		
-	elseif input.KeyCode == Enum.KeyCode.F2 then
-		local newValue = not config.miningEnabled
-		Toggles.MineToggle:SetValue(newValue)
-	end
+		-- ✅ FIX: Add safety checks
+		if not _G.MobFarmConfig then 
+			print("⚠️ Config not loaded yet")
+			return 
+		end
+		if not Toggles then
+			print("⚠️ Toggles not initialized yet")
+			return
+		end
+		
+		-- F1 - Toggle Farming
+		if input.KeyCode == Enum.KeyCode.F1 then
+			if Toggles.FarmToggle then
+				local newValue = not config.enabled
+				Toggles.FarmToggle:SetValue(newValue)
+				Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
+			else
+				print("⚠️ FarmToggle not found")
+			end
+			
+		-- F2 - Toggle Mining
+		elseif input.KeyCode == Enum.KeyCode.F2 then
+			if Toggles.MineToggle then
+				local newValue = not config.miningEnabled
+				Toggles.MineToggle:SetValue(newValue)
+				Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
+			else
+				print("⚠️ MineToggle not found")
+			end
+		end
+	end)
+	
+	print("✅ Keybinds initialized: F1 = Farming | F2 = Mining")
+end
+
+-- ✅ FIX: Delay keybind setup until UI is ready
+task.spawn(function()
+	task.wait(1) -- Wait for UI to fully initialize
+	setupKeybinds()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
