@@ -1237,6 +1237,7 @@ local function getLockPosition(mob)
 	return targetPos
 end
 
+-- ✅ UPDATED: Support both above and below positioning for mining
 local function getMiningPosition(rock)
 	if not rock then return nil end
 	
@@ -1246,9 +1247,17 @@ local function getMiningPosition(rock)
 	end
 	
 	local rockPos = positionPart.Position
-	local targetPos = rockPos + Vector3.new(0, -config.miningVerticalDistance, 0)
 	
-	return targetPos
+	-- ✅ NEW: Check if we're in lava mode (above positioning)
+	if config.inLavaMode or config.miningAngle < 180 then
+		-- Position ABOVE the rock
+		local targetPos = rockPos + Vector3.new(0, config.miningVerticalDistance, 0)
+		return targetPos
+	else
+		-- Position BELOW the rock (normal)
+		local targetPos = rockPos + Vector3.new(0, -config.miningVerticalDistance, 0)
+		return targetPos
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1291,7 +1300,6 @@ local function hoverToPosition(targetPos, lookAtPos)
 	return false
 end
 
--- ✅ IMPROVED: More stable mob tracking with stronger lock
 local function hoverToMob(targetPos, mob)
 	local character = LocalPlayer.Character
 	if not character then return end
@@ -1307,23 +1315,17 @@ local function hoverToMob(targetPos, mob)
 	local direction = (targetPos - currentPos)
 	local distance = direction.Magnitude
 	
-	-- ✅ IMPROVED: Larger lock range for stability
 	config.isLockedOn = distance < 8
 	
-	-- Handle Above/Below positions (stationary attack angle)
 	if (config.lockPosition == "Above" or config.lockPosition == "Below") and distance < 3 then
-		-- ✅ IMPROVED: Much stronger position holding when locked
 		if distance < 1.5 then
-			-- Very close - hold position firmly
 			config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 		else
-			-- Close - minimal tracking movement
 			local followSpeed = 8
 			local desiredVelocity = direction.Unit * followSpeed
 			config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.1)
 		end
 		
-		-- ✅ IMPROVED: Stronger gyro for stable aiming
 		if config.lockPosition == "Above" then
 			local angle = math.rad(config.aboveAngle)
 			local downCFrame = CFrame.new(currentPos) * CFrame.Angles(-angle, 0, 0)
@@ -1340,44 +1342,36 @@ local function hoverToMob(targetPos, mob)
 		return
 	end
 	
-	-- ✅ IMPROVED: Better speed control for stability
 	local targetSpeed
 	if distance < 2 then
-		-- Very close: strong position lock
 		targetSpeed = 5
 	elseif distance < 5 then
-		-- Close range: slow precise tracking
 		targetSpeed = 15
 	else
-		-- Far range: faster approach
 		targetSpeed = config.hoverSpeed * math.min(distance / 10, 1)
 	end
 	
 	local desiredVelocity = direction.Unit * targetSpeed
 	
-	-- ✅ IMPROVED: Stronger lerp when very close for stability
 	local lerpSpeed
 	if distance < 2 then
-		lerpSpeed = 0.2  -- Strong damping when very close
+		lerpSpeed = 0.2
 	elseif distance < 5 then
-		lerpSpeed = 0.35  -- Moderate damping when close
+		lerpSpeed = 0.35
 	else
-		lerpSpeed = 0.25  -- Normal speed when far
+		lerpSpeed = 0.25
 	end
 	
 	local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, lerpSpeed)
 	config.bodyVelocity.Velocity = newVelocity
 	
-	-- ✅ IMPROVED: Much stronger gyro lock for stable looking
 	local lookCFrame = CFrame.new(currentPos, mobRoot.Position)
 	if distance < 5 then
-		-- Close range: very strong lock
 		config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.7)
 		config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
 		config.bodyGyro.P = 60000
 		config.bodyGyro.D = 1500
 	else
-		-- Far range: normal tracking
 		config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.4)
 		config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
 		config.bodyGyro.P = 30000
@@ -1385,6 +1379,7 @@ local function hoverToMob(targetPos, mob)
 	end
 end
 
+-- ✅ UPDATED: Support both above and below positioning
 local function hoverToRock(targetPos, rock)
 	if not targetPos then 
 		return 
@@ -1406,8 +1401,18 @@ local function hoverToRock(targetPos, rock)
 	if distance < 3 then
 		config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 		
+		-- ✅ UPDATED: Use current mining angle (supports both above and below)
 		local angle = math.rad(config.miningAngle)
-		local lookCFrame = CFrame.new(currentPos) * CFrame.Angles(angle, math.rad(180), 0)
+		local lookCFrame
+		
+		if config.miningAngle < 180 then
+			-- Above position - look down
+			lookCFrame = CFrame.new(currentPos) * CFrame.Angles(-angle, 0, 0)
+		else
+			-- Below position - look up
+			lookCFrame = CFrame.new(currentPos) * CFrame.Angles(angle, math.rad(180), 0)
+		end
+		
 		config.bodyGyro.CFrame = lookCFrame
 		config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
 		config.bodyGyro.P = 50000
@@ -1451,6 +1456,25 @@ local funcs = _G.FarmFunctions
 
 local HOVER_HEIGHT = 85
 local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
+local TELEPORT_UP_DISTANCE = 10
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ✅ NEW: TELEPORT UP FUNCTION
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function teleportUp(distance)
+	distance = distance or TELEPORT_UP_DISTANCE
+	
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	if not rootPart then return end
+	
+	local currentPos = rootPart.Position
+	rootPart.CFrame = CFrame.new(currentPos + Vector3.new(0, distance, 0))
+	print("⬆️ Teleported up " .. distance .. " studs")
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- TELEPORT POSITIONS
@@ -1592,20 +1616,6 @@ local function startTeleportHover(position, locationName)
 			end
 		end
 	end)
-end
-
-local function teleportUp()
-	if not config.lavaCheckEnabled then return end
-	if config.lockPosition ~= "Below" then return end
-	
-	local character = LocalPlayer.Character
-	if not character then return end
-	
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return end
-	
-	local currentPos = rootPart.Position
-	rootPart.CFrame = CFrame.new(currentPos + Vector3.new(0, 10, 0))
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1793,6 +1803,7 @@ InfoRightBox:AddLabel('  Lava Check')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('  if not automatically done')
 InfoRightBox:AddLabel('• This Script is in BETA')
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- FARMING TAB
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1821,7 +1832,8 @@ FarmingGroupBox:AddToggle('FarmToggle', {
 			funcs.startNoclip()
 			startAutoAttack()
 		else
-			teleportUp()
+			-- ✅ NEW: Teleport up when disabling
+			teleportUp(TELEPORT_UP_DISTANCE)
 			task.wait(0.1)
 			
 			config.hoverSequenceActive = false
@@ -1911,7 +1923,8 @@ MiningGroupBox:AddToggle('MineToggle', {
 			funcs.startNoclip()
 			startAutoMine()
 		else
-			teleportUp()
+			-- ✅ NEW: Teleport up when disabling
+			teleportUp(TELEPORT_UP_DISTANCE)
 			task.wait(0.1)
 			
 			config.hoverSequenceActive = false
@@ -1986,7 +1999,6 @@ OreCheckGroupBox:AddToggle('OreCheckToggle', {
 
 OreCheckGroupBox:AddDivider()
 
--- Build ore options from predefined OreTypes
 local function getOreOptionsList()
 	local oreOptions = {}
 	for _, oreData in ipairs(_G.OreTypes) do
@@ -2025,7 +2037,10 @@ OreCheckGroupBox:AddLabel('No selection = mine all')
 _G.UIReferences.mobOptions = mobOptions
 _G.UIReferences.rockOptions = rockOptions
 
---- ═══════════════════════════════════════════════════════════════════════════
+-- Store teleportUp globally
+funcs.teleportUp = teleportUp
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- PART 6: AUTOSELL, TELEPORT (HOVER), SETTINGS & CONFIG (FIXED KEYBINDS)
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -2421,6 +2436,16 @@ MiningSettingsBox:AddToggle('IgnoreGoblinCave', {
 	end
 })
 
+-- ✅ NEW: ADD AVOID OCCUPIED TOGGLE
+MiningSettingsBox:AddToggle('AvoidOccupied', {
+	Text = 'Avoid Occupied Rocks',
+	Default = true,
+	Tooltip = 'Skip rocks that other players are mining',
+	Callback = function(Value)
+		config.avoidOccupied = Value
+	end
+})
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PART 6.5: CONFIG MANAGEMENT & FIXED KEYBIND SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2512,6 +2537,7 @@ ConfigManagementBox:AddButton({
 			Toggles.MineToggle:SetValue(config.miningEnabled)
 			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
 			Toggles.LavaCheck:SetValue(config.lavaCheckEnabled)
+			Toggles.AvoidOccupied:SetValue(config.avoidOccupied)
 			Options.HoverSpeed:SetValue(config.hoverSpeed)
 			Options.VerticalDistance:SetValue(config.verticalDistance)
 			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
@@ -2683,6 +2709,7 @@ task.spawn(function()
 			Toggles.MineToggle:SetValue(config.miningEnabled)
 			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
 			Toggles.LavaCheck:SetValue(config.lavaCheckEnabled)
+			Toggles.AvoidOccupied:SetValue(config.avoidOccupied)
 			
 			Options.HoverSpeed:SetValue(config.hoverSpeed)
 			Options.VerticalDistance:SetValue(config.verticalDistance)
@@ -2856,17 +2883,23 @@ config.lastDefenseAttackTime = 0
 config.defenseAttackCooldown = 0.1
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- IMPROVED LAVA CHECK CONFIG (MINING) - ✅ CHANGED TO 0 DISTANCE
+-- ✅ SIMPLIFIED: LAVA CHECK - SWITCH TO ABOVE, RESET ON NEW ROCK
 -- ═══════════════════════════════════════════════════════════════════════════
 
 config.lavaCheckEnabled = true
 config.lastHealth = nil
 config.inLavaMode = false
-config.normalMiningDistance = 6
-config.lavaMiningDistance = 0  -- ✅ CHANGED FROM 1 TO 0
 config.currentRockModel = nil
 config.lavaCheckCooldown = false
 config.lavaCooldownTime = 1
+
+-- ✅ Store original mining settings
+config.normalMiningDistance = 6
+config.normalMiningAngle = 270
+
+-- ✅ Above position settings for lava
+config.lavaMiningDistance = 6  -- Same distance but above
+config.lavaMiningAngle = 90    -- Look down at rock from above
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WANTED ORES SYSTEM FUNCTIONS
@@ -3121,7 +3154,7 @@ _G.OreCheck = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- LAVA CHECK FUNCTIONS
+-- ✅ SIMPLIFIED: LAVA CHECK FUNCTIONS
 -- ═══════════════════════════════════════════════════════════════════════════
 
 config.lastTrackedMob = nil
@@ -3170,6 +3203,7 @@ local function checkFarmingLavaDamage()
 	config.farmingLastHealth = currentHealth
 end
 
+-- ✅ SIMPLIFIED: Just check for damage, switch to above
 local function checkLavaDamage()
 	if not config.miningEnabled or config.defendingAgainstMob or not config.lavaCheckEnabled then return end
 	if config.lavaCheckCooldown then return end
@@ -3187,37 +3221,33 @@ local function checkLavaDamage()
 		return
 	end
 	
+	-- ✅ SIMPLE: Detect ANY damage and switch to above
 	if currentHealth < config.lastHealth and not config.inLavaMode then
 		config.inLavaMode = true
-		config.miningVerticalDistance = config.lavaMiningDistance  -- ✅ NOW GOES TO 0
 		
-		print("🔥 LAVA DETECTED - Vertical distance set to " .. config.lavaMiningDistance)
+		-- ✅ SWITCH TO ABOVE POSITION
+		config.miningVerticalDistance = config.lavaMiningDistance  -- 6 studs above
+		config.miningAngle = config.lavaMiningAngle                -- 90 degrees (look down)
 		
-		if config.currentRock then config.currentRockModel = config.currentRock.Parent end
+		print("🔥 DAMAGE DETECTED - Switching to ABOVE position")
+		print("   Vertical Distance: " .. config.miningVerticalDistance)
+		print("   Angle: " .. config.miningAngle .. "°")
+		
+		if config.currentRock then 
+			config.currentRockModel = config.currentRock.Parent 
+		end
+		
+		if Library then
+			Library:Notify("🔥 Damage detected - mining from above!", 3)
+		end
 		
 		config.lavaCheckCooldown = true
-		task.delay(config.lavaCooldownTime, function() config.lavaCheckCooldown = false end)
+		task.delay(config.lavaCooldownTime, function() 
+			config.lavaCheckCooldown = false 
+		end)
 	end
 	
 	config.lastHealth = currentHealth
-end
-
-local function monitorRockDestruction()
-	if not config.inLavaMode or not config.currentRockModel then return end
-	
-	if not config.currentRockModel.Parent then
-		config.inLavaMode = false
-		config.miningVerticalDistance = config.normalMiningDistance
-		config.currentRockModel = nil
-		
-		print("✅ Rock destroyed - Vertical distance restored to " .. config.normalMiningDistance)
-		
-		local character = LocalPlayer.Character
-		if character then
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			if humanoid then config.lastHealth = humanoid.Health end
-		end
-	end
 end
 
 local function checkProximityToTarget()
@@ -3331,14 +3361,15 @@ _G.Part7AFunctions = {
 	resetLavaMode = resetLavaMode,
 	checkFarmingLavaDamage = checkFarmingLavaDamage,
 	checkLavaDamage = checkLavaDamage,
-	monitorRockDestruction = monitorRockDestruction,
 	checkProximityToTarget = checkProximityToTarget,
 	clickMouseForDefense = clickMouseForDefense,
 	performOreCheck = performOreCheck,
+	getOreTextureFromRock = getOreTextureFromRock,
+	getOreNameFromTexture = getOreNameFromTexture,
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 7B: MAIN LOOPS & CHARACTER RESPAWN (FIXED MINING DEFENSE + ORE DETECTION)
+-- PART 7B: MAIN LOOPS & CHARACTER RESPAWN (COMPLETELY FIXED)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -3355,52 +3386,61 @@ local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
 local Living = workspace:WaitForChild("Living")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- HELPER FUNCTIONS FROM PART 7A (needed for early ore check)
+-- ✅ NEW: IMPROVED OCCUPIED ORE DETECTION SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local function getOreTextureFromRock(rock)
-	if not rock or not rock.Parent then return nil end
+local OCCUPIED_CHECK_DISTANCE = 15
+
+-- ✅ REWRITTEN: Check if rock is being mined by another player
+local function isOreOccupied(rock)
+	if not config.avoidOccupied then return false end
+	if not rock then return false end
 	
-	local rockTypeModel = rock.Parent
+	-- Get the rock's position
+	local positionPart = funcs.getRockPosition(rock)
+	if not positionPart then return false end
 	
-	local function findOreTexture(parent)
-		for _, child in pairs(parent:GetChildren()) do
-			if child:IsA("Model") and child.Name == "Ore" then
-				local firstChild = child:GetChildren()[1]
-				if firstChild and firstChild:IsA("MeshPart") then
-					if firstChild.TextureId and firstChild.TextureId ~= "" then
-						local textureNum = firstChild.TextureId:match("(%d+)")
-						return textureNum
+	local rockPos = positionPart.Position
+	
+	local character = LocalPlayer.Character
+	if not character then return false end
+	
+	local myRootPart = character:FindFirstChild("HumanoidRootPart")
+	if not myRootPart then return false end
+	
+	-- Check all players in the game
+	for _, player in pairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local otherChar = player.Character
+			if otherChar then
+				local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
+				if otherRoot then
+					-- Check if another player is within mining distance of this rock
+					local distance = (otherRoot.Position - rockPos).Magnitude
+					
+					if distance <= OCCUPIED_CHECK_DISTANCE then
+						-- Check if they have a pickaxe equipped (they're mining)
+						local hasPickaxe = otherChar:FindFirstChild("Pickaxe")
+						if hasPickaxe then
+							print("⚠️ Rock occupied by: " .. player.Name .. " (Distance: " .. math.floor(distance) .. " studs)")
+							
+							if Library then
+								Library:Notify("⚠️ Rock occupied - skipping", 2)
+							end
+							
+							return true
+						end
 					end
 				end
-				return nil
 			end
 		end
-		return nil
 	end
 	
-	local texture = findOreTexture(rock)
-	if texture then return texture end
-	
-	if rockTypeModel and rockTypeModel ~= rock then
-		texture = findOreTexture(rockTypeModel)
-		if texture then return texture end
-	end
-	
-	return nil
+	return false
 end
 
-local function getOreNameFromTexture(textureNum)
-	if not textureNum then return nil end
-	
-	for _, oreData in ipairs(_G.OreTypes) do
-		if oreData.textureId == textureNum then
-			return oreData.name
-		end
-	end
-	
-	return nil
-end
+-- Store in global functions
+funcs.isOreOccupied = isOreOccupied
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ✅ FIXED DEFENSE ATTACK FUNCTION
@@ -3448,20 +3488,32 @@ local function stopDefenseAttack()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ WEAPON MANAGEMENT FOR DEFENSE (CRITICAL FIX)
+-- ✅ COMPLETELY REWRITTEN WEAPON MANAGEMENT (FIX INFINITE SWAPPING)
 -- ═══════════════════════════════════════════════════════════════════════════
+
+local lastToolEquipTime = 0
+local TOOL_EQUIP_COOLDOWN = 1  -- Prevent rapid swapping
 
 local function ensureWeaponEquipped()
 	local character = LocalPlayer.Character
 	if not character then return false end
 	
+	-- ✅ CRITICAL: Don't equip if we're respawning or dead
+	if config.isRespawning then return false end
+	
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return false end
+	if not humanoid or humanoid.Health <= 0 then return false end
 	
 	-- Check if weapon is already equipped
 	local weaponInChar = character:FindFirstChild("Weapon")
 	if weaponInChar and weaponInChar:IsA("Tool") then
 		return true
+	end
+	
+	-- ✅ NEW: Cooldown to prevent infinite swapping
+	local currentTime = tick()
+	if currentTime - lastToolEquipTime < TOOL_EQUIP_COOLDOWN then
+		return false
 	end
 	
 	-- Unequip any current tool first
@@ -3474,6 +3526,7 @@ local function ensureWeaponEquipped()
 		local weapon = backpack:FindFirstChild("Weapon")
 		if weapon and weapon:IsA("Tool") then
 			humanoid:EquipTool(weapon)
+			lastToolEquipTime = currentTime
 			task.wait(0.2)
 			return true
 		end
@@ -3486,13 +3539,28 @@ local function ensurePickaxeEquipped()
 	local character = LocalPlayer.Character
 	if not character then return false end
 	
+	-- ✅ CRITICAL: Don't equip if we're respawning or dead
+	if config.isRespawning then return false end
+	
+	-- ✅ CRITICAL FIX: NEVER EQUIP PICKAXE DURING DEFENSE MODE
+	if config.defendingAgainstMob then 
+		print("⚠️ Defense mode active - blocking pickaxe equip")
+		return false 
+	end
+	
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if not humanoid then return false end
+	if not humanoid or humanoid.Health <= 0 then return false end
 	
 	-- Check if pickaxe is already equipped
 	local pickaxeInChar = character:FindFirstChild("Pickaxe")
 	if pickaxeInChar and pickaxeInChar:IsA("Tool") then
 		return true
+	end
+	
+	-- ✅ NEW: Cooldown to prevent infinite swapping
+	local currentTime = tick()
+	if currentTime - lastToolEquipTime < TOOL_EQUIP_COOLDOWN then
+		return false
 	end
 	
 	-- Unequip any current tool first
@@ -3505,6 +3573,7 @@ local function ensurePickaxeEquipped()
 		local pickaxe = backpack:FindFirstChild("Pickaxe")
 		if pickaxe and pickaxe:IsA("Tool") then
 			humanoid:EquipTool(pickaxe)
+			lastToolEquipTime = currentTime
 			task.wait(0.2)
 			return true
 		end
@@ -3574,12 +3643,12 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ COMPLETELY REWRITTEN MINING LOOP WITH WORKING DEFENSE & ORE CHECK
+-- ✅ MINING LOOP WITH SIMPLIFIED LAVA MODE RESET
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local miningLoop = RunService.Heartbeat:Connect(function()
-	-- Stop everything if mining disabled
-	if not config.miningEnabled then 
+	-- ✅ FIX: Stop everything if mining disabled OR respawning
+	if not config.miningEnabled or config.isRespawning then 
 		if config.currentRock then
 			config.currentRock = nil
 			config.currentRockModel = nil
@@ -3595,10 +3664,9 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		config.lastHealth = nil
 		config.inLavaMode = false
 		config.miningVerticalDistance = config.normalMiningDistance
+		config.miningAngle = config.normalMiningAngle
 		return 
 	end
-	
-	if config.isRespawning then return end
 	
 	if not config.bodyVelocity or not config.bodyGyro then
 		funcs.setupPhysicsMovement()
@@ -3608,13 +3676,15 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	local character = LocalPlayer.Character
 	if not character then return end
 	
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
+	
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	if not rootPart then return end
 	
 	-- Always check for lava damage and ore (ONLY when not defending)
 	if not config.defendingAgainstMob then
 		part7a.checkLavaDamage()
-		part7a.monitorRockDestruction()
 		part7a.performOreCheck()
 	end
 	
@@ -3653,9 +3723,15 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			config.isLockedOn = false
 			config.weaponEquipped = false
 			
+			-- ✅ FIX: Reset tool equip cooldown when entering defense
+			lastToolEquipTime = 0
+			
 			-- Equip weapon immediately
-			ensureWeaponEquipped()
-			config.weaponEquipped = true
+			task.spawn(function()
+				task.wait(0.2)
+				ensureWeaponEquipped()
+				config.weaponEquipped = true
+			end)
 			
 			-- Start continuous attacking
 			startDefenseAttack()
@@ -3667,7 +3743,7 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	end
 	
 	-- ═══════════════════════════════════════════════════════════════════════════
-	-- ✅ PRIORITY 2: DEFENSE MODE - STAY ON TARGET UNTIL DEAD
+	-- ✅ PRIORITY 2: DEFENSE MODE - COMPLETELY REWRITTEN
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
 	if config.defendingAgainstMob then
@@ -3686,9 +3762,20 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			config.weaponEquipped = false
 			config.isLockedOn = false
 			
-			-- ✅ CRITICAL: SWITCH BACK TO PICKAXE NOW
+			-- ✅ CRITICAL: STOP ALL MOVEMENT FIRST
+			if config.bodyVelocity then
+				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+			end
+			
+			-- ✅ FIX: Reset tool equip cooldown when exiting defense
+			lastToolEquipTime = 0
+			
+			-- ✅ CRITICAL: SWITCH BACK TO PICKAXE NOW (with extra delay to ensure defense flag is cleared)
 			print("🔧 Switching back to pickaxe...")
-			ensurePickaxeEquipped()
+			task.spawn(function()
+				task.wait(0.5)  -- ✅ Increased delay to ensure defendingAgainstMob is nil
+				ensurePickaxeEquipped()
+			end)
 			
 			-- Restore mining state
 			config.currentRock = config.savedMiningRock
@@ -3699,7 +3786,6 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			config.savedMiningRock = nil
 			
 			-- Reset health tracking
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
 			if humanoid then
 				config.lastHealth = humanoid.Health
 			end
@@ -3712,54 +3798,65 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			return
 		end
 		
-		-- ✅ CHECK 2: Make sure weapon is equipped (in case it got unequipped)
+		-- ✅ CHECK 2: Make sure weapon is equipped (but respect cooldown)
 		local weaponEquipped = character:FindFirstChild("Weapon") ~= nil
-		if not weaponEquipped then
-			print("⚠️ Weapon lost - re-equipping...")
-			ensureWeaponEquipped()
-			config.weaponEquipped = true
+		if not weaponEquipped and not config.weaponEquipped then
+			if tick() - lastToolEquipTime >= TOOL_EQUIP_COOLDOWN then
+				print("⚠️ Weapon lost - re-equipping...")
+				ensureWeaponEquipped()
+				config.weaponEquipped = true
+			end
 			return
 		end
 		
-		-- ✅ STEP 3: MOVE BELOW MOB USING DEFENSE VERTICAL DISTANCE AND ATTACK
+		-- ✅ STEP 3: MOVE BELOW MOB - COMPLETELY REWRITTEN
 		local mobRoot = config.defendingAgainstMob:FindFirstChild("HumanoidRootPart")
 		if mobRoot then
 			local mobPos = mobRoot.Position
-			local lockPos = mobPos + Vector3.new(0, -config.miningDefenseVerticalDistance, 0)
+			
+			-- ✅ FIX: Calculate target position BELOW mob (negative Y offset)
+			local targetPos = mobPos - Vector3.new(0, config.miningDefenseVerticalDistance, 0)
 			
 			local currentPos = rootPart.Position
-			local direction = (lockPos - currentPos)
+			local direction = (targetPos - currentPos)
 			local distance = direction.Magnitude
 			
-			-- Movement control
-			if distance > 5 then
-				-- Far away - move fast
-				local targetSpeed = config.hoverSpeed * 0.8
+			-- ✅ FIX: Better movement with safety checks
+			if distance > 50 then
+				-- Too far - stop movement
+				print("⚠️ Distance too large: " .. math.floor(distance) .. " - stopping")
+				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+				config.isLockedOn = false
+			elseif distance > 5 then
+				-- Far away - move at moderate speed
+				local targetSpeed = 30
 				local desiredVelocity = direction.Unit * targetSpeed
-				config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.5)
+				config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.25)
 				config.isLockedOn = false
 			elseif distance > 2 then
 				-- Close range - move slowly
-				local targetSpeed = 15
+				local targetSpeed = 12
 				local desiredVelocity = direction.Unit * targetSpeed
-				config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.3)
+				config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.15)
 				config.isLockedOn = true
 			else
-				-- Very close - hold position and attack
+				-- Very close - hold position firmly
 				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
 				config.isLockedOn = true
 			end
 			
-			-- Look up at enemy (attacking from below)
-			if distance < 5 then
+			-- ✅ FIX: Look UP at enemy (we're below them)
+			if distance < 10 then
+				-- Use the below angle to look up
 				local angle = math.rad(config.belowAngle or 240)
 				local upCFrame = CFrame.new(currentPos) * CFrame.Angles(angle, math.rad(180), 0)
-				config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(upCFrame, 0.6)
+				config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(upCFrame, 0.4)
 				config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-				config.bodyGyro.P = 50000
+				config.bodyGyro.P = 40000
 			else
+				-- Far away - just look at mob
 				local lookCFrame = CFrame.new(currentPos, mobRoot.Position)
-				config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.4)
+				config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.3)
 			end
 		end
 		
@@ -3771,10 +3868,12 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	-- NORMAL MINING LOGIC (ONLY RUNS IF NOT DEFENDING)
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
-	-- Ensure pickaxe is equipped when mining (only when not defending)
+	-- ✅ CRITICAL FIX: Only try to equip pickaxe when NOT defending
 	local pickaxeEquipped = character:FindFirstChild("Pickaxe") ~= nil
-	if not pickaxeEquipped then
-		ensurePickaxeEquipped()
+	if not pickaxeEquipped and not config.defendingAgainstMob then
+		if tick() - lastToolEquipTime >= TOOL_EQUIP_COOLDOWN then
+			ensurePickaxeEquipped()
+		end
 	end
 	
 	-- Hover sequence
@@ -3808,18 +3907,47 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- ✅ IMPROVED ORE CHECK: Find new rock and verify ore IMMEDIATELY (no mining rocks with wrong ore)
+	-- ═══════════════════════════════════════════════════════════════════════════
+	-- ✅ FIND NEW ROCK - RESET LAVA MODE HERE
+	-- ═══════════════════════════════════════════════════════════════════════════
+	
 	if not config.currentRock then
-		config.currentRock = funcs.getClosestRock()
+		local potentialRock = funcs.getClosestRock()
 		
-		if config.currentRock then
-			-- ✅ CRITICAL FIX: CHECK FOR WANTED ORES IMMEDIATELY WHEN LOCKING ONTO ROCK
-			if config.oreCheckEnabled and #config.wantedOres > 0 then
-				local textureNum = getOreTextureFromRock(config.currentRock)
+		if potentialRock then
+			-- ✅ NEW: RESET LAVA MODE WHEN FINDING NEW ROCK
+			if config.inLavaMode then
+				config.inLavaMode = false
+				config.miningVerticalDistance = config.normalMiningDistance  -- 6 studs below
+				config.miningAngle = config.normalMiningAngle                -- 270 degrees (look up)
 				
-				-- If ore is already visible, check if it's wanted
+				print("✅ New rock - Position reset to BELOW")
+				print("   Vertical Distance: " .. config.miningVerticalDistance)
+				print("   Angle: " .. config.miningAngle .. "°")
+				
+				if Library then
+					Library:Notify("✅ Back to normal mining", 2)
+				end
+				
+				-- Reset health tracking
+				if humanoid then 
+					config.lastHealth = humanoid.Health 
+				end
+			end
+			
+			-- ✅ CHECK IF ROCK IS OCCUPIED
+			if isOreOccupied(potentialRock) then
+				print("⏭️ Skipping occupied rock")
+				table.insert(config.ignoredRocks, potentialRock)
+				return
+			end
+			
+			-- ✅ CHECK FOR WANTED ORES
+			if config.oreCheckEnabled and #config.wantedOres > 0 then
+				local textureNum = part7a.getOreTextureFromRock(potentialRock)
+				
 				if textureNum then
-					local oreName = getOreNameFromTexture(textureNum)
+					local oreName = part7a.getOreNameFromTexture(textureNum)
 					local isWanted = false
 					
 					if oreName then
@@ -3832,11 +3960,9 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 						end
 					end
 					
-					-- Skip this rock if ore is visible and NOT wanted
 					if not isWanted then
 						print("❌ Skipping rock IMMEDIATELY - Wrong ore: " .. (oreName or "Unknown (ID: " .. textureNum .. ")"))
-						table.insert(config.ignoredRocks, config.currentRock)
-						config.currentRock = nil
+						table.insert(config.ignoredRocks, potentialRock)
 						
 						if Library then 
 							Library:Notify("Skipped - Wrong ore!", 1) 
@@ -3844,12 +3970,12 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 						return
 					end
 				else
-					-- Ore not visible yet - this is normal, mine it and check later
 					print("🔍 Ore not visible yet - will check at 50% HP")
 				end
 			end
 			
-			-- Rock passed the initial check, proceed to mine it
+			-- Rock passed all checks
+			config.currentRock = potentialRock
 			config.currentRockModel = config.currentRock.Parent
 			config.lastRockDurability = funcs.getRockDurability(config.currentRock)
 			config.rockDurabilityCheck = tick()
@@ -3868,16 +3994,24 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- CHARACTER RESPAWN HANDLER
+-- ✅ COMPLETELY REWRITTEN CHARACTER RESPAWN HANDLER
 -- ═══════════════════════════════════════════════════════════════════════════
 
 LocalPlayer.CharacterAdded:Connect(function(character)
+	-- ✅ CRITICAL: Set respawning flag IMMEDIATELY
+	config.isRespawning = true
+	
+	print("💀 Character died - Cleaning up...")
+	
+	-- ✅ STOP ALL LOOPS IMMEDIATELY
+	stopDefenseAttack()
+	
+	-- ✅ RESET ALL STATE
 	config.currentMob = nil
 	config.lastTrackedMob = nil
 	config.currentRock = nil
 	config.currentRockModel = nil
 	config.isLockedOn = false
-	config.isRespawning = true
 	config.hoverSequenceActive = false
 	config.defendingAgainstMob = nil
 	config.savedMiningRock = nil
@@ -3885,11 +4019,15 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 	config.lastHealth = nil
 	config.inLavaMode = false
 	config.miningVerticalDistance = config.normalMiningDistance
+	config.miningAngle = config.normalMiningAngle
 	config.lavaCheckCooldown = false
 	config.farmingLastHealth = nil
 	config.savedLockPosition = nil
+	config.rocksCheckedForOre = {}
+	config.ignoredRocks = {}
+	lastToolEquipTime = 0
 	
-	stopDefenseAttack()
+	-- ✅ CLEANUP PHYSICS
 	funcs.cleanupPhysicsMovement()
 	funcs.stopNoclip()
 	
@@ -3897,40 +4035,68 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 	local wasMining = config.miningEnabled
 	
 	if wasFarming or wasMining then
-		character:WaitForChild("HumanoidRootPart", 10)
+		-- Wait for character to fully load
+		local rootPart = character:WaitForChild("HumanoidRootPart", 10)
+		local humanoid = character:WaitForChild("Humanoid", 10)
+		
+		if not rootPart or not humanoid then
+			config.isRespawning = false
+			return
+		end
+		
+		-- Wait for spawn to stabilize
 		task.wait(3)
 		
-		local rootPart = character:FindFirstChild("HumanoidRootPart")
-		if rootPart then
-			config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
-			config.hoverSequenceActive = true
-			config.currentHoverTarget = 1
-			
-			funcs.setupPhysicsMovement()
-			funcs.startNoclip()
-			
-			if wasFarming then 
-				funcs.autoEquipWeapon()
-				local humanoid = character:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					config.farmingLastHealth = humanoid.Health
-				end
-			end
-			
-			if wasMining then 
-				ensurePickaxeEquipped()
-				config.ignoredRocks = {}
-				config.lastRockDurability = nil
-				config.rockDurabilityCheck = tick()
-				
-				local humanoid = character:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					config.lastHealth = humanoid.Health
-				end
+		-- ✅ CHECK: Make sure we're still enabled and alive
+		if humanoid.Health <= 0 then
+			config.isRespawning = false
+			return
+		end
+		
+		if (wasFarming and not config.enabled) or (wasMining and not config.miningEnabled) then
+			config.isRespawning = false
+			return
+		end
+		
+		print("✅ Respawn complete - Restarting...")
+		
+		-- Setup hover sequence
+		config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+		config.hoverSequenceActive = true
+		config.currentHoverTarget = 1
+		
+		-- Setup physics and noclip
+		funcs.setupPhysicsMovement()
+		funcs.startNoclip()
+		
+		-- ✅ FIX: Equip correct tool ONCE with delay
+		task.wait(1)
+		lastToolEquipTime = 0  -- Reset cooldown
+		
+		if wasFarming then 
+			print("🗡️ Re-equipping weapon...")
+			funcs.autoEquipWeapon()
+			if humanoid then
+				config.farmingLastHealth = humanoid.Health
 			end
 		end
 		
+		if wasMining then 
+			print("⛏️ Re-equipping pickaxe...")
+			ensurePickaxeEquipped()
+			config.ignoredRocks = {}
+			config.lastRockDurability = nil
+			config.rockDurabilityCheck = tick()
+			
+			if humanoid then
+				config.lastHealth = humanoid.Health
+			end
+		end
+		
+		-- ✅ CRITICAL: Clear respawning flag LAST
+		task.wait(1)
 		config.isRespawning = false
+		print("✅ Fully operational")
 	else
 		config.isRespawning = false
 	end
@@ -3944,3 +4110,10 @@ task.spawn(function()
 	task.wait(0)
 	funcs.talkToSeller()
 end)
+
+print("✅ Mining script loaded successfully!")
+print("✅ Occupied rock detection: " .. (config.avoidOccupied and "ENABLED" or "DISABLED"))
+print("✅ Ore filter: " .. (config.oreCheckEnabled and "ENABLED" or "DISABLED"))
+print("✅ Lava mode: Take damage → Above | New rock → Below")
+print("✅ Defense mode: WEAPON ONLY - No pickaxe switching!")
+print("✅ F1 = Toggle Farming | F2 = Toggle Mining")
