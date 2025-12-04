@@ -1835,6 +1835,7 @@ InfoLeftBox:AddLabel('• Config System')
 
 local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 
+InfoRightBox:AddLabel('Important Tips:')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('if not automatically done')
 InfoRightBox:AddLabel('This Script is in BETA')
@@ -2016,10 +2017,243 @@ MiningGroupBox:AddDropdown('RockSelection', {
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 5: AUTOSELL, TELEPORT, SETTINGS & CONFIG TABS (SECOND HALF)
+-- PART 5: AUTOSELL, TELEPORT, SETTINGS & CONFIG TABS (UPDATED WITH WORLD 2)
 -- ═══════════════════════════════════════════════════════════════════════════
 
--- Continuation from Part 4.5...
+-- ═══════════════════════════════════════════════════════════════════════════
+-- WORLD 2 TELEPORT SYSTEM
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local FORGOTTEN_KINGDOM_SPAWN = Vector3.new(-260.62, 17.75, 100.27)
+local FORGOTTEN_KINGDOM_FRONT = Vector3.new(-260.62, 17.75, 93.27)
+local FORGOTTEN_KINGDOM_GUI_X = 602
+local FORGOTTEN_KINGDOM_GUI_Y = 459
+local TELEPORT_BUTTON_X = 1124
+local TELEPORT_BUTTON_Y = 682
+
+local world2AutoJoinActive = false
+local world2AutoJoinLoop = nil
+
+local function clickAt(x, y)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+	task.wait(0.01)
+	VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+end
+
+local function checkForPortalTool()
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if backpack and backpack:FindFirstChild("PortalTool") then
+		return true
+	end
+	
+	local character = LocalPlayer.Character
+	if character and character:FindFirstChild("PortalTool") then
+		return true
+	end
+	
+	return false
+end
+
+local function teleportToWorld2()
+	local character = LocalPlayer.Character
+	if not character then
+		warn("❌ Character not found!")
+		return false
+	end
+	
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	
+	if not rootPart or not humanoid then
+		warn("❌ Character components not found!")
+		return false
+	end
+	
+	print("\n" .. string.rep("═", 60))
+	print("🌟 STARTING WORLD 2 TELEPORT")
+	print(string.rep("═", 60))
+	
+	-- Step 1: Teleport to spawn portal position and LOCK
+	print("📍 Step 1: Teleporting to spawn portal...")
+	local spawnPosition = FORGOTTEN_KINGDOM_SPAWN
+	
+	local startTime = tick()
+	while tick() - startTime < 1 do
+		rootPart.CFrame = CFrame.new(spawnPosition)
+		task.wait(0.05)
+	end
+	print("✅ At spawn position")
+	
+	-- Step 2: Get PortalTool
+	print("🎒 Step 2: Getting PortalTool...")
+	local backpack = LocalPlayer:FindFirstChild("Backpack")
+	if not backpack then
+		warn("❌ Backpack not found!")
+		return false
+	end
+	
+	local portalTool = backpack:FindFirstChild("PortalTool")
+	if not portalTool then
+		warn("❌ PortalTool not found!")
+		return false
+	end
+	print("✅ Found PortalTool")
+	
+	-- Step 3: Equip PortalTool
+	print("⚙️ Step 3: Equipping...")
+	humanoid:EquipTool(portalTool)
+	task.wait(0.3)
+	
+	if not character:FindFirstChild("PortalTool") then
+		warn("❌ Failed to equip!")
+		return false
+	end
+	print("✅ Equipped")
+	
+	-- Step 4: Place portal
+	print("🔨 Step 4: Placing portal...")
+	clickAt(0, 0)
+	task.wait(1)
+	print("✅ Portal placed")
+	
+	-- Step 5: Find proximity prompt
+	print("🔍 Step 5: Finding prompt...")
+	local proximityPrompt = nil
+	
+	for attempt = 1, 10 do
+		local debris = workspace:FindFirstChild("Debris")
+		if debris then
+			local portalForge = debris:FindFirstChild("PortalTheForge")
+			if portalForge then
+				local proximityContainer = portalForge:FindFirstChild("ProximityContainer")
+				if proximityContainer then
+					proximityPrompt = proximityContainer:FindFirstChild("ProximityPrompt")
+					if proximityPrompt then
+						print("✅ Found prompt (attempt " .. attempt .. ")")
+						break
+					end
+				end
+			end
+		end
+		task.wait(0.2)
+	end
+	
+	if not proximityPrompt then
+		warn("❌ Prompt not found!")
+		return false
+	end
+	
+	-- Step 6: Teleport to front of portal and LOCK position
+	print("🚶 Step 6: Moving to front of portal...")
+	local frontPosition = FORGOTTEN_KINGDOM_FRONT
+	
+	local lockStart = tick()
+	while tick() - lockStart < 1.5 do
+		rootPart.CFrame = CFrame.new(frontPosition)
+		task.wait(0.05)
+	end
+	print("✅ Position locked at front")
+	
+	-- Step 7: Press proximity prompt
+	print("🔓 Step 7: Pressing prompt...")
+	
+	local targetPart = proximityPrompt.Parent
+	if targetPart and targetPart:IsA("BasePart") then
+		local distance = (targetPart.Position - rootPart.Position).Magnitude
+		local maxDist = proximityPrompt.MaxActivationDistance
+		
+		print("  Distance: " .. string.format("%.2f", distance) .. " / " .. maxDist)
+		
+		if distance <= maxDist then
+			local success = pcall(function()
+				proximityPrompt:InputHoldBegin()
+				proximityPrompt:InputHoldEnd()
+			end)
+			
+			if success then
+				print("✅ Pressed successfully")
+			else
+				warn("❌ Press failed!")
+				return false
+			end
+		else
+			print("  ⚠️ Too far! Moving closer...")
+			rootPart.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 3, 0))
+			task.wait(0.2)
+			
+			pcall(function()
+				proximityPrompt:InputHoldBegin()
+				proximityPrompt:InputHoldEnd()
+			end)
+			print("✅ Pressed (retry)")
+		end
+	end
+	
+	task.wait(0.5)
+	
+	-- Step 8: Click Forgotten Kingdom
+	print("🏰 Step 8: Clicking Forgotten Kingdom...")
+	print("  Position: X=" .. FORGOTTEN_KINGDOM_GUI_X .. ", Y=" .. FORGOTTEN_KINGDOM_GUI_Y)
+	clickAt(FORGOTTEN_KINGDOM_GUI_X, FORGOTTEN_KINGDOM_GUI_Y)
+	task.wait(0.3)
+	print("✅ Clicked Forgotten Kingdom")
+	
+	-- Step 9: Click Teleport button
+	print("🚀 Step 9: Clicking Teleport button...")
+	print("  Position: X=" .. TELEPORT_BUTTON_X .. ", Y=" .. TELEPORT_BUTTON_Y)
+	task.wait(0.5)
+	
+	for i = 1, 5 do
+		clickAt(TELEPORT_BUTTON_X, TELEPORT_BUTTON_Y)
+		task.wait(0.15)
+	end
+	
+	print("✅ Clicked Teleport (5 times)")
+	
+	print(string.rep("═", 60))
+	print("✅ WORLD 2 TELEPORT COMPLETE!")
+	print(string.rep("═", 60) .. "\n")
+	
+	return true
+end
+
+local function startWorld2AutoJoin()
+	if world2AutoJoinActive then
+		Library:Notify("World 2 Auto-Join is already active!", 3)
+		return
+	end
+	
+	if not checkForPortalTool() then
+		Library:Notify("You must unlock the Portal first!", 3)
+		return false
+	end
+	
+	world2AutoJoinActive = true
+	
+	world2AutoJoinLoop = task.spawn(function()
+		while world2AutoJoinActive do
+			local success = teleportToWorld2()
+			
+			if success then
+				Library:Notify("Successfully joined Forgotten Kingdom!", 3)
+			else
+				Library:Notify("Failed to join Forgotten Kingdom!", 3)
+			end
+			
+			task.wait(300)
+		end
+	end)
+	
+	return true
+end
+
+local function stopWorld2AutoJoin()
+	world2AutoJoinActive = false
+	if world2AutoJoinLoop then
+		task.cancel(world2AutoJoinLoop)
+		world2AutoJoinLoop = nil
+	end
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- AUTOSELL TAB
@@ -2176,7 +2410,7 @@ ItemSelectionGroupBox:AddDropdown('RuneItems', {
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- TELEPORT TAB
+-- TELEPORT TAB (UPDATED WITH WORLD 2)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local TeleportAreasBox = Tabs.Teleport:AddLeftGroupbox('Areas')
@@ -2218,7 +2452,11 @@ TeleportAreasBox:AddButton({
 	Tooltip = 'Hover travel to the selected area'
 })
 
-local TeleportNPCsBox = Tabs.Teleport:AddRightGroupbox('NPCs')
+TeleportAreasBox:AddDivider()
+
+-- NPCs Section (below Areas)
+TeleportAreasBox:AddLabel('─────────────────────')
+TeleportAreasBox:AddLabel('NPCs:')
 
 local npcOptions = {}
 for npcName, _ in pairs(teleportNPCs) do
@@ -2226,9 +2464,7 @@ for npcName, _ in pairs(teleportNPCs) do
 end
 table.sort(npcOptions)
 
-TeleportNPCsBox:AddLabel('Select an NPC:')
-
-TeleportNPCsBox:AddDropdown('NPCSelection', {
+TeleportAreasBox:AddDropdown('NPCSelection', {
 	Values = npcOptions,
 	Default = 1,
 	Multi = false,
@@ -2238,9 +2474,9 @@ TeleportNPCsBox:AddDropdown('NPCSelection', {
 	end
 })
 
-TeleportNPCsBox:AddDivider()
+TeleportAreasBox:AddDivider()
 
-TeleportNPCsBox:AddButton({
+TeleportAreasBox:AddButton({
 	Text = 'Travel to NPC',
 	Func = function()
 		if not selectedNPC or selectedNPC == "" then
@@ -2256,6 +2492,69 @@ TeleportNPCsBox:AddButton({
 	DoubleClick = false,
 	Tooltip = 'Hover travel to the selected NPC'
 })
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- WORLD 2 FORGOTTEN KINGDOM (RIGHT SIDE)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local World2Box = Tabs.Teleport:AddRightGroupbox('World 2: Forgotten Kingdom')
+
+World2Box:AddToggle('AutoJoinWorld2', {
+	Text = 'Auto-Join Forgotten Kingdom',
+	Default = false,
+	Tooltip = 'Automatically join Forgotten Kingdom every 5 minutes',
+	Callback = function(Value)
+		if Value then
+			if not checkForPortalTool() then
+				Library:Notify("You must unlock the Portal first!", 3)
+				Toggles.AutoJoinWorld2:SetValue(false)
+				return
+			end
+			
+			Library:Notify("Starting in 5 seconds...", 3)
+			task.wait(5)
+			
+			if Toggles.AutoJoinWorld2.Value then
+				local success = startWorld2AutoJoin()
+				if not success then
+					Toggles.AutoJoinWorld2:SetValue(false)
+				else
+					Library:Notify("World 2 Auto-Join started!", 3)
+				end
+			end
+		else
+			stopWorld2AutoJoin()
+			Library:Notify("World 2 Auto-Join stopped!", 3)
+		end
+	end
+})
+
+World2Box:AddDivider()
+
+World2Box:AddButton({
+	Text = 'Join Forgotten Kingdom',
+	Func = function()
+		if not checkForPortalTool() then
+			Library:Notify("You must unlock the Portal first!", 3)
+			return
+		end
+		
+		Library:Notify("Teleporting to Forgotten Kingdom...", 3)
+		local success = teleportToWorld2()
+		
+		if success then
+			Library:Notify("Successfully joined Forgotten Kingdom!", 3)
+		else
+			Library:Notify("Failed to join Forgotten Kingdom!", 3)
+		end
+	end,
+	DoubleClick = false,
+	Tooltip = 'Instantly teleport to Forgotten Kingdom'
+})
+
+World2Box:AddLabel('─────────────────────')
+World2Box:AddLabel('Requires Portal Tool unlocked')
+World2Box:AddLabel('from The Forge questline')
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- SETTINGS TAB
@@ -2281,6 +2580,9 @@ MenuGroup:AddButton({
 		if Toggles.AutoSellToggle then
 			Toggles.AutoSellToggle:SetValue(false)
 		end
+		if Toggles.AutoJoinWorld2 then
+			Toggles.AutoJoinWorld2:SetValue(false)
+		end
 		
 		task.wait(0.5)
 		
@@ -2292,6 +2594,7 @@ MenuGroup:AddButton({
 		_G.AutoLoopFunctions.stopAutoAttack()
 		_G.AutoLoopFunctions.stopAutoMine()
 		_G.AutoLoopFunctions.stopAutoSell()
+		stopWorld2AutoJoin()
 		
 		funcs.stopNoclip()
 		funcs.cleanupPhysicsMovement()
@@ -2716,7 +3019,6 @@ end)
 ThemeManager:SetLibrary(Library)
 ThemeManager:SetFolder('RafsoHub')
 ThemeManager:ApplyToTab(Tabs.Settings)
-
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PART 6: MAIN LOOPS & CHARACTER RESPAWN (WITH MINING DEFENSE)
 -- ═══════════════════════════════════════════════════════════════════════════
