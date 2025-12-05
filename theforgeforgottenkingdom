@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- RAFSO'S SCRIPT - PART 1: CORE SETUP & CONFIG (WITH LAVA CHECK + WANTED ORES)
+-- RAFSO'S SCRIPT - PART 1: CORE SETUP & CONFIG (WITH LAVA CHECK + WANTED ORES + DEFENSE FIX)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- Services
@@ -166,13 +166,16 @@ local function saveConfig(configName)
 		lavaCheckEnabled = _G.MobFarmConfig.lavaCheckEnabled,
 		oreCheckEnabled = _G.MobFarmConfig.oreCheckEnabled,
 		wantedOres = _G.MobFarmConfig.wantedOres,
-		avoidOccupied = _G.MobFarmConfig.avoidOccupied
+		avoidOccupied = _G.MobFarmConfig.avoidOccupied,
+		defenseLockPosition = _G.MobFarmConfig.defenseLockPosition,  -- ✅ NEW
+		miningDefenseVerticalDistance = _G.MobFarmConfig.miningDefenseVerticalDistance,  -- ✅ NEW
 	}
 	
 	addToLog("📊 Settings:")
 	addToLog("  Ore Check: " .. tostring(configData.oreCheckEnabled))
 	addToLog("  Wanted Ores: " .. (#configData.wantedOres > 0 and table.concat(configData.wantedOres, ", ") or "(none)"))
 	addToLog("  Avoid Occupied: " .. tostring(configData.avoidOccupied))
+	addToLog("  Defense Position: " .. tostring(configData.defenseLockPosition))  -- ✅ NEW
 	
 	for _, mobData in ipairs(_G.MobFarmConfig.mobTypes) do
 		table.insert(configData.mobTypes, {
@@ -255,6 +258,10 @@ local function loadConfig(configName)
 	_G.MobFarmConfig.lavaCheckEnabled = configData.lavaCheckEnabled ~= false
 	_G.MobFarmConfig.oreCheckEnabled = configData.oreCheckEnabled ~= false
 	_G.MobFarmConfig.avoidOccupied = configData.avoidOccupied ~= false
+	
+	-- ✅ NEW: Load defense settings
+	_G.MobFarmConfig.defenseLockPosition = configData.defenseLockPosition or "Below"
+	_G.MobFarmConfig.miningDefenseVerticalDistance = configData.miningDefenseVerticalDistance or 6
 	
 	if configData.wantedOres then
 		_G.MobFarmConfig.wantedOres = configData.wantedOres
@@ -366,6 +373,10 @@ _G.MobFarmConfig = {
 	attackCooldown = 0.25,
 	lastWeaponCheckTime = 0,
 	weaponCheckInterval = 0.5,
+	lastToolEquipTime = 0,
+    toolEquipCooldown = 0.5,
+    lastDefenseCheckTime = 0,
+    defenseCheckInterval = 0.5,
 	
 	currentMob = nil,
 	isLockedOn = false,
@@ -443,8 +454,21 @@ _G.MobFarmConfig = {
 	-- ✅ FIXED: Updated lava mining distance to 8
 	normalMiningDistance = 6,
 	normalMiningAngle = 270,
-	lavaMiningDistance = 8,  -- ✅ CHANGED FROM 6 TO 8
+	lavaMiningDistance = 8,
 	lavaMiningAngle = 90,
+	
+	-- ═══════════════════════════════════════════════════════════════════════════
+	-- ✅ NEW: DEFENSE SYSTEM CONFIG
+	-- ═══════════════════════════════════════════════════════════════════════════
+	miningDefenseEnabled = true,
+	miningDefenseDistance = 15,  -- Detection range (15 studs)
+	miningDefenseVerticalDistance = 6,  -- Vertical distance from mob
+	defenseLockPosition = "Below",  -- Default to Below position
+	defendingAgainstMob = nil,
+	savedMiningRock = nil,
+	weaponEquipped = false,
+	lastDefenseAttackTime = 0,
+	defenseAttackCooldown = 0.1,
 }
 
 -- Store OreTypes globally for UI and ore check functions
@@ -452,8 +476,10 @@ _G.OreTypes = OreTypes
 
 local config = _G.MobFarmConfig
 
+print("✅ Part 1 loaded with DEFENSE SYSTEM CONFIG!")
+
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 2: NOCLIP & MOB/ROCK DETECTION (NO CACHE - REAL-TIME)
+-- PART 2: NOCLIP & MOB/ROCK DETECTION (FIXED OCCUPIED CHECK)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -567,39 +593,57 @@ local function getClosestMob()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ REAL-TIME OCCUPIED CHECK (NO CACHE)
+-- ✅ FIXED: IMPROVED OCCUPIED CHECK
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local OCCUPIED_CHECK_DISTANCE = 15
 
 local function isOreOccupied(rock)
+	-- ✅ Early exit if feature disabled
 	if not config.avoidOccupied then return false end
 	if not rock then return false end
 	
+	-- ✅ Get rock position
 	local positionPart = _G.FarmFunctions.getRockPosition(rock)
 	if not positionPart then return false end
 	
 	local rockPos = positionPart.Position
 	
+	-- ✅ Get our character
 	local character = LocalPlayer.Character
 	if not character then return false end
 	
 	local myRootPart = character:FindFirstChild("HumanoidRootPart")
 	if not myRootPart then return false end
 	
-	-- ✅ CHECK ALL PLAYERS IN REAL-TIME (NO CACHE)
+	-- ✅ CHECK ALL PLAYERS IN REAL-TIME
 	for _, player in pairs(Players:GetPlayers()) do
-		if player ~= LocalPlayer then
-			local otherChar = player.Character
-			if otherChar then
-				local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
-				if otherRoot then
-					local distance = (otherRoot.Position - rockPos).Magnitude
+		-- Skip ourselves
+		if player == LocalPlayer then continue end
+		
+		local otherChar = player.Character
+		if otherChar then
+			local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
+			if otherRoot then
+				-- ✅ Calculate distance from other player to rock
+				local distance = (otherRoot.Position - rockPos).Magnitude
+				
+				-- ✅ If player is within range of the rock
+				if distance <= OCCUPIED_CHECK_DISTANCE then
+					-- ✅ Check if they have pickaxe equipped OR in their backpack
+					local hasPickaxeEquipped = otherChar:FindFirstChild("Pickaxe")
 					
-					if distance <= OCCUPIED_CHECK_DISTANCE then
-						-- ✅ Check if they have pickaxe equipped
-						local hasPickaxe = otherChar:FindFirstChild("Pickaxe")
-						if hasPickaxe then
+					if hasPickaxeEquipped then
+						print("⚠️ Rock occupied by: " .. player.Name .. " (Distance: " .. math.floor(distance) .. " studs)")
+						return true
+					end
+					
+					-- ✅ Also check their backpack (they might be switching tools)
+					local otherBackpack = player:FindFirstChild("Backpack")
+					if otherBackpack then
+						local hasPickaxeInBackpack = otherBackpack:FindFirstChild("Pickaxe")
+						if hasPickaxeInBackpack then
+							print("⚠️ Rock potentially occupied by: " .. player.Name .. " (Has pickaxe in backpack)")
 							return true
 						end
 					end
@@ -711,7 +755,7 @@ local function getClosestRock()
 												local distance = (rootPart.Position - positionPart.Position).Magnitude
 												
 												if distance <= config.farmDistance then
-													-- ✅ Real-time occupied check
+													-- ✅ Real-time occupied check BEFORE considering this rock
 													if not isOreOccupied(durabilityModel) then
 														if priority < highestPriority or (priority == highestPriority and distance < closestDistance) then
 															closestRock = durabilityModel
@@ -768,7 +812,6 @@ _G.FarmFunctions.isRockIgnored = isRockIgnored
 _G.FarmFunctions.makeRockTransparent = makeRockTransparent
 _G.FarmFunctions.isOreOccupied = isOreOccupied
 
-print("✅ Part 2 loaded - Real-time occupied detection (no cache)")
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PART 3: WEAPON SYSTEM, AUTOSELL & PHYSICS MOVEMENT
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1197,7 +1240,7 @@ funcs.sellItems = sellItems
 funcs.teleportUp = teleportUp  -- ✅ NEW
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 4: MOVEMENT LOGIC & HOVERING (IMPROVED STABLE TRACKING)
+-- PART 4: MOVEMENT LOGIC & HOVERING (IMPROVED STABLE TRACKING + GROUND FIX)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -1384,7 +1427,7 @@ local function hoverToMob(targetPos, mob)
 	end
 end
 
--- ✅ UPDATED: Support both above and below positioning
+-- ✅ FIXED: Improved mining hover with ground collision ignore
 local function hoverToRock(targetPos, rock)
 	if not targetPos then 
 		return 
@@ -1399,9 +1442,27 @@ local function hoverToRock(targetPos, rock)
 		return
 	end
 	
+	-- ✅ FIX: Force upward position to avoid ground collision
 	local currentPos = rootPart.Position
 	local direction = (targetPos - currentPos)
 	local distance = direction.Magnitude
+	
+	-- ✅ FIX: Add upward force if getting stuck on ground
+	local rockPositionPart = funcs.getRockPosition(rock)
+	if rockPositionPart then
+		local groundCheckRay = workspace:Raycast(
+			rootPart.Position,
+			Vector3.new(0, -2, 0),
+			RaycastParams.new()
+		)
+		
+		-- If we detect ground below and we're trying to mine below the rock
+		if groundCheckRay and config.miningAngle > 180 then
+			-- Add extra upward velocity to lift off ground
+			local upwardBoost = Vector3.new(0, 15, 0)
+			config.bodyVelocity.Velocity = config.bodyVelocity.Velocity + upwardBoost
+		end
+	end
 	
 	if distance < 3 then
 		config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -1424,10 +1485,13 @@ local function hoverToRock(targetPos, rock)
 		return
 	end
 	
+	-- ✅ FIX: Stronger force to overcome ground resistance
 	local speedMultiplier = math.min(distance / 10, 1)
-	local targetSpeed = config.hoverSpeed * speedMultiplier
+	local targetSpeed = math.max(config.hoverSpeed * speedMultiplier, 30) -- Minimum 30 speed
 	local desiredVelocity = direction.Unit * targetSpeed
-	local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.5)
+	
+	-- ✅ FIX: More aggressive lerp to overcome ground collision
+	local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.7)
 	
 	config.bodyVelocity.Velocity = newVelocity
 	
@@ -1435,7 +1499,7 @@ local function hoverToRock(targetPos, rock)
 	if positionPart then
 		local lookCFrame = CFrame.new(currentPos, positionPart.Position)
 		config.bodyGyro.CFrame = lookCFrame
-		config.bodyGyro.P = 10000
+		config.bodyGyro.P = 15000 -- ✅ Increased from 10000
 	end
 end
 
@@ -1638,7 +1702,7 @@ local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Window = Library:CreateWindow({
-	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.1",
+	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.2",
 	Center = true,
 	AutoShow = true,
 	TabPadding = 8,
@@ -1804,7 +1868,6 @@ local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 InfoRightBox:AddLabel('• [Lifesteal] needed if')
 InfoRightBox:AddLabel('  Lava Check')
 InfoRightBox:AddLabel('• Auto-Mine has built-in')
-InfoRightBox:AddLabel('  Lava Check')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('  if not automatically done')
 InfoRightBox:AddLabel('• This Script is in BETA')
@@ -2046,7 +2109,8 @@ _G.UIReferences.rockOptions = rockOptions
 funcs.teleportUp = teleportUp
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 6: AUTOSELL, TELEPORT (HOVER), SETTINGS & CONFIG (FIXED KEYBINDS)
+-- PART 6: AUTOSELL, TELEPORT (HOVER), SETTINGS & CONFIG (FIXED KEYBINDS + DEFENSE)
+-- ✅ FIXED: Mining Vertical Distance slider + Defense Lock Position controls
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local config = _G.MobFarmConfig
@@ -2310,45 +2374,30 @@ MenuGroup:AddDivider()
 MenuGroup:AddButton({
 	Text = 'Destroy GUI',
 	Func = function()
-		-- Disable all features first
-		if Toggles.FarmToggle then
-			Toggles.FarmToggle:SetValue(false)
-		end
-		if Toggles.MineToggle then
-			Toggles.MineToggle:SetValue(false)
-		end
-		if Toggles.AutoSellToggle then
-			Toggles.AutoSellToggle:SetValue(false)
-		end
+		if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(false) end
+		if Toggles.MineToggle then Toggles.MineToggle:SetValue(false) end
+		if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(false) end
 		
-		-- Wait for cleanup
 		task.wait(0.5)
 		
-		-- Disconnect keybind connection
 		if _G.KeybindConnection then
 			_G.KeybindConnection:Disconnect()
 			_G.KeybindConnection = nil
 		end
 		
-		-- Stop all loops
 		autoLoopFuncs.stopAutoAttack()
 		autoLoopFuncs.stopAutoMine()
 		autoLoopFuncs.stopAutoSell()
-		
-		-- Stop noclip and physics
 		funcs.stopNoclip()
 		funcs.cleanupPhysicsMovement()
 		
-		-- Clear config references
 		_G.MobFarmConfig = nil
 		_G.FarmFunctions = nil
 		_G.AutoLoopFunctions = nil
 		_G.ConfigFunctions = nil
 		_G.UIReferences = nil
 		
-		-- Unload library
 		Library:Unload()
-		
 		print("✅ GUI Destroyed - All systems stopped")
 	end,
 	DoubleClick = false,
@@ -2375,7 +2424,7 @@ FarmSettingsBox:AddSlider('VerticalDistance', {
 	Text = 'Vertical Distance',
 	Default = 8,
 	Min = 1,
-	Max = 10,
+	Max = 20,
 	Rounding = 0,
 	Compact = false,
 	Callback = function(Value)
@@ -2408,6 +2457,7 @@ FarmSettingsBox:AddToggle('LavaCheck', {
 
 local MiningSettingsBox = Tabs.Settings:AddRightGroupbox('Mining Settings')
 
+-- ✅ FIXED: Mining Vertical Distance slider now updates base value
 MiningSettingsBox:AddSlider('MiningVerticalDistance', {
 	Text = 'Mining Vertical Distance',
 	Default = 6,
@@ -2417,18 +2467,8 @@ MiningSettingsBox:AddSlider('MiningVerticalDistance', {
 	Compact = false,
 	Callback = function(Value)
 		config.miningVerticalDistance = Value
-	end
-})
-
-MiningSettingsBox:AddSlider('DefenseVerticalDistance', {
-	Text = 'Defense Vertical Distance',
-	Default = 6,
-	Min = 1,
-	Max = 10,
-	Rounding = 0,
-	Compact = false,
-	Callback = function(Value)
-		config.miningDefenseVerticalDistance = Value
+		config.normalMiningDistance = Value  -- ✅ FIX: Update the base value too
+		print("⚙️ Mining Vertical Distance set to: " .. Value)
 	end
 })
 
@@ -2441,7 +2481,6 @@ MiningSettingsBox:AddToggle('IgnoreGoblinCave', {
 	end
 })
 
--- ✅ NEW: ADD AVOID OCCUPIED TOGGLE
 MiningSettingsBox:AddToggle('AvoidOccupied', {
 	Text = 'Avoid Occupied Rocks',
 	Default = true,
@@ -2452,7 +2491,39 @@ MiningSettingsBox:AddToggle('AvoidOccupied', {
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 6.5: CONFIG MANAGEMENT & FIXED KEYBIND SYSTEM
+-- ✅ NEW: DEFENSE SYSTEM CONTROLS
+-- ═══════════════════════════════════════════════════════════════════════════
+
+MiningSettingsBox:AddDivider()
+MiningSettingsBox:AddLabel('Defense Settings:')
+
+MiningSettingsBox:AddDropdown('DefenseLockPosition', {
+	Values = {'Back', 'Front', 'Above', 'Below'},
+	Default = 4,  -- Default to "Below"
+	Multi = false,
+	Text = 'Defense Lock Position',
+	Tooltip = 'Position relative to mob when defending while mining',
+	Callback = function(Value)
+		config.defenseLockPosition = Value
+		print("🛡️ Defense Lock Position: " .. Value)
+	end
+})
+
+MiningSettingsBox:AddSlider('DefenseVerticalDistance', {
+	Text = 'Defense Vertical Distance',
+	Default = 6,
+	Min = 1,
+	Max = 10,
+	Rounding = 0,
+	Compact = false,
+	Callback = function(Value)
+		config.miningDefenseVerticalDistance = Value
+		print("🛡️ Defense Vertical Distance: " .. Value)
+	end
+})
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- CONFIG MANAGEMENT & KEYBIND SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local ConfigManagementBox = Tabs.Configs:AddLeftGroupbox('Config Management')
@@ -2546,6 +2617,9 @@ ConfigManagementBox:AddButton({
 			Options.HoverSpeed:SetValue(config.hoverSpeed)
 			Options.VerticalDistance:SetValue(config.verticalDistance)
 			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
+			
+			-- ✅ NEW: Load defense settings
+			Options.DefenseLockPosition:SetValue(config.defenseLockPosition)
 			Options.DefenseVerticalDistance:SetValue(config.miningDefenseVerticalDistance)
 			
 			Toggles.IgnoreGoblinCave:SetValue(config.ignoreGoblinCave)
@@ -2719,7 +2793,11 @@ task.spawn(function()
 			Options.HoverSpeed:SetValue(config.hoverSpeed)
 			Options.VerticalDistance:SetValue(config.verticalDistance)
 			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
+			
+			-- ✅ NEW: Load defense settings
+			Options.DefenseLockPosition:SetValue(config.defenseLockPosition)
 			Options.DefenseVerticalDistance:SetValue(config.miningDefenseVerticalDistance)
+			
 			Toggles.IgnoreGoblinCave:SetValue(config.ignoreGoblinCave)
 			Options.LockPosition:SetValue(config.lockPosition)
 			
@@ -2787,13 +2865,12 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ FIXED KEYBIND SYSTEM - PROPER CONNECTION & ERROR HANDLING
+-- FIXED KEYBIND SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 Library:OnUnload(function()
 	Library.Unloaded = true
 	
-	-- Disconnect keybinds on unload
 	if _G.KeybindConnection then
 		_G.KeybindConnection:Disconnect()
 		_G.KeybindConnection = nil
@@ -2802,17 +2879,14 @@ end)
 
 local UserInputService = game:GetService("UserInputService")
 
--- ✅ FIX: Wrap in pcall and add safety checks
 local function setupKeybinds()
 	if _G.KeybindConnection then
 		_G.KeybindConnection:Disconnect()
 	end
 	
 	_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		-- Don't trigger if typing in chat/textbox
 		if gameProcessed then return end
 		
-		-- ✅ FIX: Add safety checks
 		if not _G.MobFarmConfig then 
 			print("⚠️ Config not loaded yet")
 			return 
@@ -2847,9 +2921,8 @@ local function setupKeybinds()
 	print("✅ Keybinds initialized: F1 = Farming | F2 = Mining")
 end
 
--- ✅ FIX: Delay keybind setup until UI is ready
 task.spawn(function()
-	task.wait(1) -- Wait for UI to fully initialize
+	task.wait(1)
 	setupKeybinds()
 end)
 
@@ -2857,6 +2930,8 @@ local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/
 ThemeManager:SetLibrary(Library)
 ThemeManager:SetFolder('RafsoHub')
 ThemeManager:ApplyToTab(Tabs.Settings)
+
+print("✅ Part 6 loaded with Mining Distance FIX + Defense Controls!")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PART 7A: ORE CHECK FUNCTIONS & LAVA CHECK (WANTED ORES SYSTEM) - FIXED
@@ -3411,7 +3486,10 @@ _G.Part7AFunctions = {
 print("✅ Part 7A loaded - Farming lava check SWITCHES lockPosition!")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 7B: COMPLETE REWRITE - DEFENSE + LAVA CHECK FOR FARMING & MINING
+-- PART 7B: IMPROVED DEFENSE + LAVA CHECK (FIXED LOCAL VARIABLES)
+-- ✅ FIXED: Uses config table instead of local variables to avoid register limit
+-- ✅ FIXED: Defense system uses proper lock position from UI dropdown
+-- ✅ FIXED: Defense respects vertical distance slider
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -3432,8 +3510,6 @@ local Living = workspace:WaitForChild("Living")
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local defenseAttackLoop = nil
-local lastToolEquipTime = 0
-local TOOL_EQUIP_COOLDOWN = 0.5
 
 local function performDefenseAttack()
 	if not config.defendingAgainstMob then return end
@@ -3470,6 +3546,132 @@ local function stopDefenseAttack()
 		defenseAttackLoop:Disconnect()
 		defenseAttackLoop = nil
 		print("🛑 Stopped defense attack loop")
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ✅ FIXED: GET DEFENSE LOCK POSITION (NOW USES CONFIG VALUES)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function getDefenseLockPosition(mob)
+	local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+	if not mobRoot then return nil end
+	
+	-- ✅ Use config values instead of hardcoded
+	local distance = 8  -- Behind/Front distance
+	local verticalDist = config.miningDefenseVerticalDistance  -- ✅ USE SLIDER VALUE
+	local mobPos = mobRoot.Position
+	local targetPos
+	
+	if config.defenseLockPosition == "Back" then
+		local behindOffset = -mobRoot.CFrame.LookVector * distance
+		targetPos = mobPos + behindOffset
+		targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+		
+	elseif config.defenseLockPosition == "Front" then
+		local frontOffset = mobRoot.CFrame.LookVector * distance
+		targetPos = mobPos + frontOffset
+		targetPos = Vector3.new(targetPos.X, mobPos.Y, targetPos.Z)
+		
+	elseif config.defenseLockPosition == "Above" then
+		targetPos = mobPos + Vector3.new(0, verticalDist, 0)
+		
+	elseif config.defenseLockPosition == "Below" then
+		targetPos = mobPos + Vector3.new(0, -verticalDist, 0)
+		
+	else
+		-- Default to Below
+		targetPos = mobPos + Vector3.new(0, -verticalDist, 0)
+	end
+	
+	return targetPos
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ✅ HOVER TO MOB FOR DEFENSE (USING FARMING LOCK SYSTEM)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local function hoverToMobDefense(targetPos, mob)
+	local character = LocalPlayer.Character
+	if not character then return end
+	
+	local rootPart = character:FindFirstChild("HumanoidRootPart")
+	local mobRoot = mob:FindFirstChild("HumanoidRootPart")
+	
+	if not rootPart or not mobRoot or not config.bodyVelocity or not config.bodyGyro then
+		return
+	end
+	
+	local currentPos = rootPart.Position
+	local direction = (targetPos - currentPos)
+	local distance = direction.Magnitude
+	
+	-- ✅ Check if we're locked on
+	config.isLockedOn = distance < 8
+	
+	-- ✅ Special handling for Above/Below positions
+	if (config.defenseLockPosition == "Above" or config.defenseLockPosition == "Below") and distance < 3 then
+		if distance < 1.5 then
+			config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		else
+			local followSpeed = 8
+			local desiredVelocity = direction.Unit * followSpeed
+			config.bodyVelocity.Velocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, 0.1)
+		end
+		
+		if config.defenseLockPosition == "Above" then
+			local angle = math.rad(90)  -- Look down
+			local downCFrame = CFrame.new(currentPos) * CFrame.Angles(-angle, 0, 0)
+			config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(downCFrame, 0.6)
+			config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+			config.bodyGyro.P = 50000
+		else
+			local angle = math.rad(240)  -- Look up (same as farming default)
+			local upCFrame = CFrame.new(currentPos) * CFrame.Angles(angle, math.rad(180), 0)
+			config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(upCFrame, 0.6)
+			config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+			config.bodyGyro.P = 50000
+		end
+		return
+	end
+	
+	-- ✅ Dynamic speed based on distance
+	local targetSpeed
+	if distance < 2 then
+		targetSpeed = 5
+	elseif distance < 5 then
+		targetSpeed = 15
+	else
+		targetSpeed = config.hoverSpeed * math.min(distance / 10, 1)
+	end
+	
+	local desiredVelocity = direction.Unit * targetSpeed
+	
+	-- ✅ Dynamic lerp speed
+	local lerpSpeed
+	if distance < 2 then
+		lerpSpeed = 0.2
+	elseif distance < 5 then
+		lerpSpeed = 0.35
+	else
+		lerpSpeed = 0.25
+	end
+	
+	local newVelocity = config.bodyVelocity.Velocity:Lerp(desiredVelocity, lerpSpeed)
+	config.bodyVelocity.Velocity = newVelocity
+	
+	-- ✅ Dynamic gyro settings
+	local lookCFrame = CFrame.new(currentPos, mobRoot.Position)
+	if distance < 5 then
+		config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.7)
+		config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+		config.bodyGyro.P = 60000
+		config.bodyGyro.D = 1500
+	else
+		config.bodyGyro.CFrame = config.bodyGyro.CFrame:Lerp(lookCFrame, 0.4)
+		config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+		config.bodyGyro.P = 30000
+		config.bodyGyro.D = 1000
 	end
 end
 
@@ -3590,10 +3792,6 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 					print("💚 Reset farming health: " .. math.floor(config.farmingLastHealth))
 				end
 			end
-			
-			if Library then
-				Library:Notify("✅ Back to Below position", 2)
-			end
 		end
 		
 		local newMob = funcs.getClosestMob()
@@ -3635,11 +3833,8 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- MINING LOOP WITH DEFENSE SYSTEM
+-- MINING LOOP WITH IMPROVED DEFENSE SYSTEM (15 STUD DETECTION)
 -- ═══════════════════════════════════════════════════════════════════════════
-
-local lastDefenseCheckTime = 0
-local DEFENSE_CHECK_INTERVAL = 0.5
 
 local miningLoop = RunService.Heartbeat:Connect(function()
 	if not config.miningEnabled or config.isRespawning then 
@@ -3685,12 +3880,13 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	end
 	
 	-- ═══════════════════════════════════════════════════════════════════════════
-	-- ✅ DEFENSE SYSTEM - CHECK FOR THREATS NEAR ROCK
+	-- ✅ DEFENSE SYSTEM - CHECK FOR THREATS NEAR ROCK (15 STUDS)
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
 	local currentTime = tick()
-	if not config.defendingAgainstMob and config.currentRock and (currentTime - lastDefenseCheckTime >= DEFENSE_CHECK_INTERVAL) then
-		lastDefenseCheckTime = currentTime
+	-- ✅ FIXED: Using config values instead of local variables
+	if not config.defendingAgainstMob and config.currentRock and (currentTime - config.lastDefenseCheckTime >= config.defenseCheckInterval) then
+		config.lastDefenseCheckTime = currentTime
 		
 		local rockPositionPart = funcs.getRockPosition(config.currentRock)
 		
@@ -3704,10 +3900,10 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 				if funcs.isValidMob(child) then
 					local mobRoot = child:FindFirstChild("HumanoidRootPart")
 					if mobRoot then
-						-- Distance from MOB to ROCK
+						-- ✅ Distance from MOB to ROCK (15 STUDS)
 						local distance = (rockPos - mobRoot.Position).Magnitude
 						
-						if distance <= config.miningDefenseDistance then
+						if distance <= config.miningDefenseDistance then  -- ✅ NOW 15 STUDS
 							if not closestThreat or distance < closestDistance then
 								closestThreat = child
 								closestDistance = distance
@@ -3722,6 +3918,9 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 				print("⚔️ THREAT DETECTED! Activating defense mode!")
 				print("   Mob: " .. closestThreat.Name)
 				print("   Distance from rock: " .. math.floor(closestDistance) .. " studs")
+				print("   Detection range: " .. config.miningDefenseDistance .. " studs")
+				print("   Defense Position: " .. config.defenseLockPosition)
+				print("   Defense Vertical Distance: " .. config.miningDefenseVerticalDistance)
 				print("═══════════════════════════════════════════════════════════")
 				
 				-- Save current rock
@@ -3760,17 +3959,22 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	end
 	
 	-- ═══════════════════════════════════════════════════════════════════════════
-	-- ✅ DEFENSE MODE - KILL THE MOB
+	-- ✅ IMPROVED DEFENSE MODE - USING FARMING LOCK SYSTEM
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
 	if config.defendingAgainstMob then
-		-- Remove pickaxe if somehow equipped
+		-- ✅ BLOCK ANY PICKAXE ATTEMPTS DURING DEFENSE
 		local pickaxe = character:FindFirstChild("Pickaxe")
 		if pickaxe then
 			print("🚫 Removing pickaxe in defense mode")
 			humanoid:UnequipTools()
-			task.wait(0.1)
-			forceEquipWeapon()
+			task.wait(0.05)
+			
+			-- Immediately equip weapon
+			local weaponInChar = character:FindFirstChild("Weapon")
+			if not weaponInChar then
+				forceEquipWeapon()
+			end
 		end
 		
 		-- Check if mob is still alive
@@ -3834,41 +4038,18 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		-- Ensure weapon is equipped
 		local weaponEquipped = character:FindFirstChild("Weapon") ~= nil
 		if not weaponEquipped then
-			if tick() - lastToolEquipTime >= TOOL_EQUIP_COOLDOWN then
-				lastToolEquipTime = tick()
+			-- ✅ FIXED: Using config values
+			if tick() - config.lastToolEquipTime >= config.toolEquipCooldown then
+				config.lastToolEquipTime = tick()
 				forceEquipWeapon()
 			end
 			return
 		end
 		
-		-- Move to mob and attack
-		local mobRoot = config.defendingAgainstMob:FindFirstChild("HumanoidRootPart")
-		if mobRoot then
-			local mobPos = mobRoot.Position
-			local currentPos = rootPart.Position
-			
-			-- Position for combat
-			local verticalDist = config.miningDefenseVerticalDistance
-			local behindOffset = -mobRoot.CFrame.LookVector * 5
-			local targetPos = mobPos + behindOffset + Vector3.new(0, verticalDist, 0)
-			
-			local direction = (targetPos - currentPos)
-			local distance = direction.Magnitude
-			
-			-- Move to combat position
-			if distance > 5 then
-				config.bodyVelocity.Velocity = direction.Unit * 40
-			elseif distance > 2 then
-				config.bodyVelocity.Velocity = direction.Unit * 20
-			else
-				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-			end
-			
-			-- Face the mob
-			local lookCFrame = CFrame.new(currentPos, mobPos)
-			config.bodyGyro.CFrame = lookCFrame
-			config.bodyGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-			config.bodyGyro.P = 50000
+		-- ✅ NEW: USE FARMING LOCK SYSTEM FOR DEFENSE
+		local lockPos = getDefenseLockPosition(config.defendingAgainstMob)
+		if lockPos then
+			hoverToMobDefense(lockPos, config.defendingAgainstMob)
 		end
 		
 		return
@@ -3882,8 +4063,9 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	if not config.defendingAgainstMob then
 		local pickaxeEquipped = character:FindFirstChild("Pickaxe") ~= nil
 		if not pickaxeEquipped then
-			if tick() - lastToolEquipTime >= TOOL_EQUIP_COOLDOWN then
-				lastToolEquipTime = tick()
+			-- ✅ FIXED: Using config values
+			if tick() - config.lastToolEquipTime >= config.toolEquipCooldown then
+				config.lastToolEquipTime = tick()
 				forceEquipPickaxe()
 			end
 		end
@@ -4039,7 +4221,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 	config.lavaCheckCooldown = false
 	config.rocksCheckedForOre = {}
 	config.ignoredRocks = {}
-	lastToolEquipTime = 0
+	config.lastToolEquipTime = 0  -- ✅ FIXED: Reset config value
 	
 	funcs.cleanupPhysicsMovement()
 	funcs.stopNoclip()
@@ -4076,7 +4258,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 		funcs.startNoclip()
 		
 		task.wait(1)
-		lastToolEquipTime = 0
+		config.lastToolEquipTime = 0  -- ✅ FIXED: Reset config value
 		
 		if wasFarming then 
 			funcs.autoEquipWeapon()
@@ -4097,7 +4279,7 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 				print("💚 Mining health initialized: " .. math.floor(config.lastHealth))
 			end
 		end
-		
+
 		task.wait(1)
 		config.isRespawning = false
 	else
@@ -4105,9 +4287,13 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 	end
 end)
 
+print("✅ Part 7B COMPLETE - Fixed local variables issue!")
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AUTO TALK TO SELLER ON SCRIPT LOAD
+-- ═══════════════════════════════════════════════════════════════════════════
+
 task.spawn(function()
 	task.wait(0)
 	funcs.talkToSeller()
 end)
-
-print("✅ Part 7B loaded - Defense system + Lava check for both modes!")
