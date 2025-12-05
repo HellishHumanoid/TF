@@ -109,16 +109,6 @@ local ItemsByRarity = {
 }
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ORE TYPES - ADD YOUR ORES HERE
--- Format: {name = "Display Name", textureId = "NUMBER_ONLY"}
--- Get the texture ID from Ore > first child (MeshPart) > TextureId
--- ═══════════════════════════════════════════════════════════════════════════
-
-local OreTypes = {
-    {name = "[Broken]", textureId = "rbxassetid://81798304865869"},
-}
-
--- ═══════════════════════════════════════════════════════════════════════════
 -- CONFIG SAVE/LOAD SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -164,16 +154,12 @@ local function saveConfig(configName)
 		autoSellEnabled = _G.MobFarmConfig.autoSellEnabled,
 		selectedItems = _G.MobFarmConfig.selectedItems,
 		lavaCheckEnabled = _G.MobFarmConfig.lavaCheckEnabled,
-		oreCheckEnabled = _G.MobFarmConfig.oreCheckEnabled,
-		wantedOres = _G.MobFarmConfig.wantedOres,
 		avoidOccupied = _G.MobFarmConfig.avoidOccupied,
 		defenseLockPosition = _G.MobFarmConfig.defenseLockPosition,  -- ✅ NEW
 		miningDefenseVerticalDistance = _G.MobFarmConfig.miningDefenseVerticalDistance,  -- ✅ NEW
 	}
 	
 	addToLog("📊 Settings:")
-	addToLog("  Ore Check: " .. tostring(configData.oreCheckEnabled))
-	addToLog("  Wanted Ores: " .. (#configData.wantedOres > 0 and table.concat(configData.wantedOres, ", ") or "(none)"))
 	addToLog("  Avoid Occupied: " .. tostring(configData.avoidOccupied))
 	addToLog("  Defense Position: " .. tostring(configData.defenseLockPosition))  -- ✅ NEW
 	
@@ -256,17 +242,12 @@ local function loadConfig(configName)
 	_G.MobFarmConfig.aboveAngle = configData.aboveAngle or 90
 	_G.MobFarmConfig.belowAngle = configData.belowAngle or 240
 	_G.MobFarmConfig.lavaCheckEnabled = configData.lavaCheckEnabled ~= false
-	_G.MobFarmConfig.oreCheckEnabled = configData.oreCheckEnabled ~= false
 	_G.MobFarmConfig.avoidOccupied = configData.avoidOccupied ~= false
 	
 	-- ✅ NEW: Load defense settings
 	_G.MobFarmConfig.defenseLockPosition = configData.defenseLockPosition or "Below"
 	_G.MobFarmConfig.miningDefenseVerticalDistance = configData.miningDefenseVerticalDistance or 6
-	
-	if configData.wantedOres then
-		_G.MobFarmConfig.wantedOres = configData.wantedOres
-	end
-	
+		
 	if configData.mobTypes then
 		for i, savedMob in ipairs(configData.mobTypes) do
 			if _G.MobFarmConfig.mobTypes[i] then
@@ -440,23 +421,7 @@ _G.MobFarmConfig = {
 		Mythical = {},
 		Rune = {}
 	},
-	
-	-- ═══════════════════════════════════════════════════════════════════════════
-	-- WANTED ORES SYSTEM
-	-- ═══════════════════════════════════════════════════════════════════════════
-	oreCheckEnabled = true,
-	oreCheckInterval = 0.3,
-	lastOreCheckTime = 0,
-	
-	-- Selected wanted ore names from dropdown
-	wantedOres = {},
-	
-	-- ✅ FIXED: Updated lava mining distance to 8
-	normalMiningDistance = 6,
-	normalMiningAngle = 270,
-	lavaMiningDistance = 8,
-	lavaMiningAngle = 90,
-	
+
 	-- ═══════════════════════════════════════════════════════════════════════════
 	-- ✅ NEW: DEFENSE SYSTEM CONFIG
 	-- ═══════════════════════════════════════════════════════════════════════════
@@ -470,9 +435,6 @@ _G.MobFarmConfig = {
 	lastDefenseAttackTime = 0,
 	defenseAttackCooldown = 0.1,
 }
-
--- Store OreTypes globally for UI and ore check functions
-_G.OreTypes = OreTypes
 
 local config = _G.MobFarmConfig
 
@@ -1864,13 +1826,11 @@ InfoLeftBox:AddLabel('• Auto-Mine')
 InfoLeftBox:AddLabel('• Auto-Sell')
 InfoLeftBox:AddLabel('• Teleports')
 InfoLeftBox:AddLabel('• Config System')
-InfoLeftBox:AddLabel('• Wanted Ores System [Broken]')
 
 local InfoRightBox = Tabs.Info:AddRightGroupbox('Tips')
 
 InfoRightBox:AddLabel('• [Lifesteal] needed if')
 InfoRightBox:AddLabel('  Lava Check')
-InfoRightBox:AddLabel('• Auto-Mine has built-in')
 InfoRightBox:AddLabel('• Manually press Talk to Buyer')
 InfoRightBox:AddLabel('  if not automatically done')
 InfoRightBox:AddLabel('• This Script is in BETA')
@@ -2052,58 +2012,6 @@ MiningGroupBox:AddDropdown('RockSelection', {
 		end
 	end
 })
-
--- ═══════════════════════════════════════════════════════════════════════════
--- WANTED ORES UI (RIGHT SIDE OF MINING TAB)
--- ═══════════════════════════════════════════════════════════════════════════
-
-local OreCheckGroupBox = Tabs.Mining:AddRightGroupbox('Wanted Ores [Broken]')
-
-OreCheckGroupBox:AddToggle('OreCheckToggle', {
-	Text = 'Enable Ore Filter',
-	Default = true,
-	Tooltip = 'Only mine rocks containing wanted ores (checks at 40% HP)',
-	Callback = function(Value)
-		config.oreCheckEnabled = Value
-	end
-})
-
-OreCheckGroupBox:AddDivider()
-
-local function getOreOptionsList()
-	local oreOptions = {}
-	for _, oreData in ipairs(_G.OreTypes) do
-		table.insert(oreOptions, oreData.name)
-	end
-	return oreOptions
-end
-
-OreCheckGroupBox:AddDropdown('WantedOres', {
-	Values = getOreOptionsList(),
-	Default = 1,
-	Multi = true,
-	Text = 'Wanted Ores',
-	Tooltip = 'Select ores you want - rocks without these will be skipped',
-	Callback = function(Value)
-		config.wantedOres = {}
-		for oreName, isEnabled in pairs(Value) do
-			if isEnabled then
-				table.insert(config.wantedOres, oreName)
-			end
-		end
-		
-		if #config.wantedOres > 0 then
-			print("💎 Wanted ores: " .. table.concat(config.wantedOres, ", "))
-		else
-			print("💎 No wanted ores - mining all")
-		end
-	end
-})
-
-OreCheckGroupBox:AddDivider()
-
-OreCheckGroupBox:AddLabel('Checks at 40% rock HP')
-OreCheckGroupBox:AddLabel('No selection = mine all')
 
 _G.UIReferences.mobOptions = mobOptions
 _G.UIReferences.rockOptions = rockOptions
@@ -4001,33 +3909,6 @@ end
 			if funcs.isOreOccupied(potentialRock) then
 				table.insert(config.ignoredRocks, potentialRock)
 				return
-			end
-			
-			-- Check wanted ores
-			if config.oreCheckEnabled and #config.wantedOres > 0 then
-				local textureNum = part7a.getOreTextureFromRock(potentialRock)
-				
-				if textureNum then
-					local oreName = part7a.getOreNameFromTexture(textureNum)
-					local isWanted = false
-					
-					if oreName then
-						for _, wantedOreName in ipairs(config.wantedOres) do
-							if oreName == wantedOreName then
-								isWanted = true
-								break
-							end
-						end
-					end
-					
-					if not isWanted then
-						table.insert(config.ignoredRocks, potentialRock)
-						if Library then 
-							Library:Notify("Skipped - Wrong ore!", 1) 
-						end
-						return
-					end
-				end
 			end
 			
 			-- Lock onto new rock
