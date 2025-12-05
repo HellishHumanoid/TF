@@ -2934,7 +2934,7 @@ ThemeManager:ApplyToTab(Tabs.Settings)
 print("✅ Part 6 loaded with Mining Distance FIX + Defense Controls!")
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- PART 7A: ORE CHECK FUNCTIONS & LAVA CHECK (WANTED ORES SYSTEM) - FIXED
+-- PART 7A: LAVA CHECK + 0 HP ROCK CHECK (NO WANTED ORES)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Players = game:GetService("Players")
@@ -2951,11 +2951,84 @@ local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
 local SKIP_HOVER_DISTANCE = 150
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- ✅ NEW: SIMPLE 0 HP CHECK (CHECKS EVERY 0.2 SECONDS)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+config.lastRockHPCheckTime = 0
+config.rockHPCheckInterval = 0.1  -- Check every 0.2 seconds
+
+local function isRockAtZeroHP(rock)
+	if not rock or not rock.Parent then return false end
+	
+	local rockTypeModel = rock.Parent
+	if not rockTypeModel then return false end
+	
+	local infoFrame = rockTypeModel:FindFirstChild("infoFrame")
+	if not infoFrame then return false end
+	
+	local frame = infoFrame:FindFirstChild("Frame")
+	if not frame then return false end
+	
+	local rockHP = frame:FindFirstChild("rockHP")
+	if not rockHP or not rockHP:IsA("TextBox") then return false end
+	
+	local hpText = rockHP.Text
+	if not hpText or hpText == "" then return false end
+	
+	print("🔍 Checking HP text: '" .. hpText .. "'")  -- Debug
+	
+	-- Check if it contains "0 HP" or starts with "0"
+	if hpText == "0 HP" or hpText == "0" or hpText:find("^0%s") or hpText:find("^0/") then
+		print("✅ MATCH FOUND - Rock is at 0 HP!")
+		return true
+	end
+	
+	return false
+end
+
+local function checkCurrentRockHP()
+	if not config.miningEnabled then return end
+	if not config.currentRock then return end
+	if config.defendingAgainstMob then return end
+	
+	local currentTime = tick()
+	if currentTime - config.lastRockHPCheckTime < config.rockHPCheckInterval then
+		return
+	end
+	
+	config.lastRockHPCheckTime = currentTime
+	
+	-- Get HP
+	local rockTypeModel = config.currentRock.Parent
+	if rockTypeModel then
+		local infoFrame = rockTypeModel:FindFirstChild("infoFrame")
+		if infoFrame then
+			local frame = infoFrame:FindFirstChild("Frame")
+			if frame then
+				local rockHP = frame:FindFirstChild("rockHP")
+				if rockHP and rockHP.Text == "0 HP" then
+					print("💀 ROCK AT 0 HP - CLEARING!")
+					
+					-- ✅ Add to ignored list so we don't pick it again
+					table.insert(config.ignoredRocks, config.currentRock)
+					
+					config.currentRock = nil
+					config.currentRockModel = nil
+					config.currentRockId = nil
+					config.lastRockDurability = nil
+					config.isLockedOn = false
+				end
+			end
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- MINING DEFENSE CONFIG
 -- ═══════════════════════════════════════════════════════════════════════════
 
 config.miningDefenseEnabled = true
-config.miningDefenseDistance = 10
+config.miningDefenseDistance = 15
 config.miningDefenseVerticalDistance = 6
 config.defendingAgainstMob = nil
 config.savedMiningRock = nil
@@ -2976,240 +3049,23 @@ config.currentRockModel = nil
 config.lavaCheckCooldown = false
 config.lavaCooldownTime = 0.5
 
--- ✅ Store original mining settings
 config.normalMiningDistance = 6
 config.normalMiningAngle = 270
 config.lavaMiningDistance = 6
 config.lavaMiningAngle = 90
 
--- ✅ Store original farming position
 config.normalFarmingPosition = "Below"
 config.savedFarmingPosition = nil
 
--- ✅ Track current targets
 config.currentRockId = nil
 config.currentMobId = nil
 
--- ═══════════════════════════════════════════════════════════════════════════
--- WANTED ORES SYSTEM FUNCTIONS
--- ═══════════════════════════════════════════════════════════════════════════
-
-local ORE_CHECK_THRESHOLD = 40
-config.rocksCheckedForOre = {}
-
-local function getRockHPPercent(rock)
-	if not rock or not rock.Parent then return 100 end
-	
-	local rockTypeModel = rock.Parent
-	if not rockTypeModel then return 100 end
-	
-	local infoFrame = rockTypeModel:FindFirstChild("infoFrame")
-	if not infoFrame then return 100 end
-	
-	local frame = infoFrame:FindFirstChild("Frame")
-	if not frame then return 100 end
-	
-	local rockHP = frame:FindFirstChild("rockHP")
-	if not rockHP or not rockHP:IsA("TextBox") then return 100 end
-	
-	local hpText = rockHP.Text
-	if not hpText or hpText == "" then return 100 end
-	
-	local percent = hpText:match("(%d+)%%")
-	if percent then return tonumber(percent) end
-	
-	local current, max = hpText:match("(%d+)/(%d+)")
-	if current and max then return (tonumber(current) / tonumber(max)) * 100 end
-	
-	local num = hpText:match("(%d+)")
-	if num then return tonumber(num) end
-	
-	return 100
-end
-
-local function getOreTextureFromRock(rock)
-	if not rock or not rock.Parent then return nil end
-	
-	local rockTypeModel = rock.Parent
-	
-	local function findOreTexture(parent)
-		for _, child in pairs(parent:GetChildren()) do
-			if child:IsA("Model") and child.Name == "Ore" then
-				local firstChild = child:GetChildren()[1]
-				if firstChild and firstChild:IsA("MeshPart") then
-					if firstChild.TextureId and firstChild.TextureId ~= "" then
-						local textureNum = firstChild.TextureId:match("(%d+)")
-						return textureNum
-					end
-				end
-				return nil
-			end
-		end
-		return nil
-	end
-	
-	local texture = findOreTexture(rock)
-	if texture then return texture end
-	
-	if rockTypeModel and rockTypeModel ~= rock then
-		texture = findOreTexture(rockTypeModel)
-		if texture then return texture end
-	end
-	
-	return nil
-end
-
-local function getOreNameFromTexture(textureNum)
-	if not textureNum then return nil end
-	
-	for _, oreData in ipairs(_G.OreTypes) do
-		if oreData.textureId == textureNum then
-			return oreData.name
-		end
-	end
-	
-	return nil
-end
-
-local function rockHasWantedOre(rock)
-	if not config.oreCheckEnabled then return true end
-	if not rock then return true end
-	
-	if #config.wantedOres == 0 then return true end
-	
-	local textureNum = getOreTextureFromRock(rock)
-	
-	if not textureNum then return true end
-	
-	local oreName = getOreNameFromTexture(textureNum)
-	
-	if oreName then
-		for _, wantedOreName in ipairs(config.wantedOres) do
-			if oreName == wantedOreName then
-				print("💎 Found wanted ore: " .. oreName)
-				return true
-			end
-		end
-	end
-	
-	print("❌ Ore not wanted: " .. (oreName or "Unknown (ID: " .. textureNum .. ")"))
-	return false
-end
-
-local function performOreCheck()
-	if not config.miningEnabled or not config.oreCheckEnabled then return end
-	if not config.currentRock or config.defendingAgainstMob then return end
-	
-	if #config.wantedOres == 0 then return end
-	
-	local currentTime = tick()
-	if currentTime - config.lastOreCheckTime < config.oreCheckInterval then return end
-	config.lastOreCheckTime = currentTime
-	
-	local rockHP = getRockHPPercent(config.currentRock)
-	
-	local rockId = tostring(config.currentRock)
-	if config.rocksCheckedForOre[rockId] then
-		return
-	end
-	
-	if rockHP > 50 then
-		return
-	end
-	
-	if rockHP <= 50 then
-		local textureNum = getOreTextureFromRock(config.currentRock)
-		
-		if textureNum then
-			local oreName = getOreNameFromTexture(textureNum)
-			local isWanted = false
-			
-			if oreName then
-				for _, wantedOreName in ipairs(config.wantedOres) do
-					if oreName == wantedOreName then
-						isWanted = true
-						print("💎 Found wanted ore: " .. oreName .. " at " .. math.floor(rockHP) .. "% HP")
-						config.rocksCheckedForOre[rockId] = true
-						break
-					end
-				end
-			end
-			
-			if not isWanted then
-				print("❌ Skipping rock - Wrong ore: " .. (oreName or "Unknown (ID: " .. textureNum .. ")") .. " at " .. math.floor(rockHP) .. "% HP")
-				
-				table.insert(config.ignoredRocks, config.currentRock)
-				config.rocksCheckedForOre[rockId] = nil
-				config.currentRock = nil
-				config.currentRockModel = nil
-				config.currentRockId = nil
-				config.lastRockDurability = nil
-				config.isLockedOn = false
-				
-				if config.bodyVelocity then
-					config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-				end
-			end
-		else
-			if rockHP <= 40 then
-				print("❌ No ore detected at 40% HP - skipping rock")
-				table.insert(config.ignoredRocks, config.currentRock)
-				config.rocksCheckedForOre[rockId] = nil
-				config.currentRock = nil
-				config.currentRockModel = nil
-				config.currentRockId = nil
-				config.lastRockDurability = nil
-				config.isLockedOn = false
-				
-				if config.bodyVelocity then
-					config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-				end
-			end
-		end
-	end
-end
-
-local function debugCurrentRock()
-	if not config.currentRock then
-		print("❌ No rock selected")
-		return
-	end
-	
-	local rockHP = getRockHPPercent(config.currentRock)
-	local textureNum = getOreTextureFromRock(config.currentRock)
-	local oreName = textureNum and getOreNameFromTexture(textureNum) or nil
-	
-	print("═══════════════════════════════════════════════════════════")
-	print("🔍 ROCK DEBUG")
-	print("═══════════════════════════════════════════════════════════")
-	print("Rock: " .. tostring(config.currentRock.Parent and config.currentRock.Parent.Name or "Unknown"))
-	print("HP: " .. rockHP .. "%")
-	print("Ore Texture ID: " .. (textureNum or "Not found"))
-	print("Ore Name: " .. (oreName or "Not in OreTypes list"))
-	print("Wanted: " .. (#config.wantedOres > 0 and table.concat(config.wantedOres, ", ") or "(none)"))
-	print("═══════════════════════════════════════════════════════════")
-	
-	if textureNum then
-		setclipboard(textureNum)
-		print("📋 Texture ID copied to clipboard!")
-	end
-end
-
-_G.OreCheck = { 
-	perform = performOreCheck, 
-	debug = debugCurrentRock,
-	getHP = getRockHPPercent,
-	getTexture = getOreTextureFromRock,
-	hasWantedOre = rockHasWantedOre,
-}
-
--- ═══════════════════════════════════════════════════════════════════════════
--- ✅ LAVA CHECK FUNCTIONS - SWITCHES lockPosition TO "ABOVE"
--- ═══════════════════════════════════════════════════════════════════════════
-
 config.lastTrackedMob = nil
 
--- ✅ Reset mining lava mode
+-- ═══════════════════════════════════════════════════════════════════════════
+-- LAVA CHECK FUNCTIONS
+-- ═══════════════════════════════════════════════════════════════════════════
+
 local function resetMiningLavaMode()
 	if config.inLavaMode then
 		config.inLavaMode = false
@@ -3228,7 +3084,6 @@ local function resetMiningLavaMode()
 	end
 end
 
--- ✅ Reset farming lava mode
 local function resetFarmingLavaMode()
 	if config.farmingInLavaMode and config.savedFarmingPosition then
 		config.farmingInLavaMode = false
@@ -3247,7 +3102,6 @@ local function resetFarmingLavaMode()
 	end
 end
 
--- ✅ FARMING LAVA CHECK - CHANGES lockPosition TO "ABOVE"
 local function checkFarmingLavaDamage()
 	if not config.enabled then return end
 	if not config.lavaCheckEnabled then return end
@@ -3262,39 +3116,21 @@ local function checkFarmingLavaDamage()
 	
 	local currentHealth = humanoid.Health
 	
-	-- Initialize health
 	if not config.farmingLastHealth then
 		config.farmingLastHealth = currentHealth
-		print("💚 Farming health initialized: " .. math.floor(currentHealth))
 		return
 	end
 	
-	-- Detect ANY health decrease
 	local healthDiff = config.farmingLastHealth - currentHealth
 	
 	if healthDiff > 0 and not config.farmingInLavaMode then
-		print("═══════════════════════════════════════════════════════════")
-		print("🔥 FARMING DAMAGE DETECTED: -" .. math.floor(healthDiff) .. " HP")
-		print("   Current HP: " .. math.floor(currentHealth))
-		print("   Previous HP: " .. math.floor(config.farmingLastHealth))
-		print("   Current Position: " .. config.lockPosition)
-		print("═══════════════════════════════════════════════════════════")
-		
 		config.farmingInLavaMode = true
 		
-		-- ✅ SAVE ORIGINAL POSITION AND SWITCH TO ABOVE
 		if not config.savedFarmingPosition then
 			config.savedFarmingPosition = config.lockPosition
-			print("💾 Saved farming position: " .. config.savedFarmingPosition)
 		end
 		
 		config.lockPosition = "Above"
-		
-		print("🔥 FARMING SWITCHED TO ABOVE!")
-		print("   Previous: " .. config.savedFarmingPosition)
-		print("   Current: " .. config.lockPosition)
-		print("   farmingInLavaMode: " .. tostring(config.farmingInLavaMode))
-		print("═══════════════════════════════════════════════════════════")
 		
 		config.lavaCheckCooldown = true
 		task.delay(config.lavaCooldownTime, function() 
@@ -3302,11 +3138,9 @@ local function checkFarmingLavaDamage()
 		end)
 	end
 	
-	-- Always update last health
 	config.farmingLastHealth = currentHealth
 end
 
--- ✅ MINING LAVA CHECK - Original working version
 local function checkLavaDamage()
 	if not config.miningEnabled then return end
 	if not config.lavaCheckEnabled then return end
@@ -3321,34 +3155,18 @@ local function checkLavaDamage()
 	
 	local currentHealth = humanoid.Health
 	
-	-- Initialize health
 	if not config.lastHealth then
 		config.lastHealth = currentHealth
-		print("💚 Mining health initialized: " .. math.floor(currentHealth))
 		return
 	end
 	
-	-- Detect ANY health decrease
 	local healthDiff = config.lastHealth - currentHealth
 	
 	if healthDiff > 0 and not config.inLavaMode then
-		print("═══════════════════════════════════════════════════════════")
-		print("🔥 MINING DAMAGE DETECTED: -" .. math.floor(healthDiff) .. " HP")
-		print("   Current HP: " .. math.floor(currentHealth))
-		print("   Previous HP: " .. math.floor(config.lastHealth))
-		print("═══════════════════════════════════════════════════════════")
-		
 		config.inLavaMode = true
 		
-		-- SWITCH TO ABOVE
 		config.miningVerticalDistance = config.lavaMiningDistance
 		config.miningAngle = config.lavaMiningAngle
-		
-		print("🔥 MINING SWITCHED TO ABOVE!")
-		print("   miningVerticalDistance: " .. config.miningVerticalDistance)
-		print("   miningAngle: " .. config.miningAngle)
-		print("   inLavaMode: " .. tostring(config.inLavaMode))
-		print("═══════════════════════════════════════════════════════════")
 		
 		if config.currentRock then 
 			config.currentRockModel = config.currentRock.Parent 
@@ -3360,7 +3178,6 @@ local function checkLavaDamage()
 		end)
 	end
 	
-	-- Always update last health
 	config.lastHealth = currentHealth
 end
 
@@ -3413,9 +3230,6 @@ local MESSAGE_COOLDOWN = 0.5
 
 local function switchToNewRock(reason)
 	if config.currentRock and config.miningEnabled and not config.defendingAgainstMob then
-		local rockId = tostring(config.currentRock)
-		config.rocksCheckedForOre[rockId] = nil
-		
 		table.insert(config.ignoredRocks, config.currentRock)
 		config.currentRock = nil
 		config.currentRockModel = nil
@@ -3423,7 +3237,9 @@ local function switchToNewRock(reason)
 		config.lastRockDurability = nil
 		config.isLockedOn = false
 		
-		if config.bodyVelocity then config.bodyVelocity.Velocity = Vector3.new(0, 0, 0) end
+		if config.bodyVelocity then 
+			config.bodyVelocity.Velocity = Vector3.new(0, 0, 0) 
+		end
 	end
 end
 
@@ -3478,12 +3294,11 @@ _G.Part7AFunctions = {
 	checkLavaDamage = checkLavaDamage,
 	checkProximityToTarget = checkProximityToTarget,
 	clickMouseForDefense = clickMouseForDefense,
-	performOreCheck = performOreCheck,
-	getOreTextureFromRock = getOreTextureFromRock,
-	getOreNameFromTexture = getOreNameFromTexture,
+	checkCurrentRockHP = checkCurrentRockHP,  -- ✅ NEW
+	isRockAtZeroHP = isRockAtZeroHP,  -- ✅ NEW
 }
 
-print("✅ Part 7A loaded - Farming lava check SWITCHES lockPosition!")
+print("✅ Part 7A loaded - Simple 0 HP check every 0.2 seconds!")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- PART 7B: IMPROVED DEFENSE + LAVA CHECK (FIXED LOCAL VARIABLES)
@@ -3876,7 +3691,7 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	-- ✅ LAVA CHECK FOR MINING (only when not defending)
 	if not config.defendingAgainstMob then
 		part7a.checkLavaDamage()
-		part7a.performOreCheck()
+		part7a.checkCurrentRockHP()  -- ✅ ADD THIS LINE - CHECKS FOR 0 HP EVERY 0.2 SECONDS
 	end
 	
 	-- ═══════════════════════════════════════════════════════════════════════════
@@ -4094,14 +3909,28 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 		return
 	end
 	
-	-- Check if current rock is still valid
-	if config.currentRock and (not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)) then
+-- Check if current rock is still valid OR at 0 HP
+if config.currentRock then
+	local rockIsInvalid = not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)
+	local rockAtZeroHP = part7a.isRockAtZeroHP(config.currentRock)
+	
+	if rockIsInvalid or rockAtZeroHP then
+		if rockAtZeroHP then
+			print("💀 Rock at 0 HP - Finding new rock...")
+		end
+		
 		config.currentRock = nil
 		config.currentRockModel = nil
 		config.currentRockId = nil
 		config.lastRockDurability = nil
+		config.isLockedOn = false
+		
+		if config.bodyVelocity then
+			config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		end
 		return
 	end
+end
 	
 	-- Find new rock
 	if not config.currentRock then
