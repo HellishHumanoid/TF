@@ -903,6 +903,7 @@ local function performAttack()
 end
 
 local function performMine()
+	if config.defendingAgainstMob then return end  -- ✅ ADD THIS LINE
 	if not config.currentRock then return end
 	if not config.miningEnabled then return end
 	
@@ -1779,14 +1780,16 @@ local function startAutoMine()
 		funcs.autoEquipPickaxe()
 	end)
 	
-	mineLoop = RunService.Heartbeat:Connect(function()
-		if not config.miningEnabled then return end
-		funcs.performMine()
-	end)
+mineLoop = RunService.Heartbeat:Connect(function()
+	if not config.miningEnabled then return end
+	if config.defendingAgainstMob then return end  -- ✅ ADD THIS LINE
+	funcs.performMine()
+end)
 	
 	if not pickaxeCheckLoop then
 		pickaxeCheckLoop = RunService.Heartbeat:Connect(function()
 			if not config.miningEnabled then return end
+			if config.defendingAgainstMob then return end  -- ✅ ADD THIS LINE
 			local currentTime = tick()
 			if currentTime - config.lastPickaxeCheckTime >= config.pickaxeCheckInterval then
 				config.lastPickaxeCheckTime = currentTime
@@ -3491,8 +3494,11 @@ local function hoverToMobDefense(targetPos, mob)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- WEAPON/PICKAXE MANAGEMENT
+-- WEAPON/PICKAXE MANAGEMENT (WITH COOLDOWN)
 -- ═══════════════════════════════════════════════════════════════════════════
+
+config.lastWeaponSwitchTime = 0
+config.weaponSwitchCooldown = 1.0  -- 1 second cooldown between switches
 
 local function forceEquipWeapon()
 	local character = LocalPlayer.Character
@@ -3506,15 +3512,22 @@ local function forceEquipWeapon()
 		return true
 	end
 	
+	-- ✅ Check cooldown before switching
+	local currentTime = tick()
+	if currentTime - config.lastWeaponSwitchTime < config.weaponSwitchCooldown then
+		return false
+	end
+	
 	humanoid:UnequipTools()
-	task.wait(0.15)
+	task.wait(0.25)
 	
 	local backpack = LocalPlayer:FindFirstChild("Backpack")
 	if backpack then
 		local weapon = backpack:FindFirstChild("Weapon")
 		if weapon and weapon:IsA("Tool") then
 			humanoid:EquipTool(weapon)
-			task.wait(0.2)
+			task.wait(0.3)
+			config.lastWeaponSwitchTime = tick()  -- ✅ Update cooldown
 			print("⚔️ WEAPON EQUIPPED")
 			return true
 		end
@@ -3535,15 +3548,22 @@ local function forceEquipPickaxe()
 		return true
 	end
 	
+	-- ✅ Check cooldown before switching
+	local currentTime = tick()
+	if currentTime - config.lastWeaponSwitchTime < config.weaponSwitchCooldown then
+		return false
+	end
+	
 	humanoid:UnequipTools()
-	task.wait(0.15)
+	task.wait(0.25)
 	
 	local backpack = LocalPlayer:FindFirstChild("Backpack")
 	if backpack then
 		local pickaxe = backpack:FindFirstChild("Pickaxe")
 		if pickaxe and pickaxe:IsA("Tool") then
 			humanoid:EquipTool(pickaxe)
-			task.wait(0.2)
+			task.wait(0.3)
+			config.lastWeaponSwitchTime = tick()  -- ✅ Update cooldown
 			print("⛏️ PICKAXE EQUIPPED")
 			return true
 		end
@@ -3777,50 +3797,77 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 	-- ✅ IMPROVED DEFENSE MODE - USING FARMING LOCK SYSTEM
 	-- ═══════════════════════════════════════════════════════════════════════════
 	
-	if config.defendingAgainstMob then
-		-- ✅ BLOCK ANY PICKAXE ATTEMPTS DURING DEFENSE
-		local pickaxe = character:FindFirstChild("Pickaxe")
-		if pickaxe then
-			print("🚫 Removing pickaxe in defense mode")
-			humanoid:UnequipTools()
-			task.wait(0.05)
-			
-			-- Immediately equip weapon
-			local weaponInChar = character:FindFirstChild("Weapon")
-			if not weaponInChar then
-				forceEquipWeapon()
-			end
-		end
+if config.defendingAgainstMob then
+	-- ✅ Ensure weapon is equipped, unequip pickaxe if present
+	local pickaxe = character:FindFirstChild("Pickaxe")
+	local weaponInChar = character:FindFirstChild("Weapon")
+	
+	if pickaxe and not weaponInChar then
+		humanoid:UnequipTools()
+		task.wait(0.15)
+		forceEquipWeapon()
+		task.wait(0.1)  -- ✅ Wait for weapon to fully equip
+	elseif not pickaxe and not weaponInChar then
+		forceEquipWeapon()
+		task.wait(0.1)
+	end
 		
-		-- Check if mob is still alive
+-- Check if mob is still alive
 		local mobStillAlive = config.defendingAgainstMob.Parent and funcs.isValidMob(config.defendingAgainstMob)
 		
 		if not mobStillAlive then
-			print("═══════════════════════════════════════════════════════════")
-			print("✅ THREAT ELIMINATED! Returning to mining...")
-			print("═══════════════════════════════════════════════════════════")
+			-- ✅ DOUBLE CHECK: Make sure NO other mobs are nearby before switching back
+			local safeToSwitchBack = true
 			
-			stopDefenseAttack()
-			
-			config.defendingAgainstMob = nil
-			config.weaponEquipped = false
-			
-			-- Stop movement
-			if config.bodyVelocity then
-				config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+			-- Check if any other threats are within range
+			for _, child in pairs(Living:GetChildren()) do
+				if funcs.isValidMob(child) then
+					local mobRoot = child:FindFirstChild("HumanoidRootPart")
+					if mobRoot and rootPart then
+						local distance = (rootPart.Position - mobRoot.Position).Magnitude
+						if distance <= (config.miningDefenseDistance + 5) then  -- Extra 5 studs safety margin
+							safeToSwitchBack = false
+							print("⚠️ Another threat nearby - staying in defense mode!")
+							
+							-- Lock onto this new threat
+							config.defendingAgainstMob = child
+							return
+						end
+					end
+				end
 			end
 			
-			-- Switch back to pickaxe
-			print("🔄 Switching back to pickaxe...")
-			humanoid:UnequipTools()
-			task.wait(0.2)
-			
-			if forceEquipPickaxe() then
-				print("✅ Pickaxe equipped - resuming mining")
+			-- Only switch back if it's truly safe
+			if safeToSwitchBack then
+				print("═══════════════════════════════════════════════════════════")
+				print("✅ THREAT ELIMINATED! Area is clear - returning to mining...")
+				print("═══════════════════════════════════════════════════════════")
+				
+				stopDefenseAttack()
+				
+				config.defendingAgainstMob = nil
+				config.weaponEquipped = false
+				
+				-- Stop movement
+				if config.bodyVelocity then
+					config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+				end
+				
+				-- Switch back to pickaxe ONLY when safe
+				print("🔄 Switching back to pickaxe...")
+				humanoid:UnequipTools()
+				task.wait(0.3)
+				
+				local pickaxeSuccess = forceEquipPickaxe()
+				if pickaxeSuccess then
+					print("✅ Pickaxe equipped - resuming mining")
+				else
+					print("⏳ Pickaxe switch on cooldown - will retry...")
+				end
 			end
 			
-			-- Restore saved rock
-			if config.savedMiningRock then
+			-- Restore saved rock (only if we actually switched back)
+			if safeToSwitchBack and config.savedMiningRock then
 				if config.savedMiningRock.Parent and funcs.isValidRock(config.savedMiningRock) then
 					config.currentRock = config.savedMiningRock
 					config.currentRockModel = config.currentRock.Parent
@@ -3850,16 +3897,21 @@ local miningLoop = RunService.Heartbeat:Connect(function()
 			return
 		end
 		
-		-- Ensure weapon is equipped
-		local weaponEquipped = character:FindFirstChild("Weapon") ~= nil
-		if not weaponEquipped then
-			-- ✅ FIXED: Using config values
-			if tick() - config.lastToolEquipTime >= config.toolEquipCooldown then
-				config.lastToolEquipTime = tick()
-				forceEquipWeapon()
-			end
-			return
+-- Ensure weapon is equipped (only check once, not repeatedly)
+local weaponInChar = character:FindFirstChild("Weapon")
+if not weaponInChar then
+	if not config.weaponEquipped then  -- ✅ Only equip once
+		print("⚔️ Equipping weapon for defense...")
+		humanoid:UnequipTools()
+		task.wait(0.1)
+		if forceEquipWeapon() then
+			config.weaponEquipped = true
 		end
+	end
+	return
+end
+
+config.weaponEquipped = true  -- ✅ Mark as equipped
 		
 		-- ✅ NEW: USE FARMING LOCK SYSTEM FOR DEFENSE
 		local lockPos = getDefenseLockPosition(config.defendingAgainstMob)
