@@ -2996,33 +2996,33 @@ local function setupKeybinds()
 	_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 		
+		-- ✅ FIXED: Check if config AND UI are loaded
 		if not _G.MobFarmConfig then 
-			print("⚠️ Config not loaded yet")
 			return 
 		end
-		if not Toggles then
-			print("⚠️ Toggles not initialized yet")
-			return
-		end
+		
+		-- ✅ FIXED: Safe access to Toggles
+		local farmToggle = Toggles and Toggles.FarmToggle
+		local mineToggle = Toggles and Toggles.MineToggle
 		
 		-- F1 - Toggle Farming
 		if input.KeyCode == Enum.KeyCode.F1 then
-			if Toggles.FarmToggle then
+			if farmToggle then
 				local newValue = not config.enabled
-				Toggles.FarmToggle:SetValue(newValue)
-				Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
-			else
-				print("⚠️ FarmToggle not found")
+				farmToggle:SetValue(newValue)
+				if Library then
+					Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
+				end
 			end
 			
 		-- F2 - Toggle Mining
 		elseif input.KeyCode == Enum.KeyCode.F2 then
-			if Toggles.MineToggle then
+			if mineToggle then
 				local newValue = not config.miningEnabled
-				Toggles.MineToggle:SetValue(newValue)
-				Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
-			else
-				print("⚠️ MineToggle not found")
+				mineToggle:SetValue(newValue)
+				if Library then
+					Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
+				end
 			end
 		end
 	end)
@@ -3030,8 +3030,9 @@ local function setupKeybinds()
 	print("✅ Keybinds initialized: F1 = Farming | F2 = Mining")
 end
 
+-- ✅ FIXED: Wait longer before setting up keybinds
 task.spawn(function()
-	task.wait(1)
+	task.wait(3)  -- Changed from 1 to 3 seconds
 	setupKeybinds()
 end)
 
