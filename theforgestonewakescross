@@ -2342,17 +2342,16 @@ Toggles.AutoJoinWorld2 = World2Box:AddToggle('AutoJoinWorld2', {
 	Text = 'Auto-Join Forgotten Kingdom',
 	Default = false,
 	Tooltip = 'Automatically join Forgotten Kingdom every 5 minutes',
-	Callback = function(Value)
-		config.autoJoinWorld2Enabled = Value
-		
-		-- ADD THIS CHECK RIGHT HERE ↓
-		if _G.isLoadingConfig then
-			return  -- Stop here, don't do anything else
-		end
-		-- ↑ ADD THIS CHECK RIGHT HERE
-		
-		if Value then
-			if not checkForPortalTool() then
+Callback = function(Value)
+    config.autoJoinWorld2Enabled = Value
+    
+    -- TEMPORARILY COMMENT THIS OUT TO TEST ↓
+    -- if _G.isLoadingConfig then
+    --     return
+    -- end
+    
+    if Value then
+        if not checkForPortalTool() then
 				Library:Notify("You must unlock the Portal first!", 3)
 				Toggles.AutoJoinWorld2:SetValue(false)
 				config.autoJoinWorld2Enabled = false -- ADD THIS LINE
