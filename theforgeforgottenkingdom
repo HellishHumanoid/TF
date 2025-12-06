@@ -1625,6 +1625,13 @@ local HOVER_POSITION_2 = Vector3.new(415.61, 86.93, -63.19)
 local TELEPORT_UP_DISTANCE = 10
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- ENSURE TOGGLES/OPTIONS ARE GLOBALLY ACCESSIBLE
+-- ═══════════════════════════════════════════════════════════════════════════
+
+getgenv().Toggles = Toggles
+getgenv().Options = Options
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- ✅ NEW: TELEPORT UP FUNCTION
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -2989,51 +2996,70 @@ end)
 local UserInputService = game:GetService("UserInputService")
 
 local function setupKeybinds()
-	if _G.KeybindConnection then
-		_G.KeybindConnection:Disconnect()
-	end
-	
-	_G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
-		
-		-- ✅ FIXED: Check if config AND UI are loaded
-		if not _G.MobFarmConfig then 
-			return 
-		end
-		
-		-- ✅ FIXED: Safe access to Toggles
-		local farmToggle = Toggles and Toggles.FarmToggle
-		local mineToggle = Toggles and Toggles.MineToggle
-		
-		-- F1 - Toggle Farming
-		if input.KeyCode == Enum.KeyCode.F1 then
-			if farmToggle then
-				local newValue = not config.enabled
-				farmToggle:SetValue(newValue)
-				if Library then
-					Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
-				end
-			end
-			
-		-- F2 - Toggle Mining
-		elseif input.KeyCode == Enum.KeyCode.F2 then
-			if mineToggle then
-				local newValue = not config.miningEnabled
-				mineToggle:SetValue(newValue)
-				if Library then
-					Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
-				end
-			end
-		end
-	end)
-	
-	print("✅ Keybinds initialized: F1 = Farming | F2 = Mining")
+    if _G.KeybindConnection then
+        _G.KeybindConnection:Disconnect()
+    end
+    
+    _G.KeybindConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        
+        -- ✅ SAFER: Wait for UI to fully load
+        if not getgenv().Toggles then 
+            warn("⚠️ Toggles not loaded yet!")
+            return 
+        end
+        
+        -- ✅ SAFER: Check if config exists
+        if not _G.MobFarmConfig then 
+            return 
+        end
+        
+        -- Get toggles safely
+        local farmToggle = getgenv().Toggles.FarmToggle
+        local mineToggle = getgenv().Toggles.MineToggle
+        
+        -- F1 - Toggle Farming
+        if input.KeyCode == Enum.KeyCode.F1 then
+            if farmToggle then
+                local newValue = not config.enabled
+                farmToggle:SetValue(newValue)
+                if Library then
+                    Library:Notify("Farming: " .. (newValue and "ON" or "OFF"), 2)
+                end
+            else
+                warn("⚠️ FarmToggle not found!")
+            end
+            
+        -- F2 - Toggle Mining
+        elseif input.KeyCode == Enum.KeyCode.F2 then
+            if mineToggle then
+                local newValue = not config.miningEnabled
+                mineToggle:SetValue(newValue)
+                if Library then
+                    Library:Notify("Mining: " .. (newValue and "ON" or "OFF"), 2)
+                end
+            else
+                warn("⚠️ MineToggle not found!")
+            end
+        end
+    end)
+    
+    print("✅ Keybinds initialized: F1 = Farming | F2 = Mining")
 end
 
--- ✅ FIXED: Wait longer before setting up keybinds
+-- ✅ Wait even longer for full UI initialization
 task.spawn(function()
-	task.wait(3)  -- Changed from 1 to 3 seconds
-	setupKeybinds()
+    task.wait(5)  -- Increased from 3 to 5 seconds
+    
+    -- Verify UI is loaded
+    if not getgenv().Toggles or not getgenv().Toggles.FarmToggle then
+        warn("⚠️ Waiting for UI to fully load...")
+        repeat task.wait(0.5) until getgenv().Toggles and getgenv().Toggles.FarmToggle
+        task.wait(1)
+    end
+    
+    setupKeybinds()
+    print("✅ Keybinds ready!")
 end)
 
 local ThemeManager = loadstring(game:HttpGet('https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/ThemeManager.lua'))()
