@@ -120,23 +120,24 @@ local function saveConfig(configName)
 	addToLog("💾 SAVING CONFIG: " .. configName)
 	addToLog("═══════════════════════════════════════════════════════════")
 	
-	local configData = {
-		enabled = _G.MobFarmConfig.enabled,
-		behindDistance = _G.MobFarmConfig.behindDistance,
-		verticalDistance = _G.MobFarmConfig.verticalDistance,
-		farmDistance = _G.MobFarmConfig.farmDistance,
-		hoverSpeed = _G.MobFarmConfig.hoverSpeed,
-		lockPosition = _G.MobFarmConfig.lockPosition,
-		aboveAngle = _G.MobFarmConfig.aboveAngle,
-		belowAngle = _G.MobFarmConfig.belowAngle,
-		mobTypes = {},
-		miningEnabled = _G.MobFarmConfig.miningEnabled,
-		miningVerticalDistance = _G.MobFarmConfig.miningVerticalDistance,
-		miningAngle = _G.MobFarmConfig.miningAngle,
-		rockTypes = {},
-		autoSellEnabled = _G.MobFarmConfig.autoSellEnabled,
-		selectedItems = _G.MobFarmConfig.selectedItems,
-	}
+local configData = {
+	enabled = _G.MobFarmConfig.enabled,
+	behindDistance = _G.MobFarmConfig.behindDistance,
+	verticalDistance = _G.MobFarmConfig.verticalDistance,
+	farmDistance = _G.MobFarmConfig.farmDistance,
+	hoverSpeed = _G.MobFarmConfig.hoverSpeed,
+	lockPosition = _G.MobFarmConfig.lockPosition,
+	aboveAngle = _G.MobFarmConfig.aboveAngle,
+	belowAngle = _G.MobFarmConfig.belowAngle,
+	mobTypes = {},
+	miningEnabled = _G.MobFarmConfig.miningEnabled,
+	miningVerticalDistance = _G.MobFarmConfig.miningVerticalDistance,
+	miningAngle = _G.MobFarmConfig.miningAngle,
+	rockTypes = {},
+	autoSellEnabled = _G.MobFarmConfig.autoSellEnabled,
+	selectedItems = _G.MobFarmConfig.selectedItems,
+	autoJoinWorld2Enabled = _G.MobFarmConfig.autoJoinWorld2Enabled, -- ADD THIS LINE
+}
 	
 	addToLog("📊 Current settings being saved:")
 	addToLog("  Farming Enabled: " .. tostring(configData.enabled))
@@ -253,6 +254,7 @@ local function loadConfig(configName)
 	_G.MobFarmConfig.enabled = configData.enabled or false
 	_G.MobFarmConfig.miningEnabled = configData.miningEnabled or false
 	_G.MobFarmConfig.autoSellEnabled = configData.autoSellEnabled or false
+	_G.MobFarmConfig.autoJoinWorld2Enabled = configData.autoJoinWorld2Enabled or false
 	_G.MobFarmConfig.behindDistance = configData.behindDistance or 8
 	_G.MobFarmConfig.verticalDistance = configData.verticalDistance or 8
 	_G.MobFarmConfig.farmDistance = configData.farmDistance or 1000
@@ -492,6 +494,7 @@ _G.MobFarmConfig = {
 		{name = "Pebble", enabled = false, priority = 3},
 	},
 	
+	autoJoinWorld2Enabled = false,
 	autoSellEnabled = false,
 	sellCooldown = 1.5,
 	lastSellTime = 0,
@@ -2340,10 +2343,13 @@ Toggles.AutoJoinWorld2 = World2Box:AddToggle('AutoJoinWorld2', {
 	Default = false,
 	Tooltip = 'Automatically join Forgotten Kingdom every 5 minutes',
 	Callback = function(Value)
+		config.autoJoinWorld2Enabled = Value -- ADD THIS LINE AT START
+		
 		if Value then
 			if not checkForPortalTool() then
 				Library:Notify("You must unlock the Portal first!", 3)
 				Toggles.AutoJoinWorld2:SetValue(false)
+				config.autoJoinWorld2Enabled = false -- ADD THIS LINE
 				return
 			end
 			
@@ -2359,6 +2365,7 @@ Toggles.AutoJoinWorld2 = World2Box:AddToggle('AutoJoinWorld2', {
 				local success = startWorld2AutoJoin()
 				if not success then
 					Toggles.AutoJoinWorld2:SetValue(false)
+					config.autoJoinWorld2Enabled = false -- ADD THIS LINE
 					pressK()
 				else
 					Library:Notify("World 2 Auto-Join started!", 3)
@@ -2596,6 +2603,7 @@ ConfigManagementBox:AddButton({
 			if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
 			if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
 			if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(config.autoSellEnabled) end
+			if Toggles.AutoJoinWorld2 then Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled) end
 			if Options.HoverSpeed then Options.HoverSpeed:SetValue(config.hoverSpeed) end
 			if Options.VerticalDistance then Options.VerticalDistance:SetValue(config.verticalDistance) end
 			if Options.MiningVerticalDistance then Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance) end
@@ -2756,7 +2764,7 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 task.spawn(function()
-	task.wait(2)
+	task.wait(0)
 	
 	local autoloadName = configFuncs.getAutoload()
 	if autoloadName then
@@ -2764,13 +2772,14 @@ task.spawn(function()
 		
 		local success = configFuncs.loadConfig(autoloadName)
 		
-		if success then
-			task.wait(0.5)
-			
-			if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
-			if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
-			if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(config.autoSellEnabled) end
-			if Options.HoverSpeed then Options.HoverSpeed:SetValue(config.hoverSpeed) end
+if success then
+	task.wait(0.5)
+	
+	if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
+	if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
+	if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(config.autoSellEnabled) end
+	if Toggles.AutoJoinWorld2 then Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled) end -- ADD THIS LINE
+	if Options.HoverSpeed then Options.HoverSpeed:SetValue(config.hoverSpeed) end
 			if Options.VerticalDistance then Options.VerticalDistance:SetValue(config.verticalDistance) end
 			if Options.MiningVerticalDistance then Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance) end
 			if Options.LockPosition then Options.LockPosition:SetValue(config.lockPosition) end
