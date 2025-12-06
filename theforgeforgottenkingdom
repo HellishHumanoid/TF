@@ -2167,8 +2167,6 @@ MiningGroupBox:AddToggle('OreFilterToggle', {
 	end
 })
 
-MiningGroupBox:AddLabel('Select Ores to Mine:')
-
 MiningGroupBox:AddDropdown('OreSelection', {
 	Values = config.availableOres,
 	Default = 1,
@@ -2192,12 +2190,6 @@ MiningGroupBox:AddDropdown('OreSelection', {
 		print("═══════════════════════════════════════════════════════════")
 	end
 })
-
-MiningGroupBox:AddLabel('Ore Filter Info:')
-MiningGroupBox:AddLabel('• Ores spawn at ~40% rock HP')
-MiningGroupBox:AddLabel('• Checks every 0.2 seconds')
-MiningGroupBox:AddLabel('• Rocks without wanted ores')
-MiningGroupBox:AddLabel('  will be skipped automatically')
 
 _G.UIReferences.mobOptions = mobOptions
 _G.UIReferences.rockOptions = rockOptions
