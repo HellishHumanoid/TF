@@ -2764,7 +2764,7 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 task.spawn(function()
-	task.wait(0)
+	task.wait(0.1)  -- Reduced from 2 to 0.5 seconds
 	
 	local autoloadName = configFuncs.getAutoload()
 	if autoloadName then
@@ -2772,53 +2772,53 @@ task.spawn(function()
 		
 		local success = configFuncs.loadConfig(autoloadName)
 		
-if success then
-	task.wait(0.5)
-	
-	if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
-	if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
-	if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(config.autoSellEnabled) end
-	if Toggles.AutoJoinWorld2 then Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled) end -- ADD THIS LINE
-	if Options.HoverSpeed then Options.HoverSpeed:SetValue(config.hoverSpeed) end
-			if Options.VerticalDistance then Options.VerticalDistance:SetValue(config.verticalDistance) end
-			if Options.MiningVerticalDistance then Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance) end
-			if Options.LockPosition then Options.LockPosition:SetValue(config.lockPosition) end
+		if success then
+			task.wait(0.1)  -- Reduced from 0.5 to 0.1 seconds
 			
-			if Options.MobSelection then
-				local enabledMobs = {}
-				for _, mobData in ipairs(config.mobTypes) do
-					if mobData.enabled then enabledMobs[mobData.name] = true end
+			-- Direct assignments (faster than if checks)
+			Toggles.FarmToggle:SetValue(config.enabled)
+			Toggles.MineToggle:SetValue(config.miningEnabled)
+			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
+			Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled)
+			Options.HoverSpeed:SetValue(config.hoverSpeed)
+			Options.VerticalDistance:SetValue(config.verticalDistance)
+			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
+			Options.LockPosition:SetValue(config.lockPosition)
+			
+			-- Mob selection
+			local enabledMobs = {}
+			for _, mobData in ipairs(config.mobTypes) do
+				if mobData.enabled then enabledMobs[mobData.name] = true end
+			end
+			Options.MobSelection:SetValue(enabledMobs)
+			
+			-- Rock selection
+			local enabledRocks = {}
+			for _, rockData in ipairs(config.rockTypes) do
+				if rockData.enabled then enabledRocks[rockData.name] = true end
+			end
+			Options.RockSelection:SetValue(enabledRocks)
+			
+			-- AutoSell items (optimized with single loop)
+			local itemMappings = {
+				{rarity = "Common", option = Options.CommonItems},
+				{rarity = "Uncommon", option = Options.UncommonItems},
+				{rarity = "Rare", option = Options.RareItems},
+				{rarity = "Epic", option = Options.EpicItems},
+				{rarity = "Legendary", option = Options.LegendaryItems},
+				{rarity = "Mythical", option = Options.MythicalItems},
+				{rarity = "Rune", option = Options.RuneItems}
+			}
+			
+			for _, mapping in ipairs(itemMappings) do
+				local items = {}
+				for _, item in ipairs(config.selectedItems[mapping.rarity] or {}) do
+					items[item] = true
 				end
-				Options.MobSelection:SetValue(enabledMobs)
+				mapping.option:SetValue(items)
 			end
 			
-			if Options.RockSelection then
-				local enabledRocks = {}
-				for _, rockData in ipairs(config.rockTypes) do
-					if rockData.enabled then enabledRocks[rockData.name] = true end
-				end
-				Options.RockSelection:SetValue(enabledRocks)
-			end
-			
-			for rarity, optionName in pairs({
-				Common = "CommonItems",
-				Uncommon = "UncommonItems",
-				Rare = "RareItems",
-				Epic = "EpicItems",
-				Legendary = "LegendaryItems",
-				Mythical = "MythicalItems",
-				Rune = "RuneItems"
-			}) do
-				if Options[optionName] then
-					local items = {}
-					for _, item in ipairs(config.selectedItems[rarity] or {}) do
-						items[item] = true
-					end
-					Options[optionName]:SetValue(items)
-				end
-			end
-			
-			Library:Notify("Autoload '" .. autoloadName .. "' loaded!", 4)
+			Library:Notify("Config loaded!", 2)
 			print("✅ Autoload complete!")
 		end
 	end
