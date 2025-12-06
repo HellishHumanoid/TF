@@ -2592,120 +2592,121 @@ ConfigManagementBox:AddButton({
 })
 
 ConfigManagementBox:AddButton({
-	Text = 'Load Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local success = configFuncs.loadConfig(selectedConfig)
-		
-		if success then
-			Library:Notify("Config '" .. selectedConfig .. "' loaded!", 3)
-			
-			task.wait(0.1)  -- ← You might have 0.1 here
-			
-			if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
-			if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
-			if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(config.autoSellEnabled) end
-			if Toggles.AutoJoinWorld2 then Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled) end
-			if Options.HoverSpeed then Options.HoverSpeed:SetValue(config.hoverSpeed) end
-			if Options.VerticalDistance then Options.VerticalDistance:SetValue(config.verticalDistance) end
-			if Options.MiningVerticalDistance then Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance) end
-			if Options.LockPosition then Options.LockPosition:SetValue(config.lockPosition) end
-			
-			if Options.MobSelection then
-				local enabledMobs = {}
-				for _, mobData in ipairs(config.mobTypes) do
-					if mobData.enabled then
-						enabledMobs[mobData.name] = true
-					end
-				end
-				Options.MobSelection:SetValue(enabledMobs)
-			end
-			
-			if Options.RockSelection then
-				local enabledRocks = {}
-				for _, rockData in ipairs(config.rockTypes) do
-					if rockData.enabled then
-						enabledRocks[rockData.name] = true
-					end
-				end
-				Options.RockSelection:SetValue(enabledRocks)
-			end
-			
-			if Options.CommonItems then
-				local items = {}
-				for _, item in ipairs(config.selectedItems.Common or {}) do items[item] = true end
-				Options.CommonItems:SetValue(items)
-			end
-			
-			if Options.UncommonItems then
-				local items = {}
-				for _, item in ipairs(config.selectedItems.Uncommon or {}) do items[item] = true end
-				Options.UncommonItems:SetValue(items)
-			end
-			
-			if Options.RareItems then
-				local items = {}
-				for _, item in ipairs(config.selectedItems.Rare or {}) do items[item] = true end
-				Options.RareItems:SetValue(items)
-			end
-			
-			if Options.EpicItems then
-				local items = {}
-				for _, item in ipairs(config.selectedItems.Epic or {}) do items[item] = true end
-				Options.EpicItems:SetValue(items)
-			end
-			
-			if Options.LegendaryItems then
-				local items = {}
-				for _, item in ipairs(config.selectedItems.Legendary or {}) do items[item] = true end
-				Options.LegendaryItems:SetValue(items)
-			end
-			
-			if Options.MythicalItems then
-				local items = {}
-				for _, item in ipairs(config.selectedItems.Mythical or {}) do items[item] = true end
-				Options.MythicalItems:SetValue(items)
-			end
-			
-			if Options.RuneItems then
-				local items = {}
-				for _, item in ipairs(config.selectedItems.Rune or {}) do items[item] = true end
-				Options.RuneItems:SetValue(items)
-			end
-			
-			_G.isLoadingConfig = false  -- ← ADD THIS LINE
-			
-			Library:Notify("All settings applied!", 2)
-		else
-			Library:Notify("Failed to load config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Load the selected config'
+    Text = 'Load Config',
+    Func = function()
+        if not selectedConfig or selectedConfig == "" then
+            Library:Notify("Please select a config first!", 3)
+            return
+        end
+        
+        local success = configFuncs.loadConfig(selectedConfig)
+        
+        if success then
+            Library:Notify("Config '" .. selectedConfig .. "' loaded!", 3)
+            
+            _G.isLoadingConfig = true  -- ← SET FLAG BEFORE LOADING UI
+            task.wait(0.1)
+            
+            if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
+            if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
+            if Toggles.AutoSellToggle then Toggles.AutoSellToggle:SetValue(config.autoSellEnabled) end
+            if Toggles.AutoJoinWorld2 then Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled) end
+            if Options.HoverSpeed then Options.HoverSpeed:SetValue(config.hoverSpeed) end
+            if Options.VerticalDistance then Options.VerticalDistance:SetValue(config.verticalDistance) end
+            if Options.MiningVerticalDistance then Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance) end
+            if Options.LockPosition then Options.LockPosition:SetValue(config.lockPosition) end
+            
+            if Options.MobSelection then
+                local enabledMobs = {}
+                for _, mobData in ipairs(config.mobTypes) do
+                    if mobData.enabled then
+                        enabledMobs[mobData.name] = true
+                    end
+                end
+                Options.MobSelection:SetValue(enabledMobs)
+            end
+            
+            if Options.RockSelection then
+                local enabledRocks = {}
+                for _, rockData in ipairs(config.rockTypes) do
+                    if rockData.enabled then
+                        enabledRocks[rockData.name] = true
+                    end
+                end
+                Options.RockSelection:SetValue(enabledRocks)
+            end
+            
+            if Options.CommonItems then
+                local items = {}
+                for _, item in ipairs(config.selectedItems.Common or {}) do items[item] = true end
+                Options.CommonItems:SetValue(items)
+            end
+            
+            if Options.UncommonItems then
+                local items = {}
+                for _, item in ipairs(config.selectedItems.Uncommon or {}) do items[item] = true end
+                Options.UncommonItems:SetValue(items)
+            end
+            
+            if Options.RareItems then
+                local items = {}
+                for _, item in ipairs(config.selectedItems.Rare or {}) do items[item] = true end
+                Options.RareItems:SetValue(items)
+            end
+            
+            if Options.EpicItems then
+                local items = {}
+                for _, item in ipairs(config.selectedItems.Epic or {}) do items[item] = true end
+                Options.EpicItems:SetValue(items)
+            end
+            
+            if Options.LegendaryItems then
+                local items = {}
+                for _, item in ipairs(config.selectedItems.Legendary or {}) do items[item] = true end
+                Options.LegendaryItems:SetValue(items)
+            end
+            
+            if Options.MythicalItems then
+                local items = {}
+                for _, item in ipairs(config.selectedItems.Mythical or {}) do items[item] = true end
+                Options.MythicalItems:SetValue(items)
+            end
+            
+            if Options.RuneItems then
+                local items = {}
+                for _, item in ipairs(config.selectedItems.Rune or {}) do items[item] = true end
+                Options.RuneItems:SetValue(items)
+            end
+            
+            _G.isLoadingConfig = false  -- ← CLEAR FLAG AFTER LOADING UI
+            
+            Library:Notify("All settings applied!", 2)
+        else
+            Library:Notify("Failed to load config!", 3)
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Load the selected config'
 })
 
 ConfigManagementBox:AddButton({
-	Text = 'Overwrite Config',
-	Func = function()
-		if not selectedConfig or selectedConfig == "" then
-			Library:Notify("Please select a config first!", 3)
-			return
-		end
-		
-		local success = configFuncs.saveConfig(selectedConfig)
-		
-		if success then
-			Library:Notify("Config '" .. selectedConfig .. "' overwritten!", 3)
-		else
-			Library:Notify("Failed to overwrite config!", 3)
-		end
-	end,
-	DoubleClick = false,
-	Tooltip = 'Overwrite selected config with current settings'
+    Text = 'Overwrite Config',
+    Func = function()
+        if not selectedConfig or selectedConfig == "" then
+            Library:Notify("Please select a config first!", 3)
+            return
+        end
+        
+        local success = configFuncs.saveConfig(selectedConfig)
+        
+        if success then
+            Library:Notify("Config '" .. selectedConfig .. "' overwritten!", 3)
+        else
+            Library:Notify("Failed to overwrite config!", 3)
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Overwrite selected config with current settings'
 })
 
 ConfigManagementBox:AddButton({
@@ -2772,7 +2773,7 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 task.spawn(function()
-	task.wait(0.1)  -- Reduced from 2 to 0.5 seconds
+	task.wait(0.1)
 	
 	local autoloadName = configFuncs.getAutoload()
 	if autoloadName then
@@ -2780,14 +2781,14 @@ task.spawn(function()
 		
 		local success = configFuncs.loadConfig(autoloadName)
 		
-if success then
-	task.wait(0.1)
-	
-	Toggles.FarmToggle:SetValue(config.enabled)
-	Toggles.MineToggle:SetValue(config.miningEnabled)
-	Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled)
+		if success then
+			_G.isLoadingConfig = true  -- ← ADD THIS LINE (SET FLAG BEFORE LOADING)
+			task.wait(0.1)
+			
+			Toggles.FarmToggle:SetValue(config.enabled)
+			Toggles.MineToggle:SetValue(config.miningEnabled)
 			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
-			Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled)
+			Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled)  -- ← ONLY ONCE!
 			Options.HoverSpeed:SetValue(config.hoverSpeed)
 			Options.VerticalDistance:SetValue(config.verticalDistance)
 			Options.MiningVerticalDistance:SetValue(config.miningVerticalDistance)
