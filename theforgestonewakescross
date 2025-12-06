@@ -2343,7 +2343,13 @@ Toggles.AutoJoinWorld2 = World2Box:AddToggle('AutoJoinWorld2', {
 	Default = false,
 	Tooltip = 'Automatically join Forgotten Kingdom every 5 minutes',
 	Callback = function(Value)
-		config.autoJoinWorld2Enabled = Value -- ADD THIS LINE AT START
+		config.autoJoinWorld2Enabled = Value
+		
+		-- ADD THIS CHECK RIGHT HERE ↓
+		if _G.isLoadingConfig then
+			return  -- Stop here, don't do anything else
+		end
+		-- ↑ ADD THIS CHECK RIGHT HERE
 		
 		if Value then
 			if not checkForPortalTool() then
@@ -2598,7 +2604,7 @@ ConfigManagementBox:AddButton({
 		if success then
 			Library:Notify("Config '" .. selectedConfig .. "' loaded!", 3)
 			
-			task.wait(0.3)
+			task.wait(0.1)  -- ← You might have 0.1 here
 			
 			if Toggles.FarmToggle then Toggles.FarmToggle:SetValue(config.enabled) end
 			if Toggles.MineToggle then Toggles.MineToggle:SetValue(config.miningEnabled) end
@@ -2670,6 +2676,8 @@ ConfigManagementBox:AddButton({
 				for _, item in ipairs(config.selectedItems.Rune or {}) do items[item] = true end
 				Options.RuneItems:SetValue(items)
 			end
+			
+			_G.isLoadingConfig = false  -- ← ADD THIS LINE
 			
 			Library:Notify("All settings applied!", 2)
 		else
@@ -2772,12 +2780,12 @@ task.spawn(function()
 		
 		local success = configFuncs.loadConfig(autoloadName)
 		
-		if success then
-			task.wait(0.1)  -- Reduced from 0.5 to 0.1 seconds
-			
-			-- Direct assignments (faster than if checks)
-			Toggles.FarmToggle:SetValue(config.enabled)
-			Toggles.MineToggle:SetValue(config.miningEnabled)
+if success then
+	task.wait(0.1)
+	
+	Toggles.FarmToggle:SetValue(config.enabled)
+	Toggles.MineToggle:SetValue(config.miningEnabled)
+	Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled)
 			Toggles.AutoSellToggle:SetValue(config.autoSellEnabled)
 			Toggles.AutoJoinWorld2:SetValue(config.autoJoinWorld2Enabled)
 			Options.HoverSpeed:SetValue(config.hoverSpeed)
