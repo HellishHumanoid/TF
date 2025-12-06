@@ -1799,7 +1799,7 @@ local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Window = Library:CreateWindow({
-	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.1",
+	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.2",
 	Center = true,
 	AutoShow = true,
 	TabPadding = 8,
