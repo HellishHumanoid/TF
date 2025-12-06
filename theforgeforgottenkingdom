@@ -467,7 +467,7 @@ _G.MobFarmConfig = {
 	-- ✅ NEW: DEFENSE SYSTEM CONFIG
 	-- ═══════════════════════════════════════════════════════════════════════════
 	miningDefenseEnabled = true,
-	miningDefenseDistance = 15,  -- Detection range (15 studs)
+	miningDefenseDistance = 10,  -- Detection range (10 studs)
 	miningDefenseVerticalDistance = 6,  -- Vertical distance from mob
 	defenseLockPosition = "Below",  -- Default to Below position
 	defendingAgainstMob = nil,
@@ -1562,6 +1562,7 @@ local function hoverToRock(targetPos, rock)
 	
 	if distance < 3 then
 		config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+		config.isLockedOn = true  -- ✅ ADD THIS LINE
 		
 		-- ✅ UPDATED: Use current mining angle (supports both above and below)
 		local angle = math.rad(config.miningAngle)
@@ -3438,7 +3439,8 @@ local function performDefenseAttack()
 	if not config.defendingAgainstMob then return end
 	
 	local currentTime = tick()
-	if currentTime - config.lastDefenseAttackTime < config.defenseAttackCooldown then
+	-- ✅ ONLY ACTIVATE DEFENSE WHEN LOCKED ONTO ROCK
+	if not config.defendingAgainstMob and config.currentRock and config.isLockedOn and (currentTime - config.lastDefenseCheckTime >= config.defenseCheckInterval) then
 		return
 	end
 	
