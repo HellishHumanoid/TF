@@ -159,6 +159,8 @@ belowAngle = _G.MobFarmConfig.belowAngle,
 mobTypes = {},
 oreFilterEnabled = _G.MobFarmConfig.oreFilterEnabled,
 selectedOres = _G.MobFarmConfig.selectedOres,
+zoneFarmEnabled = _G.MobFarmConfig.zoneFarmEnabled,
+selectedZone = _G.MobFarmConfig.selectedZone,
 miningEnabled = _G.MobFarmConfig.miningEnabled,
 miningVerticalDistance = _G.MobFarmConfig.miningVerticalDistance,
 miningAngle = _G.MobFarmConfig.miningAngle,
@@ -264,6 +266,10 @@ _G.MobFarmConfig.miningDefenseVerticalDistance = configData.miningDefenseVertica
 _G.MobFarmConfig.oreFilterEnabled = configData.oreFilterEnabled or false
 _G.MobFarmConfig.selectedOres = configData.selectedOres or {}
 
+-- ✅ NEW: Load zone settings
+_G.MobFarmConfig.zoneFarmEnabled = configData.zoneFarmEnabled or false
+_G.MobFarmConfig.selectedZone = configData.selectedZone or "All Zones"
+
 if configData.mobTypes then
 for i, savedMob in ipairs(configData.mobTypes) do
 if _G.MobFarmConfig.mobTypes[i] then
@@ -352,6 +358,24 @@ aboveAngle = 90,
 belowAngle = 240,
 
 avoidOccupied = true,
+
+    -- ✅ NEW: ZONE FILTERING
+    zoneFarmEnabled = false,
+    selectedZone = "All Zones",
+    availableZones = {
+        "All Zones",
+        "Island2CaveDanger1",
+        "Island2CaveDanger2",
+        "Island2CaveDanger3",
+        "Island2CaveDanger4",
+        "Island2CaveDangerClosed",
+        "Island2CaveDeep",
+        "Island2CaveLavaClosed",
+        "Island2CaveMid",
+        "Island2CaveStart",
+        "Island2GoblinCave",
+        "Island2VolcanicDepths"
+    },
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ✅ NEW: ORE FILTER CONFIG
@@ -624,14 +648,13 @@ local OCCUPIED_CHECK_DISTANCE = 15
 config.rocksWeStarted = config.rocksWeStarted or {}
 
 local function isOreOccupied(rock)
-    -- Early exit if feature disabled
     if not config.avoidOccupied then return false end
     if not rock then return false end
 
-    -- ✅ NEW: If WE already started this rock, it's OURS - never abandon it
     local rockId = tostring(rock)
     if config.rocksWeStarted[rockId] then
-        return false  -- This is OUR rock, don't check for others
+        print("✅ This is OUR rock - ignoring other players")
+        return false  -- This is OUR rock, other players can't steal it
     end
 
     -- Get rock position
@@ -748,69 +771,129 @@ return tonumber(rock.Name)
 end
 
 local function getClosestRock()
-local character = LocalPlayer.Character
-if not character then 
-return nil 
-end
+    local character = LocalPlayer.Character
+    if not character then 
+        return nil 
+    end
 
-local rootPart = character:FindFirstChild("HumanoidRootPart")
-if not rootPart then 
-return nil 
-end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then 
+        return nil 
+    end
 
-local rocksFolder = workspace:FindFirstChild("Rocks")
-if not rocksFolder then
-return nil
-end
+    local rocksFolder = workspace:FindFirstChild("Rocks")
+    if not rocksFolder then
+        return nil
+    end
 
-local closestRock = nil
-local closestDistance = config.farmDistance
-local highestPriority = 999
+    local closestRock = nil
+    local closestDistance = config.farmDistance
+    local highestPriority = 999
 
-for _, islandFolder in pairs(rocksFolder:GetChildren()) do
-if islandFolder:IsA("Folder") then
-if config.ignoreGoblinCave and islandFolder.Name == "Island2GoblinCave" then
-continue
-end
+    for _, islandFolder in pairs(rocksFolder:GetChildren()) do
+        if islandFolder:IsA("Folder") then
+		            -- ✅ NEW: Zone filtering
+            if config.zoneFarmEnabled and config.selectedZone ~= "All Zones" then
+                if islandFolder.Name ~= config.selectedZone then
+                    continue  -- Skip this zone
+                end
+            end
+            if config.ignoreGoblinCave and islandFolder.Name == "Island2GoblinCave" then
+                continue
+            end
 
-for _, spawnPart in pairs(islandFolder:GetChildren()) do
-if spawnPart:IsA("Part") and spawnPart.Name == "SpawnLocation" then
-for _, rockTypeModel in pairs(spawnPart:GetChildren()) do
-if rockTypeModel:IsA("Model") then
-local rockTypeName = rockTypeModel.Name
-local priority = getRockPriority(rockTypeName)
+            for _, spawnPart in pairs(islandFolder:GetChildren()) do
+                if spawnPart:IsA("Part") and spawnPart.Name == "SpawnLocation" then
+                    for _, rockTypeModel in pairs(spawnPart:GetChildren()) do
+                        if rockTypeModel:IsA("Model") then
+                            local rockTypeName = rockTypeModel.Name
+                            local priority = getRockPriority(rockTypeName)
 
-if priority < 999 then
-for _, durabilityModel in pairs(rockTypeModel:GetChildren()) do
-if durabilityModel:IsA("Model") and tonumber(durabilityModel.Name) then
-if not isRockIgnored(durabilityModel) and isValidRock(durabilityModel) then
-local positionPart = getRockPosition(durabilityModel)
-if positionPart then
-local distance = (rootPart.Position - positionPart.Position).Magnitude
+                            if priority < 999 then
+                                for _, durabilityModel in pairs(rockTypeModel:GetChildren()) do
+                                    if durabilityModel:IsA("Model") and tonumber(durabilityModel.Name) then
+                                        if not isRockIgnored(durabilityModel) and isValidRock(durabilityModel) then
+                                            
+                                            -- ✅ CHECK HP FIRST - Skip if already damaged
+                                            local rockTypeModel = durabilityModel.Parent
+                                            local skipRock = false
+                                            
+                                            if rockTypeModel then
+                                                local currentHP = rockTypeModel:GetAttribute("Health")
+                                                local maxHP = rockTypeModel:GetAttribute("MaxHealth")
+                                                
+                                                if currentHP and maxHP and maxHP > 0 then
+                                                    -- If HP is below 100%, someone else is mining it
+                                                    if currentHP < maxHP then
+                                                        local rockId = tostring(durabilityModel)
+                                                        -- UNLESS it's OUR rock
+                                                        if not config.rocksWeStarted[rockId] then
+                                                            skipRock = true
+                                                        else
+                                                            print("✅ Continuing OUR rock: " .. rockTypeName)
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                            
+                                            if not skipRock then
+                                                local positionPart = getRockPosition(durabilityModel)
+                                                if positionPart then
+                                                    local distance = (rootPart.Position - positionPart.Position).Magnitude
 
-if distance <= config.farmDistance then
--- ✅ Real-time occupied check BEFORE considering this rock
-if not isOreOccupied(durabilityModel) then
-if priority < highestPriority or (priority == highestPriority and distance < closestDistance) then
-closestRock = durabilityModel
-closestDistance = distance
-highestPriority = priority
-end
-end
-end
-end
-end
-end
-end
-end
-end
-end
-end
-end
-end
-end
+                                                    if distance <= config.farmDistance then
+                                                        -- ✅ Check for players with pickaxe nearby
+                                                        local occupied = false
+                                                        local rockId = tostring(durabilityModel)
+                                                        
+                                                        -- Skip occupied check if it's OUR rock
+                                                        if not config.rocksWeStarted[rockId] and config.avoidOccupied then
+                                                            local rockPos = positionPart.Position
+                                                            
+                                                            for _, player in pairs(Players:GetPlayers()) do
+                                                                if player ~= LocalPlayer then
+                                                                    local otherChar = player.Character
+                                                                    if otherChar then
+                                                                        local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
+                                                                        if otherRoot then
+                                                                            local playerDist = (otherRoot.Position - rockPos).Magnitude
+                                                                            
+                                                                            if playerDist <= 15 then
+                                                                                local hasPickaxe = otherChar:FindFirstChild("Pickaxe")
+                                                                                if hasPickaxe then
+                                                                                    print("⏭️ Skipping rock near player: " .. player.Name)
+                                                                                    occupied = true
+                                                                                    break
+                                                                                end
+                                                                            end
+                                                                        end
+                                                                    end
+                                                                end
+                                                            end
+                                                        end
+                                                        
+                                                        if not occupied then
+                                                            if priority < highestPriority or (priority == highestPriority and distance < closestDistance) then
+                                                                closestRock = durabilityModel
+                                                                closestDistance = distance
+                                                                highestPriority = priority
+                                                            end
+                                                        end
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 
-return closestRock
+    return closestRock
 end
 
 local function makeRockTransparent(rock)
@@ -2122,20 +2205,25 @@ Callback = function(Value)
 config.miningEnabled = Value
 
 if config.miningEnabled then
-config.ignoredRocks = {}
-config.lastRockDurability = nil
-config.rockDurabilityCheck = tick()
-config.currentRock = nil
+    config.ignoredRocks = {}
+    config.lastRockDurability = nil
+    config.rockDurabilityCheck = tick()
+    config.currentRock = nil
 
-local character = LocalPlayer.Character
-if character then
-local rootPart = character:FindFirstChild("HumanoidRootPart")
-if rootPart then
-config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
-config.hoverSequenceActive = true
-config.currentHoverTarget = 1
-end
-end
+    -- ✅ NEW: Reset idle hover system
+    config.idleHoverActive = false
+    config.idleHoverTimer = 0
+    config.lastIdleRockCheckTime = 0
+
+    local character = LocalPlayer.Character
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            config.hoverPosition1 = Vector3.new(rootPart.Position.X, HOVER_HEIGHT, rootPart.Position.Z)
+            config.hoverSequenceActive = true
+            config.currentHoverTarget = 1
+        end
+    end
 
 funcs.setupPhysicsMovement()
 funcs.startNoclip()
@@ -2644,12 +2732,47 @@ end
 })
 
 MiningSettingsBox:AddToggle('AvoidOccupied', {
-Text = 'Avoid Occupied Rocks',
+Text = '[Broken]',
 Default = true,
 Tooltip = 'Skip rocks that other players are mining',
 Callback = function(Value)
 config.avoidOccupied = Value
 end
+})
+
+-- ✅ NEW: ZONE FARMING UI
+MiningSettingsBox:AddDivider()
+MiningSettingsBox:AddLabel('Zone Farming:')
+
+MiningSettingsBox:AddToggle('ZoneFarmToggle', {
+    Text = 'Enable Zone Farm',
+    Default = false,
+    Tooltip = 'Only mine rocks in the selected zone',
+    Callback = function(Value)
+        config.zoneFarmEnabled = Value
+        
+        if Value then
+            Library:Notify("Zone Farm ON - Mining: " .. config.selectedZone, 3)
+        else
+            Library:Notify("Zone Farm OFF - Mining all zones", 3)
+        end
+    end
+})
+
+MiningSettingsBox:AddDropdown('ZoneSelection', {
+    Values = config.availableZones,
+    Default = 1,  -- "All Zones"
+    Multi = false,
+    Text = 'Select Zone',
+    Tooltip = 'Choose which zone to mine in',
+    Callback = function(Value)
+        config.selectedZone = Value
+        print("🗺️ Selected Zone: " .. Value)
+        
+        if config.zoneFarmEnabled then
+            Library:Notify("Now mining in: " .. Value, 2)
+        end
+    end
 })
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2791,9 +2914,13 @@ Toggles.OreFilterToggle:SetValue(config.oreFilterEnabled)
 
 local selectedOresDict = {}
 for _, oreName in ipairs(config.selectedOres) do
-selectedOresDict[oreName] = true
+    selectedOresDict[oreName] = true
 end
 Options.OreSelection:SetValue(selectedOresDict)
+
+-- ✅ NEW: Load zone settings
+Toggles.ZoneFarmToggle:SetValue(config.zoneFarmEnabled)
+Options.ZoneSelection:SetValue(config.selectedZone)
 
 Options.LockPosition:SetValue(config.lockPosition)
 
@@ -2985,6 +3112,10 @@ for _, oreName in ipairs(config.selectedOres) do
 selectedOresDict[oreName] = true
 end
 Options.OreSelection:SetValue(selectedOresDict)
+
+-- ✅ NEW: Load zone settings
+Toggles.ZoneFarmToggle:SetValue(config.zoneFarmEnabled)
+Options.ZoneSelection:SetValue(config.selectedZone)
 
 Options.LockPosition:SetValue(config.lockPosition)
 
@@ -3647,6 +3778,41 @@ end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- INSTANT ROCK DETECTION FIX - NO MORE WAITING ZONE
+-- Add this RIGHT AFTER "if not config.defendingAgainstMob then" section
+-- in the mining loop (around line 800 in Part 7B)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ✅ INSTANT ROCK CHECK - BEFORE ANY HOVER LOGIC
+-- This runs IMMEDIATELY when mining is enabled, bypassing the waiting zone
+if config.hoverSequenceActive and config.currentHoverTarget < 3 then
+    local character = LocalPlayer.Character
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            -- Check if ANY valid rock exists
+            local nearbyRock = funcs.getClosestRock()
+            
+            if nearbyRock then
+                print("🎯 ROCK DETECTED - Skipping hover sequence!")
+                
+                -- IMMEDIATELY exit hover mode
+                config.hoverSequenceActive = false
+                config.currentHoverTarget = 3
+                
+                -- Stop all movement
+                if config.bodyVelocity then
+                    config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                end
+                
+                -- This will make the script pick up the rock in the next frame
+                return
+            end
+        end
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- ✅ FIXED: GET DEFENSE LOCK POSITION (NOW USES CONFIG VALUES)
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -3939,46 +4105,74 @@ end
 config.idleHoverActive = false
 config.idleHoverTimer = 0
 else
--- ✅ NEW: No mob found - Start idle hover timer
-if not config.idleHoverActive then
-local currentTime = tick()
+        -- ✅ NEW: No rock found - Start idle hover timer
+        if not config.idleHoverActive then
+            local currentTime = tick()
 
-if config.idleHoverTimer == 0 then
-config.idleHoverTimer = currentTime
-print("⏰ No mobs found - Starting idle timer...")
-end
+            if config.idleHoverTimer == 0 then
+                config.idleHoverTimer = currentTime
+                print("⏰ No rocks found - Starting idle timer...")
+            end
 
-if (currentTime - config.idleHoverTimer) >= config.idleHoverDelay then
-print("🚁 No mobs for " .. config.idleHoverDelay .. " seconds - Hovering to Position 2...")
-config.idleHoverActive = true
-end
-end
-end
+            if (currentTime - config.idleHoverTimer) >= config.idleHoverDelay then
+                print("🚁 No rocks for " .. config.idleHoverDelay .. " seconds - Hovering to Position 2...")
+                config.idleHoverActive = true
+                config.lastIdleRockCheckTime = currentTime
+            end
+        end
 
-config.currentMob = newMob
+        -- ✅ NEW: If idle hover is active, periodically check for rocks
+        if config.idleHoverActive then
+            local currentTime = tick()
+            
+            -- Re-check for rocks every 3 seconds while in idle hover
+            if (currentTime - config.lastIdleRockCheckTime) >= config.idleHoverRetryInterval then
+                config.lastIdleRockCheckTime = currentTime
+                print("🔍 Re-checking for rocks while in waiting zone...")
+                
+                local foundRock = funcs.getClosestRock()
+                if foundRock then
+                    print("✅ ROCK FOUND! Exiting waiting zone...")
+                    config.idleHoverActive = false
+                    config.idleHoverTimer = 0
+                    
+                    -- Stop movement
+                    if config.bodyVelocity then
+                        config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                    end
+                    
+                    if Library then
+                        Library:Notify("✅ Rock found - Resuming mining", 2)
+                    end
+                    
+                    -- The next loop iteration will pick up the rock
+                    return
+                else
+                    print("⏳ Still no rocks available...")
+                end
+            end
+            
+            -- Continue hovering to position 2
+            local character = LocalPlayer.Character
+            if character then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    local distance = (rootPart.Position - HOVER_POSITION_2).Magnitude
 
--- ✅ NEW: If idle hover is active and no mob, hover to position 2
-if config.idleHoverActive and not config.currentMob then
-local character = LocalPlayer.Character
-if character then
-local rootPart = character:FindFirstChild("HumanoidRootPart")
-if rootPart then
-local distance = (rootPart.Position - HOVER_POSITION_2).Magnitude
-
-if distance > 10 then
-funcs.hoverToPosition(HOVER_POSITION_2, nil)
-return
-else
-if config.bodyVelocity then
-config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-end
-return
-end
-end
-end
-end
-
-return
+                    if distance > 10 then
+                        funcs.hoverToPosition(HOVER_POSITION_2, nil)
+                        return
+                    else
+                        if config.bodyVelocity then
+                            config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                        end
+                        return
+                    end
+                end
+            end
+        end
+    end
+    return
 end
 
 if config.currentMob then
@@ -3995,31 +4189,31 @@ end)
 
 local miningLoop = RunService.Heartbeat:Connect(function()
 if not config.miningEnabled or config.isRespawning then 
-if config.currentRock then
-config.currentRock = nil
-config.currentRockModel = nil
-config.currentRockId = nil
-config.lastRockDurability = nil
-config.isLockedOn = false
-end
-if config.defendingAgainstMob then
-stopDefenseAttack()
-config.defendingAgainstMob = nil
-config.savedMiningRock = nil
-config.weaponEquipped = false
-end
-config.lastHealth = nil
-config.inLavaMode = false
-config.miningVerticalDistance = config.normalMiningDistance
-config.miningAngle = config.normalMiningAngle
-config.lavaCheckCooldown = false
-return 
+    if config.currentRock then
+        config.currentRock = nil
+        config.currentRockModel = nil
+        config.currentRockId = nil
+        config.lastRockDurability = nil
+        config.isLockedOn = false
+    end
+    if config.defendingAgainstMob then
+        stopDefenseAttack()
+        config.defendingAgainstMob = nil
+        config.savedMiningRock = nil
+        config.weaponEquipped = false
+    end
+    config.lastHealth = nil
+    config.inLavaMode = false
+    config.miningVerticalDistance = config.normalMiningDistance
+    config.miningAngle = config.normalMiningAngle
+    config.lavaCheckCooldown = false
+    return 
 end
 
 -- ✅ ADD THIS DEBUG CHECK RIGHT HERE
 if config.currentRock then
-local currentTime = tick()
-if (currentTime - (config.lastDebugTime or 0)) >= 1 then -- Print every 1 second
+    local currentTime = tick()
+    if (currentTime - (config.lastDebugTime or 0)) >= 1 then -- Print every 1 second
 config.lastDebugTime = currentTime
 print("═══════════════════════════════════════════════════════════")
 print("🔍 [DEBUG] Mining loop running")
@@ -4058,6 +4252,29 @@ if not config.defendingAgainstMob then
     part7a.checkLavaDamage()
     part7a.checkCurrentRockHP()
     part7a.checkRockHPStagnation()  -- ✅ NEW: Check if stuck
+end
+
+-- ✅ INSTANT ROCK CHECK - BEFORE ANY HOVER LOGIC
+if config.hoverSequenceActive and config.currentHoverTarget < 3 then
+    local character = LocalPlayer.Character
+    if character then
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if rootPart then
+            local nearbyRock = funcs.getClosestRock()
+            
+            if nearbyRock then
+                print("🎯 ROCK DETECTED - Skipping hover sequence!")
+                config.hoverSequenceActive = false
+                config.currentHoverTarget = 3
+                
+                if config.bodyVelocity then
+                    config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                end
+                
+                return
+            end
+        end
+    end
 end
 
 -- ✅ ORE FILTER CHECK (reads HP from Attributes, no spam, detects HP regen)
@@ -4169,7 +4386,7 @@ end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ DEFENSE SYSTEM - CHECK FOR THREATS NEAR ROCK (15 STUDS)
+-- ✅ DEFENSE SYSTEM - CHECK FOR THREATS NEAR ROCK (15 STUDS, 30 FOR PYROMANCERS)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local currentTime = tick()
@@ -4192,10 +4409,15 @@ for _, child in pairs(Living:GetChildren()) do
             -- ✅ Distance from MOB to ROCK
             local distance = (rockPos - mobRoot.Position).Magnitude
 
-            -- ✅ SPECIAL: 20 stud detection for Blight Pyromancers only
-            local detectionRange = 15 -- Default 15 studs for all mobs
+            -- ✅ SPECIAL: 30 stud detection for Blight Pyromancers only
+            local detectionRange = config.miningDefenseDistance -- Default 15 studs for all mobs
             if child.Name:match("^Blight Pyromancer%d+$") then
-                detectionRange = 20  -- Extended range for Blight Pyromancers
+                detectionRange = 30  -- Extended range for Blight Pyromancers
+                
+                -- ✅ Debug print when Pyromancer is detected
+                if distance <= detectionRange then
+                    print("🔥 Blight Pyromancer detected at " .. math.floor(distance) .. " studs (Range: 30)")
+                end
             end
 
             if distance <= detectionRange then
@@ -4209,11 +4431,17 @@ for _, child in pairs(Living:GetChildren()) do
 end
 
 if closestThreat then
+-- ✅ Calculate the detection range used for this mob
+local usedDetectionRange = config.miningDefenseDistance
+if closestThreat.Name:match("^Blight Pyromancer%d+$") then
+    usedDetectionRange = 30
+end
+
 print("═══════════════════════════════════════════════════════════")
 print("⚔️ THREAT DETECTED! Activating defense mode!")
 print("   Mob: " .. closestThreat.Name)
 print("   Distance from rock: " .. math.floor(closestDistance) .. " studs")
-print("   Detection range: " .. config.miningDefenseDistance .. " studs")
+print("   Detection range: " .. usedDetectionRange .. " studs")
 print("   Defense Position: " .. config.defenseLockPosition)
 print("   Defense Vertical Distance: " .. config.miningDefenseVerticalDistance)
 print("═══════════════════════════════════════════════════════════")
@@ -4285,13 +4513,21 @@ if funcs.isValidMob(child) then
 local mobRoot = child:FindFirstChild("HumanoidRootPart")
 if mobRoot and rootPart then
 local distance = (rootPart.Position - mobRoot.Position).Magnitude
-if distance <= (config.miningDefenseDistance + 5) then  -- Extra 5 studs safety margin
-safeToSwitchBack = false
-print("⚠️ Another threat nearby - staying in defense mode!")
 
--- Lock onto this new threat
-config.defendingAgainstMob = child
-return
+-- ✅ SPECIAL: 30 stud detection for Blight Pyromancers
+local detectionRange = config.miningDefenseDistance + 5  -- Extra 5 studs safety margin
+if child.Name:match("^Blight Pyromancer%d+$") then
+    detectionRange = 35  -- 30 + 5 safety margin for Pyromancers
+end
+
+if distance <= detectionRange then
+    safeToSwitchBack = false
+    print("⚠️ Another threat nearby - staying in defense mode!")
+    print("   Mob: " .. child.Name .. " at " .. math.floor(distance) .. " studs")
+
+    -- Lock onto this new threat
+    config.defendingAgainstMob = child
+    return
 end
 end
 end
