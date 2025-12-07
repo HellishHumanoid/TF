@@ -82,21 +82,16 @@ end
 -- AUTO-REJOIN (HANDLES KICKS & ERRORS)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local GuiService = game:GetService("GuiService")
-local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-
-local player = Players.LocalPlayer
+sendNotification("Auto-Rejoin", "Auto-Rejoin system enabled!", 3)
 
 local function onErrorMessageChanged(errorMessage)
-    if errorMessage and errorMessage ~= "" then
-        print("Error detected: " .. errorMessage)
-
-        if player then
-            wait()
-            TeleportService:Teleport(game.PlaceId, player)
-        end
-    end
+	if errorMessage and errorMessage ~= "" then
+		print("Error detected: " .. errorMessage)
+		if LocalPlayer then
+			wait()
+			TeleportService:Teleport(game.PlaceId, LocalPlayer)
+		end
+	end
 end
 
 GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
@@ -186,8 +181,6 @@ end
 sendNotification("The Forge", "Initializing...", 3)
 
 setupTeleportPersistence()
-setupAutoRejoin()
-setupAntiAFK()
 
 if not LocalPlayer.Character then
 	LocalPlayer.CharacterAdded:Wait()
