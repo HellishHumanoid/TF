@@ -20,9 +20,12 @@ local SCRIPT_URL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/he
 local function saveReExecute()
 	if not isfolder("TheForge") then
 		makefolder("TheForge")
+		print("📁 Created TheForge folder")
 	end
 	writefile("TheForge/re-execute.txt", SCRIPT_URL)
-	print("✅ Re-Execute: Script URL saved for next rejoin")
+	print("✅ Re-Execute: Script URL saved to file")
+	print("📄 File path: TheForge/re-execute.txt")
+	print("🔗 URL saved: " .. SCRIPT_URL)
 end
 
 local function setupReExecute()
@@ -31,26 +34,69 @@ local function setupReExecute()
 	
 	-- ✅ CRITICAL: Re-execute on character respawn (death)
 	LocalPlayer.CharacterAdded:Connect(function(character)
+		print("═══════════════════════════════════════════════════════════")
+		print("💀 CHARACTER RESPAWNED! Attempting re-execute...")
+		print("═══════════════════════════════════════════════════════════")
+		
 		-- Wait for character to spawn
-		character:WaitForChild("HumanoidRootPart", 10)
+		local rootPart = character:WaitForChild("HumanoidRootPart", 10)
+		if not rootPart then
+			print("❌ Failed to get HumanoidRootPart")
+			return
+		end
+		
+		print("⏳ Waiting 3 seconds for character to stabilize...")
 		task.wait(3)
 		
-		print("🔄 Re-Execute: Character respawned, reloading script...")
+		print("🔄 Attempting to load script from: " .. SCRIPT_URL)
 		
-		pcall(function()
+		local success, err = pcall(function()
 			loadstring(game:HttpGet(SCRIPT_URL))()
 		end)
+		
+		if success then
+			print("✅ Re-Execute: Script loaded successfully!")
+		else
+			print("❌ Re-Execute FAILED: " .. tostring(err))
+		end
+		
+		print("═══════════════════════════════════════════════════════════")
 	end)
 	
 	print("✅ Re-Execute: System enabled (will run on respawn & server hop)")
 end
 
 -- ✅ CRITICAL: Check if this is a re-execution and run immediately
+print("═══════════════════════════════════════════════════════════")
+print("🔍 CHECKING FOR RE-EXECUTION FILE...")
+print("═══════════════════════════════════════════════════════════")
+
 local isReExecution = false
-if isfolder("TheForge") and isfile("TheForge/re-execute.txt") then
-	isReExecution = true
-	print("🔄 Re-Execute: Detected previous session - This is a re-execution!")
+
+-- Check if folder exists
+if isfolder("TheForge") then
+	print("✅ TheForge folder EXISTS")
+	
+	-- Check if file exists
+	if isfile("TheForge/re-execute.txt") then
+		print("✅ re-execute.txt file EXISTS")
+		
+		-- Read the file
+		local savedURL = readfile("TheForge/re-execute.txt")
+		print("📄 File contains: " .. savedURL)
+		
+		isReExecution = true
+		print("🔄 THIS IS A RE-EXECUTION!")
+	else
+		print("❌ re-execute.txt file DOES NOT EXIST")
+		print("⚠️ This is the first run")
+	end
+else
+	print("❌ TheForge folder DOES NOT EXIST")
+	print("⚠️ This is the first run")
 end
+
+print("═══════════════════════════════════════════════════════════")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NOTIFICATION SYSTEM
@@ -92,30 +138,59 @@ local function setupAutoRejoin()
 	
 	-- ✅ CRITICAL: Detect server hop and queue re-execute
 	LocalPlayer.OnTeleport:Connect(function(state)
+		print("═══════════════════════════════════════════════════════════")
+		print("🌐 TELEPORT STATE CHANGED: " .. tostring(state))
+		print("═══════════════════════════════════════════════════════════")
+		
 		if state == Enum.TeleportState.Started then
-			print("🌐 Server Hop Detected! Queueing re-execute...")
+			print("🚀 Teleport STARTED - Server hop detected!")
 			sendNotification("Server Hop", "Script will re-execute on new server!", 3)
 			
 			-- Save re-execute file
 			pcall(saveReExecute)
 			
 			-- ✅ Queue script to run after teleport
-			local queueSuccess = pcall(function()
+			print("📝 Attempting to queue script for new server...")
+			
+			local queueSuccess, queueErr = pcall(function()
 				queue_on_teleport([[
+					print("═══════════════════════════════════════════════════════════")
+					print("🔄 QUEUED RE-EXECUTE RUNNING ON NEW SERVER!")
+					print("═══════════════════════════════════════════════════════════")
+					
 					task.wait(5)
-					print("🔄 Re-Execute: Loading script on new server...")
-					pcall(function()
+					print("⏳ Waited 5 seconds, now loading script...")
+					print("🔗 Loading from: ]] .. SCRIPT_URL .. [[")
+					
+					local success, err = pcall(function()
 						loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
 					end)
+					
+					if success then
+						print("✅ Script loaded on new server!")
+					else
+						print("❌ Failed to load: " .. tostring(err))
+					end
+					
+					print("═══════════════════════════════════════════════════════════")
 				]])
 			end)
 			
 			if queueSuccess then
-				print("✅ Script queued for new server!")
+				print("✅ Script queued successfully!")
 			else
-				warn("⚠️ Failed to queue script (executor might not support queue_on_teleport)")
+				print("❌ Failed to queue: " .. tostring(queueErr))
+				print("⚠️ Your executor might not support queue_on_teleport")
 			end
+			
+		elseif state == Enum.TeleportState.InProgress then
+			print("⏳ Teleport in progress...")
+			
+		elseif state == Enum.TeleportState.Failed then
+			print("❌ Teleport FAILED!")
 		end
+		
+		print("═══════════════════════════════════════════════════════════")
 	end)
 	
 	-- ✅ Detect teleport failures and retry
