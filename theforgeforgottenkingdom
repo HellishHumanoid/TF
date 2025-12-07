@@ -1107,6 +1107,9 @@ local function closeChat()
 	print("✅ Dialogue close attempt complete")
 end
 
+-- ✅ NEW: Buyer NPC position for looking at
+local BUYER_NPC_POSITION = Vector3.new(-141.54, 21.24, -26.52)
+
 local function talkToSeller()
 	local character = LocalPlayer.Character
 	if not character then return false end
@@ -1114,18 +1117,28 @@ local function talkToSeller()
 	local rootPart = character:FindFirstChild("HumanoidRootPart")
 	if not rootPart then return false end
 	
+	-- Save original position
 	originalPosition = rootPart.CFrame
 	print("💾 Saved original position: " .. tostring(originalPosition.Position))
 	
+	-- Teleport to seller
 	rootPart.CFrame = CFrame.new(SELLER_POSITION)
-	task.wait(0.5)
+	task.wait(0.3)
 	
+	-- ✅ NEW: Make character look at the Buyer NPC
+	local lookAtCFrame = CFrame.new(SELLER_POSITION, BUYER_NPC_POSITION)
+	rootPart.CFrame = lookAtCFrame
+	print("👀 Looking at Buyer NPC")
+	task.wait(0.2)
+	
+	-- Fire proximity prompt
 	if SELLER_PROXIMITY then
 		fireproximityprompt(SELLER_PROXIMITY)
 		task.wait(0.5)
 		closeChat()
 		task.wait(0)
 		
+		-- Teleport back to original position
 		if originalPosition then
 			rootPart.CFrame = originalPosition
 			print("🔙 Teleported back to original position")
@@ -1826,7 +1839,7 @@ local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Window = Library:CreateWindow({
-	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.2",
+	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.5",
 	Center = true,
 	AutoShow = true,
 	TabPadding = 8,
