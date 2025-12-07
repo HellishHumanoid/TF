@@ -79,18 +79,30 @@ end)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- AUTO-REJOIN
+-- AUTO-REJOIN (HANDLES KICKS & ERRORS)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local function setupAutoRejoin()
 	sendNotification("Auto-Rejoin", "Auto-Rejoin system enabled!", 3)
 	
+	-- Handle error messages (disconnects, errors, etc.)
 	task.spawn(function()
 		GuiService.ErrorMessageChanged:Connect(function(errorMessage)
 			if errorMessage and errorMessage ~= "" then
+				print("Error detected: " .. errorMessage)
 				task.wait(1)
 				TeleportService:Teleport(game.PlaceId, LocalPlayer)
 			end
+		end)
+	end)
+	
+	-- Handle kicks specifically
+	task.spawn(function()
+		LocalPlayer.Kicked:Connect(function(kickReason)
+			print("Player was kicked: " .. tostring(kickReason))
+			sendNotification("Kicked", "Rejoining server...", 3)
+			task.wait(1)
+			TeleportService:Teleport(game.PlaceId, LocalPlayer)
 		end)
 	end)
 end
