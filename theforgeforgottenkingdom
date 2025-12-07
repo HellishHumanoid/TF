@@ -4281,23 +4281,6 @@ end
 		return
 	end
 	
-	-- Check if rock is occupied while mining
-	if config.currentRock and config.isLockedOn then
-		if funcs.isOreOccupied(config.currentRock) then
-			table.insert(config.ignoredRocks, config.currentRock)
-			config.currentRock = nil
-			config.currentRockModel = nil
-			config.currentRockId = nil
-			config.lastRockDurability = nil
-			config.isLockedOn = false
-			
-			if Library then
-				Library:Notify("⚠️ Rock stolen!", 2)
-			end
-			return
-		end
-	end
-	
 	-- Move to rock and mine
 	if config.currentRock then
 		local rockPos = funcs.getMiningPosition(config.currentRock)
