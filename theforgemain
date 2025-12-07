@@ -15,49 +15,41 @@ local LocalPlayer = Players.LocalPlayer
 -- RE-EXECUTE SYSTEM (Like Infinite Yield)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local SCRIPT_URL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemain" -- Update this to your main hub URL
+local SCRIPT_URL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemain"
 
 local function saveReExecute()
 	if not isfolder("TheForge") then
 		makefolder("TheForge")
 	end
 	writefile("TheForge/re-execute.txt", SCRIPT_URL)
-	print("Re-Execute: Script URL saved")
+	print("✅ Re-Execute: Script URL saved for next rejoin")
 end
 
 local function setupReExecute()
 	-- Save the script for re-execution
 	pcall(saveReExecute)
 	
-	-- Re-execute on character respawn
-	LocalPlayer.CharacterAdded:Connect(function()
-		task.wait(2) -- Wait for character to fully load
-		print("Re-Execute: Character respawned, reloading script...")
+	-- ✅ CRITICAL: Re-execute on character respawn (death)
+	LocalPlayer.CharacterAdded:Connect(function(character)
+		-- Wait for character to spawn
+		character:WaitForChild("HumanoidRootPart", 10)
+		task.wait(3)
+		
+		print("🔄 Re-Execute: Character respawned, reloading script...")
 		
 		pcall(function()
 			loadstring(game:HttpGet(SCRIPT_URL))()
 		end)
 	end)
 	
-	-- Re-execute on teleport (server hop detection)
-	TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
-		print("Re-Execute: Teleport failed, result: " .. tostring(result))
-		if result == Enum.TeleportResult.Flooded or result == Enum.TeleportResult.Failure then
-			task.wait(2)
-			print("Re-Execute: Retrying teleport...")
-			pcall(function()
-				TeleportService:Teleport(game.PlaceId, LocalPlayer)
-			end)
-		end
-	end)
-	
-	print("Re-Execute: System enabled (will run on respawn & server hop)")
+	print("✅ Re-Execute: System enabled (will run on respawn & server hop)")
 end
 
--- Check if this is a re-execution (script already ran once)
+-- ✅ CRITICAL: Check if this is a re-execution and run immediately
 local isReExecution = false
 if isfolder("TheForge") and isfile("TheForge/re-execute.txt") then
 	isReExecution = true
+	print("🔄 Re-Execute: Detected previous session - This is a re-execution!")
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -81,75 +73,59 @@ end
 local function setupAutoRejoin()
 	sendNotification("Auto-Rejoin", "Auto-Rejoin & Server Hop detection enabled!", 3)
 	
-	-- Handle error messages (kicks, disconnects)
-	local function onErrorMessageChanged(errorMessage)
+	-- ✅ Handle error messages (kicks, disconnects)
+	GuiService.ErrorMessageChanged:Connect(function(errorMessage)
 		if errorMessage and errorMessage ~= "" then
-			print("Error detected: " .. errorMessage)
-			sendNotification("Auto-Rejoin", "Error detected! Rejoining in 2s...", 3)
+			print("❌ Error detected: " .. errorMessage)
+			sendNotification("Auto-Rejoin", "Kicked! Rejoining in 2s...", 3)
 			
-			-- Save that we're rejoining so script re-executes
+			-- Save re-execute file
 			pcall(saveReExecute)
 			
 			task.wait(2)
 			
-			if LocalPlayer then
-				local success, err = pcall(function()
-					TeleportService:Teleport(game.PlaceId, LocalPlayer)
-				end)
-				
-				if not success then
-					warn("Rejoin failed: " .. tostring(err))
-					sendNotification("Rejoin Failed", "Manual rejoin required", 5)
-				end
-			end
-		end
-	end
-	
-	GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
-	
-	-- Detect when player is being teleported (server hop)
-	local teleporting = false
-	
-	LocalPlayer.OnTeleport:Connect(function(state)
-		if state == Enum.TeleportState.Started then
-			teleporting = true
-			print("Re-Execute: Teleport started (Server Hop detected)")
-			sendNotification("Server Hop", "Detected! Script will re-execute...", 3)
-			
-			-- Ensure re-execute file exists
-			pcall(saveReExecute)
-			
-			-- Queue the script to run after teleport
-			local scriptToRun = [[
-				task.wait(3)
-				pcall(function()
-					loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
-				end)
-			]]
-			
-			queue_on_teleport(scriptToRun)
-			
-		elseif state == Enum.TeleportState.InProgress then
-			print("Re-Execute: Teleport in progress...")
-			
-		elseif state == Enum.TeleportState.Failed then
-			teleporting = false
-			print("Re-Execute: Teleport failed, retrying...")
-			sendNotification("Teleport Failed", "Retrying in 2s...", 3)
-			
-			task.wait(2)
 			pcall(function()
 				TeleportService:Teleport(game.PlaceId, LocalPlayer)
 			end)
 		end
 	end)
 	
-	-- Handle manual rejoins
-	game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-		if child.Name == "ErrorPrompt" then
-			print("Re-Execute: Error prompt detected")
+	-- ✅ CRITICAL: Detect server hop and queue re-execute
+	LocalPlayer.OnTeleport:Connect(function(state)
+		if state == Enum.TeleportState.Started then
+			print("🌐 Server Hop Detected! Queueing re-execute...")
+			sendNotification("Server Hop", "Script will re-execute on new server!", 3)
+			
+			-- Save re-execute file
 			pcall(saveReExecute)
+			
+			-- ✅ Queue script to run after teleport
+			local queueSuccess = pcall(function()
+				queue_on_teleport([[
+					task.wait(5)
+					print("🔄 Re-Execute: Loading script on new server...")
+					pcall(function()
+						loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
+					end)
+				]])
+			end)
+			
+			if queueSuccess then
+				print("✅ Script queued for new server!")
+			else
+				warn("⚠️ Failed to queue script (executor might not support queue_on_teleport)")
+			end
 		end
+	end)
+	
+	-- ✅ Detect teleport failures and retry
+	TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+		print("❌ Teleport failed: " .. tostring(result))
+		
+		task.wait(2)
+		pcall(function()
+			TeleportService:Teleport(game.PlaceId, LocalPlayer)
+		end)
 	end)
 end
 
@@ -164,7 +140,7 @@ local function setupAntiAFK()
 	LocalPlayer.Idled:Connect(function()
 		VirtualUser:CaptureController()
 		VirtualUser:ClickButton2(Vector2.new())
-		print("Anti-AFK: Prevented idle kick")
+		print("⚡ Anti-AFK: Prevented idle kick")
 	end)
 	
 	-- Additional anti-AFK measures
@@ -177,7 +153,7 @@ local function setupAntiAFK()
 				VirtualUser:ClickButton2(Vector2.new())
 			end)
 			
-			print("Anti-AFK: Activity simulated")
+			print("⚡ Anti-AFK: Activity simulated")
 		end
 	end)
 end
@@ -231,7 +207,6 @@ local function loadWorldScript(world)
 		local success, result = pcall(function()
 			local scriptContent = game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgestonewakescross')
 			
-			-- Check if content was retrieved
 			if scriptContent and scriptContent ~= "" then
 				local loadFunc, loadErr = loadstring(scriptContent)
 				
@@ -270,7 +245,6 @@ local function loadWorldScript(world)
 		local success, result = pcall(function()
 			local scriptContent = game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom')
 			
-			-- Check if content was retrieved
 			if scriptContent and scriptContent ~= "" then
 				local loadFunc, loadErr = loadstring(scriptContent)
 				
@@ -310,18 +284,18 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 if isReExecution then
-	sendNotification("The Forge", "Re-Executing by Rafso...", 3)
+	sendNotification("The Forge", "🔄 Re-Executing by Rafso...", 3)
+	print("🔄 This is a RE-EXECUTION!")
 else
-	sendNotification("The Forge", "Initializing by Rafso...", 3)
+	sendNotification("The Forge", "⚡ Initializing by Rafso...", 3)
+	print("⚡ First-time execution!")
 end
 
--- Setup Re-Execute System (first run only)
-if not isReExecution then
-	task.spawn(function()
-		pcall(setupReExecute)
-		sendNotification("Re-Execute", "System enabled! Will run on respawn & server hop", 3)
-	end)
-end
+-- ✅ Setup Re-Execute System (ALWAYS runs - saves for next time)
+task.spawn(function()
+	pcall(setupReExecute)
+	sendNotification("Re-Execute", "System enabled! Will run on respawn & server hop", 3)
+end)
 
 -- Setup Auto-Rejoin System (handles kicks AND server hops)
 task.spawn(function()
@@ -362,6 +336,8 @@ else
 		sendNotification("Failed", "Could not detect world!", 5)
 	end
 end
+
+print("✅ Hub script fully loaded! Re-execute system active.")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- END OF WORLD DETECTION + AUTO-REJOIN + ANTI-AFK + RE-EXECUTE SYSTEM
