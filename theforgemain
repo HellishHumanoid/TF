@@ -192,6 +192,8 @@ end
 sendNotification("The Forge", "Initializing...", 3)
 
 setupTeleportPersistence()
+setupAutoRejoin()
+setupAntiAFK()
 
 if not LocalPlayer.Character then
 	LocalPlayer.CharacterAdded:Wait()
