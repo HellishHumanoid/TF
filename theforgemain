@@ -82,31 +82,33 @@ end
 -- AUTO-REJOIN (EXACT WORKING CODE)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local function onErrorMessageChanged(errorMessage)
-    if errorMessage and errorMessage ~= "" then
-        print("Error detected: " .. errorMessage)
-        if LocalPlayer then
-            wait()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        end
-    end
-end
-GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
+pcall(function()
+	local function onErrorMessageChanged(errorMessage)
+		if errorMessage and errorMessage ~= "" then
+			print("Error detected: " .. errorMessage)
+			if LocalPlayer then
+				wait()
+				TeleportService:Teleport(game.PlaceId, LocalPlayer)
+			end
+		end
+	end
+	GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
+	print("✅ Auto-Rejoin enabled successfully")
+end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ANTI-AFK
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local function setupAntiAFK()
+pcall(function()
 	sendNotification("Anti-AFK", "Anti-AFK system enabled!", 3)
 	
-	task.spawn(function()
-		LocalPlayer.Idled:Connect(function()
-			VirtualUser:CaptureController()
-			VirtualUser:ClickButton2(Vector2.new())
-		end)
+	LocalPlayer.Idled:Connect(function()
+		VirtualUser:CaptureController()
+		VirtualUser:ClickButton2(Vector2.new())
+		print("✅ Anti-AFK: Prevented idle kick")
 	end)
-end
+end)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WORLD DETECTION
@@ -178,7 +180,6 @@ end
 sendNotification("The Forge", "Initializing...", 3)
 
 setupTeleportPersistence()
-setupAntiAFK()
 
 if not LocalPlayer.Character then
 	LocalPlayer.CharacterAdded:Wait()
