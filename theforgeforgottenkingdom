@@ -620,61 +620,73 @@ end
 
 local OCCUPIED_CHECK_DISTANCE = 15
 
+-- Track which rocks WE started mining
+config.rocksWeStarted = config.rocksWeStarted or {}
+
 local function isOreOccupied(rock)
--- ✅ Early exit if feature disabled
-if not config.avoidOccupied then return false end
-if not rock then return false end
+    -- Early exit if feature disabled
+    if not config.avoidOccupied then return false end
+    if not rock then return false end
 
--- ✅ Get rock position
-local positionPart = _G.FarmFunctions.getRockPosition(rock)
-if not positionPart then return false end
+    -- ✅ NEW: If WE already started this rock, it's OURS - never abandon it
+    local rockId = tostring(rock)
+    if config.rocksWeStarted[rockId] then
+        return false  -- This is OUR rock, don't check for others
+    end
 
-local rockPos = positionPart.Position
+    -- Get rock position
+    local positionPart = _G.FarmFunctions.getRockPosition(rock)
+    if not positionPart then return false end
 
--- ✅ Get our character
-local character = LocalPlayer.Character
-if not character then return false end
+    local rockPos = positionPart.Position
 
-local myRootPart = character:FindFirstChild("HumanoidRootPart")
-if not myRootPart then return false end
+    -- Get our character
+    local character = LocalPlayer.Character
+    if not character then return false end
 
--- ✅ CHECK ALL PLAYERS IN REAL-TIME
-for _, player in pairs(Players:GetPlayers()) do
--- Skip ourselves
-if player == LocalPlayer then continue end
+    local myRootPart = character:FindFirstChild("HumanoidRootPart")
+    if not myRootPart then return false end
 
-local otherChar = player.Character
-if otherChar then
-local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
-if otherRoot then
--- ✅ Calculate distance from other player to rock
-local distance = (otherRoot.Position - rockPos).Magnitude
+    -- ✅ IMPROVED: Check HP first - if it's below 100%, someone else started it
+    local rockTypeModel = rock.Parent
+    if rockTypeModel then
+        local currentHP = rockTypeModel:GetAttribute("Health")
+        local maxHP = rockTypeModel:GetAttribute("MaxHealth")
+        
+        if currentHP and maxHP and maxHP > 0 then
+            -- ✅ If HP is ANY amount below 100%, someone else started it
+            if currentHP < maxHP then
+                print("⚠️ Rock already damaged - HP: " .. currentHP .. "/" .. maxHP .. " - SKIPPING")
+                return true
+            end
+        end
+    end
 
--- ✅ If player is within range of the rock
-if distance <= OCCUPIED_CHECK_DISTANCE then
--- ✅ Check if they have pickaxe equipped OR in their backpack
-local hasPickaxeEquipped = otherChar:FindFirstChild("Pickaxe")
+    -- ✅ IMPROVED: Check for players actively mining (pickaxe equipped + close to rock)
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
 
-if hasPickaxeEquipped then
-print("⚠️ Rock occupied by: " .. player.Name .. " (Distance: " .. math.floor(distance) .. " studs)")
-return true
-end
+        local otherChar = player.Character
+        if otherChar then
+            local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
+            if otherRoot then
+                local distance = (otherRoot.Position - rockPos).Magnitude
 
--- ✅ Also check their backpack (they might be switching tools)
-local otherBackpack = player:FindFirstChild("Backpack")
-if otherBackpack then
-local hasPickaxeInBackpack = otherBackpack:FindFirstChild("Pickaxe")
-if hasPickaxeInBackpack then
-print("⚠️ Rock potentially occupied by: " .. player.Name .. " (Has pickaxe in backpack)")
-return true
-end
-end
-end
-end
-end
-end
+                -- ✅ If player is close to the rock
+                if distance <= OCCUPIED_CHECK_DISTANCE then
+                    -- ✅ MUST have pickaxe EQUIPPED (in character, not backpack)
+                    local hasPickaxeEquipped = otherChar:FindFirstChild("Pickaxe")
 
-return false
+                    if hasPickaxeEquipped then
+                        print("⚠️ Rock occupied by: " .. player.Name .. " (Distance: " .. math.floor(distance) .. " studs, Pickaxe EQUIPPED)")
+                        return true
+                    end
+                end
+            end
+        end
+    end
+
+    return false  -- ✅ Rock is not occupied
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -1840,8 +1852,7 @@ local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Window = Library:CreateWindow({
-	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.2",
-	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.5",
+	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.7",
 Center = true,
 AutoShow = true,
 TabPadding = 8,
@@ -3226,6 +3237,84 @@ end
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
+-- ✅ NEW: STUCK DETECTION SYSTEM (HP NOT CHANGING = STUCK)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+config.lastRockHP = nil
+config.lastRockHPChangeTime = 0
+config.rockHPStagnationTimeout = 3  -- 3 seconds without HP change = stuck
+config.stuckCheckEnabled = false
+config.stuckInAboveMode = false
+
+local function checkRockHPStagnation()
+    if not config.miningEnabled then return end
+    if not config.currentRock then return end
+    if config.defendingAgainstMob then return end
+    if not config.isLockedOn then return end
+    
+    -- ✅ Only check when in Below position (not already in Above/lava mode)
+    if config.inLavaMode or config.miningAngle < 180 then return end
+    
+    local rockTypeModel = config.currentRock.Parent
+    if not rockTypeModel then return end
+    
+    local currentHP = rockTypeModel:GetAttribute("Health")
+    if not currentHP then return end
+    
+    local currentTime = tick()
+    
+    -- ✅ Initialize tracking on first check
+    if not config.stuckCheckEnabled then
+        config.lastRockHP = currentHP
+        config.lastRockHPChangeTime = currentTime
+        config.stuckCheckEnabled = true
+        print("🔍 Started HP stagnation monitoring")
+        return
+    end
+    
+    -- ✅ If HP changed, reset timer
+    if currentHP ~= config.lastRockHP then
+        config.lastRockHP = currentHP
+        config.lastRockHPChangeTime = currentTime
+        return
+    end
+    
+    -- ✅ If HP hasn't changed for 3 seconds = STUCK
+    local timeSinceChange = currentTime - config.lastRockHPChangeTime
+    
+    if timeSinceChange >= config.rockHPStagnationTimeout then
+        print("═══════════════════════════════════════════════════════════")
+        print("⚠️ ROCK HP STUCK FOR 3 SECONDS - SWITCHING TO ABOVE!")
+        print("   Current HP: " .. currentHP)
+        print("   Time stuck: " .. math.floor(timeSinceChange) .. " seconds")
+        print("═══════════════════════════════════════════════════════════")
+        
+        -- ✅ Switch to Above position
+        config.inLavaMode = true
+        config.stuckInAboveMode = true
+        config.miningVerticalDistance = 6
+        config.miningAngle = 90
+        
+        if config.currentRock then 
+            config.currentRockModel = config.currentRock.Parent 
+        end
+        
+        -- ✅ Reset stuck check
+        config.stuckCheckEnabled = false
+        config.lastRockHP = nil
+        
+        if Library then
+            Library:Notify("⚠️ Mining stuck - Switching to Above", 3)
+        end
+        
+        config.lavaCheckCooldown = true
+        task.delay(config.lavaCooldownTime, function() 
+            config.lavaCheckCooldown = false 
+        end)
+    end
+end
+
+-- ═══════════════════════════════════════════════════════════════════════════
 -- MINING DEFENSE CONFIG
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -3269,39 +3358,28 @@ config.lastTrackedMob = nil
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local function resetMiningLavaMode()
-if config.inLavaMode then
-config.inLavaMode = false
-config.miningVerticalDistance = config.normalMiningDistance
-config.miningAngle = config.normalMiningAngle
+    if config.inLavaMode or config.stuckInAboveMode then
+        -- ✅ Reset to Below position
+        config.inLavaMode = false
+        config.stuckInAboveMode = false
+        config.miningVerticalDistance = config.normalMiningDistance
+        config.miningAngle = config.normalMiningAngle
+        
+        -- ✅ Reset stuck detection
+        config.stuckCheckEnabled = false
+        config.lastRockHP = nil
+        config.lastRockHPChangeTime = 0
 
-print("🔄 Mining lava mode RESET - Back to BELOW")
+        print("🔄 Mining mode RESET - Back to BELOW (stuck check cleared)")
 
-local character = LocalPlayer.Character
-if character then
-local humanoid = character:FindFirstChildOfClass("Humanoid")
-if humanoid then 
-config.lastHealth = humanoid.Health 
-end
-end
-end
-end
-
-local function resetFarmingLavaMode()
-if config.farmingInLavaMode and config.savedFarmingPosition then
-config.farmingInLavaMode = false
-config.lockPosition = config.savedFarmingPosition
-config.savedFarmingPosition = nil
-
-print("🔄 Farming lava mode RESET - Back to " .. config.lockPosition)
-
-local character = LocalPlayer.Character
-if character then
-local humanoid = character:FindFirstChildOfClass("Humanoid")
-if humanoid then 
-config.farmingLastHealth = humanoid.Health 
-end
-end
-end
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then 
+                config.lastHealth = humanoid.Health 
+            end
+        end
+    end
 end
 
 local function checkFarmingLavaDamage()
@@ -3490,14 +3568,15 @@ end)
 
 -- Store functions globally for Part 7B
 _G.Part7AFunctions = {
-resetMiningLavaMode = resetMiningLavaMode,
-resetFarmingLavaMode = resetFarmingLavaMode,
-checkFarmingLavaDamage = checkFarmingLavaDamage,
-checkLavaDamage = checkLavaDamage,
-checkProximityToTarget = checkProximityToTarget,
-clickMouseForDefense = clickMouseForDefense,
-checkCurrentRockHP = checkCurrentRockHP,  -- ✅ NEW
-isRockAtZeroHP = isRockAtZeroHP,  -- ✅ NEW
+    resetMiningLavaMode = resetMiningLavaMode,
+    resetFarmingLavaMode = resetFarmingLavaMode,
+    checkFarmingLavaDamage = checkFarmingLavaDamage,
+    checkLavaDamage = checkLavaDamage,
+    checkProximityToTarget = checkProximityToTarget,
+    clickMouseForDefense = clickMouseForDefense,
+    checkCurrentRockHP = checkCurrentRockHP,
+    isRockAtZeroHP = isRockAtZeroHP,
+    checkRockHPStagnation = checkRockHPStagnation,  -- ✅ NEW
 }
 
 print("✅ Part 7A loaded - Simple 0 HP check every 0.2 seconds!")
@@ -3976,8 +4055,9 @@ if not rootPart then return end
 
 -- ✅ LAVA CHECK FOR MINING (only when not defending)
 if not config.defendingAgainstMob then
-part7a.checkLavaDamage()
-part7a.checkCurrentRockHP()
+    part7a.checkLavaDamage()
+    part7a.checkCurrentRockHP()
+    part7a.checkRockHPStagnation()  -- ✅ NEW: Check if stuck
 end
 
 -- ✅ ORE FILTER CHECK (reads HP from Attributes, no spam, detects HP regen)
@@ -4106,20 +4186,26 @@ local closestDistance = math.huge
 
 -- Check all mobs in Living
 for _, child in pairs(Living:GetChildren()) do
-if funcs.isValidMob(child) then
-local mobRoot = child:FindFirstChild("HumanoidRootPart")
-if mobRoot then
--- ✅ Distance from MOB to ROCK (15 STUDS)
-local distance = (rockPos - mobRoot.Position).Magnitude
+    if funcs.isValidMob(child) then
+        local mobRoot = child:FindFirstChild("HumanoidRootPart")
+        if mobRoot then
+            -- ✅ Distance from MOB to ROCK
+            local distance = (rockPos - mobRoot.Position).Magnitude
 
-if distance <= config.miningDefenseDistance then  -- ✅ NOW 15 STUDS
-if not closestThreat or distance < closestDistance then
-closestThreat = child
-closestDistance = distance
-end
-end
-end
-end
+            -- ✅ SPECIAL: 20 stud detection for Blight Pyromancers only
+            local detectionRange = 15 -- Default 15 studs for all mobs
+            if child.Name:match("^Blight Pyromancer%d+$") then
+                detectionRange = 20  -- Extended range for Blight Pyromancers
+            end
+
+            if distance <= detectionRange then
+                if not closestThreat or distance < closestDistance then
+                    closestThreat = child
+                    closestDistance = distance
+                end
+            end
+        end
+    end
 end
 
 if closestThreat then
@@ -4337,19 +4423,26 @@ end
 
 -- Check if current rock is still valid OR at 0 HP
 if config.currentRock then
-local rockIsInvalid = not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)
-local rockAtZeroHP = part7a.isRockAtZeroHP(config.currentRock)
+    local rockIsInvalid = not config.currentRock.Parent or not funcs.isValidRock(config.currentRock)
+    local rockAtZeroHP = part7a.isRockAtZeroHP(config.currentRock)
 
-if rockIsInvalid or rockAtZeroHP then
-if rockAtZeroHP then
-print("💀 Rock at 0 HP - Finding new rock...")
-end
+    if rockIsInvalid or rockAtZeroHP then
+        if rockAtZeroHP then
+            print("💀 Rock at 0 HP - Finding new rock...")
+        end
 
-config.currentRock = nil
-config.currentRockModel = nil
-config.currentRockId = nil
-config.lastRockDurability = nil
-config.isLockedOn = false
+        -- ✅ NEW: Remove from "our rocks" tracking when rock is finished
+        local oldRockId = config.currentRockId
+        if oldRockId and config.rocksWeStarted[oldRockId] then
+            config.rocksWeStarted[oldRockId] = nil
+            print("✅ Rock finished - Removed from claimed rocks")
+        end
+
+        config.currentRock = nil
+        config.currentRockModel = nil
+        config.currentRockId = nil
+        config.lastRockDurability = nil
+        config.isLockedOn = false
 
 if config.bodyVelocity then
 config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
@@ -4360,27 +4453,31 @@ end
 
 -- Find new rock
 if not config.currentRock then
-local potentialRock = funcs.getClosestRock()
+    local potentialRock = funcs.getClosestRock()
 
-if potentialRock then
-local newRockId = tostring(potentialRock)
+    if potentialRock then
+        local newRockId = tostring(potentialRock)
 
-if config.inLavaMode and newRockId ~= config.currentRockId then
-print("🔄 NEW ROCK - Resetting lava mode")
-part7a.resetMiningLavaMode()
-end
+        if config.inLavaMode and newRockId ~= config.currentRockId then
+            print("🔄 NEW ROCK - Resetting lava mode")
+            part7a.resetMiningLavaMode()
+        end
 
-if funcs.isOreOccupied(potentialRock) then
-table.insert(config.ignoredRocks, potentialRock)
-return
-end
+        if funcs.isOreOccupied(potentialRock) then
+            table.insert(config.ignoredRocks, potentialRock)
+            return
+        end
 
-config.currentRock = potentialRock
-config.currentRockModel = config.currentRock.Parent
-config.currentRockId = newRockId
-config.lastRockDurability = funcs.getRockDurability(config.currentRock)
-config.rockDurabilityCheck = tick()
-funcs.makeRockTransparent(config.currentRock)
+        -- ✅ NEW: Mark this rock as OURS since we're starting to mine it
+        config.rocksWeStarted[newRockId] = true
+        print("✅ Claimed rock as OURS - Will not abandon if others approach")
+
+       config.currentRock = potentialRock
+       config.currentRockModel = config.currentRock.Parent
+       config.currentRockId = newRockId
+       config.lastRockDurability = funcs.getRockDurability(config.currentRock)
+       config.rockDurabilityCheck = tick()
+       funcs.makeRockTransparent(config.currentRock)
 
 -- ✅ NEW: Reset idle hover timer when rock found
 config.idleHoverActive = false
