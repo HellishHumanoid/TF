@@ -82,21 +82,24 @@ end
 -- AUTO-REJOIN (HANDLES KICKS & ERRORS)
 -- ═══════════════════════════════════════════════════════════════════════════
 
-local function setupAutoRejoin()
-	sendNotification("Auto-Rejoin", "Auto-Rejoin system enabled!", 3)
-	
-	local function onErrorMessageChanged(errorMessage)
-		if errorMessage and errorMessage ~= "" then
-			print("Error detected: " .. errorMessage)
-			if LocalPlayer then
-				wait()
-				TeleportService:Teleport(game.PlaceId, LocalPlayer)
-			end
-		end
-	end
-	
-	GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
+local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
+
+local player = Players.LocalPlayer
+
+local function onErrorMessageChanged(errorMessage)
+    if errorMessage and errorMessage ~= "" then
+        print("Error detected: " .. errorMessage)
+
+        if player then
+            wait()
+            TeleportService:Teleport(game.PlaceId, player)
+        end
+    end
 end
+
+GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- ANTI-AFK
