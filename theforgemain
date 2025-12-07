@@ -1,7 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- THE FORGE - WORLD DETECTION + AUTO-REJOIN + ANTI-AFK + RE-EXECUTE SYSTEM
 -- Automatically detects which world you're in and loads the correct script
--- Re-executes on respawn/rejoin like Infinite Yield
+-- Re-executes on respawn/rejoin/server hop like Infinite Yield
 -- Created by Rafso [literalh]
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -39,7 +39,19 @@ local function setupReExecute()
 		end)
 	end)
 	
-	print("Re-Execute: System enabled (will run on respawn)")
+	-- Re-execute on teleport (server hop detection)
+	TeleportService.TeleportInitFailed:Connect(function(player, result, errorMessage)
+		print("Re-Execute: Teleport failed, result: " .. tostring(result))
+		if result == Enum.TeleportResult.Flooded or result == Enum.TeleportResult.Failure then
+			task.wait(2)
+			print("Re-Execute: Retrying teleport...")
+			pcall(function()
+				TeleportService:Teleport(game.PlaceId, LocalPlayer)
+			end)
+		end
+	end)
+	
+	print("Re-Execute: System enabled (will run on respawn & server hop)")
 end
 
 -- Check if this is a re-execution (script already ran once)
@@ -63,25 +75,82 @@ local function sendNotification(title, text, duration)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- AUTO-REJOIN SYSTEM
+-- ENHANCED AUTO-REJOIN SYSTEM (Handles kicks AND server hops)
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local function setupAutoRejoin()
-	sendNotification("Auto-Rejoin", "Auto-Rejoin system enabled!", 3)
+	sendNotification("Auto-Rejoin", "Auto-Rejoin & Server Hop detection enabled!", 3)
 	
+	-- Handle error messages (kicks, disconnects)
 	local function onErrorMessageChanged(errorMessage)
 		if errorMessage and errorMessage ~= "" then
 			print("Error detected: " .. errorMessage)
-			sendNotification("Auto-Rejoin", "Error detected! Rejoining...", 3)
+			sendNotification("Auto-Rejoin", "Error detected! Rejoining in 2s...", 3)
+			
+			-- Save that we're rejoining so script re-executes
+			pcall(saveReExecute)
+			
+			task.wait(2)
 			
 			if LocalPlayer then
-				wait()
-				TeleportService:Teleport(game.PlaceId, LocalPlayer)
+				local success, err = pcall(function()
+					TeleportService:Teleport(game.PlaceId, LocalPlayer)
+				end)
+				
+				if not success then
+					warn("Rejoin failed: " .. tostring(err))
+					sendNotification("Rejoin Failed", "Manual rejoin required", 5)
+				end
 			end
 		end
 	end
 	
 	GuiService.ErrorMessageChanged:Connect(onErrorMessageChanged)
+	
+	-- Detect when player is being teleported (server hop)
+	local teleporting = false
+	
+	LocalPlayer.OnTeleport:Connect(function(state)
+		if state == Enum.TeleportState.Started then
+			teleporting = true
+			print("Re-Execute: Teleport started (Server Hop detected)")
+			sendNotification("Server Hop", "Detected! Script will re-execute...", 3)
+			
+			-- Ensure re-execute file exists
+			pcall(saveReExecute)
+			
+			-- Queue the script to run after teleport
+			local scriptToRun = [[
+				task.wait(3)
+				pcall(function()
+					loadstring(game:HttpGet("]] .. SCRIPT_URL .. [["))()
+				end)
+			]]
+			
+			queue_on_teleport(scriptToRun)
+			
+		elseif state == Enum.TeleportState.InProgress then
+			print("Re-Execute: Teleport in progress...")
+			
+		elseif state == Enum.TeleportState.Failed then
+			teleporting = false
+			print("Re-Execute: Teleport failed, retrying...")
+			sendNotification("Teleport Failed", "Retrying in 2s...", 3)
+			
+			task.wait(2)
+			pcall(function()
+				TeleportService:Teleport(game.PlaceId, LocalPlayer)
+			end)
+		end
+	end)
+	
+	-- Handle manual rejoins
+	game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+		if child.Name == "ErrorPrompt" then
+			print("Re-Execute: Error prompt detected")
+			pcall(saveReExecute)
+		end
+	end)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -250,11 +319,11 @@ end
 if not isReExecution then
 	task.spawn(function()
 		pcall(setupReExecute)
-		sendNotification("Re-Execute", "System enabled! Will run on respawn", 3)
+		sendNotification("Re-Execute", "System enabled! Will run on respawn & server hop", 3)
 	end)
 end
 
--- Setup Auto-Rejoin System
+-- Setup Auto-Rejoin System (handles kicks AND server hops)
 task.spawn(function()
 	task.wait(0.5)
 	pcall(setupAutoRejoin)
