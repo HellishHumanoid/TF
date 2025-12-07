@@ -87,11 +87,13 @@ local ItemsByRarity = {
 		"Eye Ore",
 		"Fireite",
 		"Magmaite",
-		"Lightite"
+		"Lightite",
+		"Rainbow Crystal"
 	},
 	Mythical = {
 		"Demonite",
-		"Darkryte"
+		"Darkryte",
+		"Arcane Crystal"
 	},
 	Rune = {
 		"Frost Speck",
@@ -105,6 +107,15 @@ local ItemsByRarity = {
 		"Rot Stich",
 		"Chill Dust",
 		"Rage Mark"
+	},
+	Essence = {
+		"Tiny Essence",
+		"Small Essence",
+		"Medium Essence",
+		"Large Essence",
+		"Greater Essence",
+		"Epic Essence",
+		"Superior Essence"
 	}
 }
 
@@ -363,7 +374,11 @@ _G.MobFarmConfig = {
 		"Topaz",
 		"Diamond",
 		"Sapphire",
-		"Cuprite",
+		"Magenta Crystal",
+		"Crimson Crystal",
+		"Blue Crystal",
+		"Orange Crystal",
+		"Green Crystal",
 		"Obsidian",
 		"Emerald",
 		"Ruby",
@@ -374,8 +389,10 @@ _G.MobFarmConfig = {
 		"Fireite",
 		"Magmaite",
 		"Lightite",
+		"Rainbow Crystal",
 		"Demonite",
-		"Darkryte"
+		"Darkryte",
+		"Arcane Crystal"
 	},
 	
 	lavaCheckEnabled = true,
@@ -413,10 +430,11 @@ _G.MobFarmConfig = {
 		{name = "Deathaxe Skeleton", pattern = "^Deathaxe Skeleton%d+$", enabled = false, priority = 3},
 		{name = "Elite Rogue Skeleton", pattern = "^Elite Rogue Skeleton%d+$", enabled = false, priority = 4},
 		{name = "Blazing Slime", pattern = "^Blazing Slime%d+$", enabled = false, priority = 5},
-		{name = "Axe Skeleton", pattern = "^Axe Skeleton%d+$", enabled = false, priority = 6},
-		{name = "Skeleton Rogue", pattern = "^Skeleton Rogue%d+$", enabled = false, priority = 7},
-		{name = "Bomber", pattern = "^Bomber%d+$", enabled = false, priority = 8},
-		{name = "Slime", pattern = "^Slime%d+$", enabled = false, priority = 9},
+        {name = "Blight Pyromancer", pattern = "^Blight Pyromancer%d+$", enabled = false, priority = 7},
+		{name = "Axe Skeleton", pattern = "^Axe Skeleton%d+$", enabled = false, priority = 7},
+		{name = "Skeleton Rogue", pattern = "^Skeleton Rogue%d+$", enabled = false, priority = 8},
+		{name = "Bomber", pattern = "^Bomber%d+$", enabled = false, priority = 9},
+		{name = "Slime", pattern = "^Slime%d+$", enabled = false, priority = 10},
 	},
 	
 	miningEnabled = false,
@@ -460,7 +478,8 @@ _G.MobFarmConfig = {
 		Epic = {},
 		Legendary = {},
 		Mythical = {},
-		Rune = {}
+		Rune = {},
+		Essence = {}
 	},
 
 	-- ═══════════════════════════════════════════════════════════════════════════
@@ -1684,6 +1703,7 @@ local teleportNPCs = {
 	["Captain Rowan"] = Vector3.new(23.79, 74.68, -64.36),
 	["Wizard"] = Vector3.new(104.79, 47.44, 138.17),
 	["Aida"] = Vector3.new(101.42, 47.32, 154.71),
+	["Line"] = Vector3.new(-164.69, 33.65, 59.51),
 	["Walter"] = Vector3.new(24.41, 74.60, -70.52),
 	["Malik"] = Vector3.new(36.07, 74.44, -56.70),
 	["Amber"] = Vector3.new(372.30, 87.54, 107.06),
@@ -2105,6 +2125,9 @@ MiningGroupBox:AddToggle('MineToggle', {
 			config.ignoredRocks = {}
 			config.lastRockDurability = nil
 			config.isLockedOn = false
+			config.idleHoverActive = false
+			config.idleHoverTimer = 0
+			config.idleHoverDelay = 3
 			
 			stopAutoMine()
 			funcs.stopNoclip()
@@ -2369,6 +2392,22 @@ ItemSelectionGroupBox:AddDropdown('RuneItems', {
 		for itemName, isEnabled in pairs(Value) do
 			if isEnabled then
 				table.insert(config.selectedItems.Rune, itemName)
+			end
+		end
+	end
+})
+
+ItemSelectionGroupBox:AddDropdown('EssenceItems', {
+	Values = ItemsByRarity.Essence,
+	Default = 1,
+	Multi = true,
+	Text = 'Essence Items',
+	Tooltip = 'Select essence items to sell',
+	Callback = function(Value)
+		config.selectedItems.Essence = {}
+		for itemName, isEnabled in pairs(Value) do
+			if isEnabled then
+				table.insert(config.selectedItems.Essence, itemName)
 			end
 		end
 	end
@@ -2789,6 +2828,12 @@ ConfigManagementBox:AddButton({
 				runeItems[item] = true
 			end
 			Options.RuneItems:SetValue(runeItems)
+
+			local essenceItems = {}
+			for _, item in ipairs(config.selectedItems.Essence or {}) do
+				essenceItems[item] = true
+			end
+			Options.EssenceItems:SetValue(essenceItems)
 		else
 			Library:Notify("Failed to load config!", 3)
 		end
@@ -2974,6 +3019,12 @@ task.spawn(function()
 				runeItems[item] = true
 			end
 			Options.RuneItems:SetValue(runeItems)
+			
+			local essenceItems = {}
+			for _, item in ipairs(config.selectedItems.Essence or {}) do
+				essenceItems[item] = true
+			end
+			Options.EssenceItems:SetValue(essenceItems)
 			
 			Library:Notify("Autoload config '" .. autoloadName .. "' loaded!", 4)
 		end
@@ -3765,6 +3816,8 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 		
 		local newMob = funcs.getClosestMob()
 		
+local newMob = funcs.getClosestMob()
+		
 		if newMob then
 			-- ✅ RESET WHEN SWITCHING TO DIFFERENT MOB
 			if newMob ~= config.lastTrackedMob then
@@ -3787,9 +3840,50 @@ local farmLoop = RunService.Heartbeat:Connect(function()
 				
 				config.lastTrackedMob = newMob
 			end
+			
+			-- ✅ NEW: Reset idle hover timer when mob found
+			config.idleHoverActive = false
+			config.idleHoverTimer = 0
+		else
+			-- ✅ NEW: No mob found - Start idle hover timer
+			if not config.idleHoverActive then
+				local currentTime = tick()
+				
+				if config.idleHoverTimer == 0 then
+					config.idleHoverTimer = currentTime
+					print("⏰ No mobs found - Starting idle timer...")
+				end
+				
+				if (currentTime - config.idleHoverTimer) >= config.idleHoverDelay then
+					print("🚁 No mobs for " .. config.idleHoverDelay .. " seconds - Hovering to Position 2...")
+					config.idleHoverActive = true
+				end
+			end
 		end
 		
 		config.currentMob = newMob
+		
+		-- ✅ NEW: If idle hover is active and no mob, hover to position 2
+		if config.idleHoverActive and not config.currentMob then
+			local character = LocalPlayer.Character
+			if character then
+				local rootPart = character:FindFirstChild("HumanoidRootPart")
+				if rootPart then
+					local distance = (rootPart.Position - HOVER_POSITION_2).Magnitude
+					
+					if distance > 10 then
+						funcs.hoverToPosition(HOVER_POSITION_2, nil)
+						return
+					else
+						if config.bodyVelocity then
+							config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+						end
+						return
+					end
+				end
+			end
+		end
+		
 		return
 	end
 	
@@ -4250,36 +4344,77 @@ if config.currentRock then
 end
 	
 	-- Find new rock
-	if not config.currentRock then
-		local potentialRock = funcs.getClosestRock()
-		
-		if potentialRock then
-			local newRockId = tostring(potentialRock)
-			
-			-- Reset lava mode for new rock
-			if config.inLavaMode and newRockId ~= config.currentRockId then
-				print("🔄 NEW ROCK - Resetting lava mode")
-				part7a.resetMiningLavaMode()
-			end
-			
-			-- Check if occupied
-			if funcs.isOreOccupied(potentialRock) then
-				table.insert(config.ignoredRocks, potentialRock)
-				return
-			end
-			
-			-- Lock onto new rock
-			config.currentRock = potentialRock
-			config.currentRockModel = config.currentRock.Parent
-			config.currentRockId = newRockId
-			config.lastRockDurability = funcs.getRockDurability(config.currentRock)
-			config.rockDurabilityCheck = tick()
-			funcs.makeRockTransparent(config.currentRock)
-			
-			print("🎯 Locked onto new rock")
-		end
-		return
-	end
+if not config.currentRock then
+    local potentialRock = funcs.getClosestRock()
+    
+    if potentialRock then
+        local newRockId = tostring(potentialRock)
+        
+        if config.inLavaMode and newRockId ~= config.currentRockId then
+            print("🔄 NEW ROCK - Resetting lava mode")
+            part7a.resetMiningLavaMode()
+        end
+        
+        if funcs.isOreOccupied(potentialRock) then
+            table.insert(config.ignoredRocks, potentialRock)
+            return
+        end
+        
+        config.currentRock = potentialRock
+        config.currentRockModel = config.currentRock.Parent
+        config.currentRockId = newRockId
+        config.lastRockDurability = funcs.getRockDurability(config.currentRock)
+        config.rockDurabilityCheck = tick()
+        funcs.makeRockTransparent(config.currentRock)
+        
+        -- ✅ NEW: Reset idle hover timer when rock found
+        config.idleHoverActive = false
+        config.idleHoverTimer = 0
+        
+        print("🎯 Locked onto new rock")
+    else
+        -- ✅ NEW: No rock found - Start idle hover timer
+        if not config.idleHoverActive then
+            local currentTime = tick()
+            
+            if config.idleHoverTimer == 0 then
+                config.idleHoverTimer = currentTime
+                print("⏰ No rocks found - Starting idle timer...")
+            end
+            
+            if (currentTime - config.idleHoverTimer) >= config.idleHoverDelay then
+                print("🚁 No rocks for " .. config.idleHoverDelay .. " seconds - Hovering to Position 2...")
+                config.idleHoverActive = true
+            end
+        end
+        
+        -- ✅ NEW: If idle hover is active, hover to position 2
+        if config.idleHoverActive then
+            local character = LocalPlayer.Character
+            if character then
+                local rootPart = character:FindFirstChild("HumanoidRootPart")
+                if rootPart then
+                    local distance = (rootPart.Position - HOVER_POSITION_2).Magnitude
+                    
+                    if distance > 10 then
+                        funcs.hoverToPosition(HOVER_POSITION_2, nil)
+                        return
+                    else
+                        if config.bodyVelocity then
+                            config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                        end
+                        return
+                    end
+                end
+            end
+        end
+    end
+    return
+end
+
+-- ✅ NEW: Reset idle hover when we have a valid rock
+config.idleHoverActive = false
+config.idleHoverTimer = 0
 	
 	-- Move to rock and mine
 	if config.currentRock then
