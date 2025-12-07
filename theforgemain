@@ -1,6 +1,7 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- THE FORGE - WORLD DETECTION + AUTO-REJOIN + ANTI-AFK SYSTEM
+-- THE FORGE - WORLD DETECTION + AUTO-REJOIN + ANTI-AFK + RE-EXECUTE SYSTEM
 -- Automatically detects which world you're in and loads the correct script
+-- Re-executes on respawn/rejoin like Infinite Yield
 -- Created by Rafso [literalh]
 -- ═══════════════════════════════════════════════════════════════════════════
 
@@ -9,6 +10,43 @@ local GuiService = game:GetService("GuiService")
 local TeleportService = game:GetService("TeleportService")
 local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- RE-EXECUTE SYSTEM (Like Infinite Yield)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local SCRIPT_URL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgemain" -- Update this to your main hub URL
+
+local function saveReExecute()
+	if not isfolder("TheForge") then
+		makefolder("TheForge")
+	end
+	writefile("TheForge/re-execute.txt", SCRIPT_URL)
+	print("Re-Execute: Script URL saved")
+end
+
+local function setupReExecute()
+	-- Save the script for re-execution
+	pcall(saveReExecute)
+	
+	-- Re-execute on character respawn
+	LocalPlayer.CharacterAdded:Connect(function()
+		task.wait(2) -- Wait for character to fully load
+		print("Re-Execute: Character respawned, reloading script...")
+		
+		pcall(function()
+			loadstring(game:HttpGet(SCRIPT_URL))()
+		end)
+	end)
+	
+	print("Re-Execute: System enabled (will run on respawn)")
+end
+
+-- Check if this is a re-execution (script already ran once)
+local isReExecution = false
+if isfolder("TheForge") and isfile("TheForge/re-execute.txt") then
+	isReExecution = true
+end
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- NOTIFICATION SYSTEM
@@ -150,7 +188,7 @@ local function loadWorldScript(world)
 			sendNotification("Retry", "Attempting to reload script...", 3)
 			
 			pcall(function()
-				loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgestonewake\'scross'))()
+				loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgestonewakescross'))()
 			end)
 		end
 		
@@ -202,7 +240,19 @@ end
 -- MAIN EXECUTION
 -- ═══════════════════════════════════════════════════════════════════════════
 
-sendNotification("The Forge", "Initializing by Rafso...", 3)
+if isReExecution then
+	sendNotification("The Forge", "Re-Executing by Rafso...", 3)
+else
+	sendNotification("The Forge", "Initializing by Rafso...", 3)
+end
+
+-- Setup Re-Execute System (first run only)
+if not isReExecution then
+	task.spawn(function()
+		pcall(setupReExecute)
+		sendNotification("Re-Execute", "System enabled! Will run on respawn", 3)
+	end)
+end
 
 -- Setup Auto-Rejoin System
 task.spawn(function()
@@ -245,5 +295,5 @@ else
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- END OF WORLD DETECTION + AUTO-REJOIN + ANTI-AFK SYSTEM
+-- END OF WORLD DETECTION + AUTO-REJOIN + ANTI-AFK + RE-EXECUTE SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
