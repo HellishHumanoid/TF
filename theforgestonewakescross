@@ -1445,10 +1445,6 @@ local teleportNoclipEnabled = false
 
 local FORGOTTEN_KINGDOM_SPAWN = Vector3.new(-260.62, 17.75, 100.27)
 local FORGOTTEN_KINGDOM_FRONT = Vector3.new(-260.62, 17.75, 93.27)
-local FORGOTTEN_KINGDOM_GUI_X = 602
-local FORGOTTEN_KINGDOM_GUI_Y = 459
-local TELEPORT_BUTTON_X = 1124
-local TELEPORT_BUTTON_Y = 682
 
 local world2AutoJoinActive = false
 local world2AutoJoinLoop = nil
@@ -1463,6 +1459,12 @@ local function pressK()
 	VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.K, false, game)
 	task.wait(0.05)
 	VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.K, false, game)
+end
+
+local function pressEnter()
+	VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+	task.wait(0.05)
+	VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
 end
 
 local function checkForPortalTool()
@@ -1539,24 +1541,51 @@ local function teleportToWorld2()
 		task.wait(0.05)
 	end
 	
-	local targetPart = proximityPrompt.Parent
-	if targetPart and targetPart:IsA("BasePart") then
-		pcall(function()
-			proximityPrompt:InputHoldBegin()
-			proximityPrompt:InputHoldEnd()
-		end)
-	end
+	-- Fire proximity prompt
+	fireproximityprompt(proximityPrompt)
+	task.wait(1)
 	
-	task.wait(0.5)
+	-- Use GuiService to navigate the UI properly
+	local GuiService = game:GetService("GuiService")
+	local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
 	
-	clickAt(FORGOTTEN_KINGDOM_GUI_X, FORGOTTEN_KINGDOM_GUI_Y)
-	task.wait(0.3)
-	
-	task.wait(0.5)
-	
-	for i = 1, 5 do
-		clickAt(TELEPORT_BUTTON_X, TELEPORT_BUTTON_Y)
-		task.wait(0.15)
+	if playerGui then
+		local mainGui = playerGui:FindFirstChild("Main")
+		if mainGui then
+			local screen = mainGui:FindFirstChild("Screen")
+			if screen then
+				local teleportFrame = screen:FindFirstChild("Teleport")
+				if teleportFrame then
+					local list = teleportFrame:FindFirstChild("List")
+					if list then
+						local forgottenKingdom = list:FindFirstChild("Forgotten Kingdom")
+						if forgottenKingdom then
+							-- Set GUI navigation to select Forgotten Kingdom
+							GuiService.SelectedObject = forgottenKingdom
+							task.wait(0.3)
+							
+							-- Press Enter to confirm selection
+							pressEnter()
+							task.wait(0.5)
+							
+							-- Now select Teleport button
+							local infoFrame = teleportFrame:FindFirstChild("InfoFrame")
+							if infoFrame then
+								local teleportButton = infoFrame:FindFirstChild("Teleport")
+								if teleportButton then
+									-- Set GUI navigation to select Teleport button
+									GuiService.SelectedObject = teleportButton
+									task.wait(0.3)
+									
+									-- Press Enter to confirm teleport
+									pressEnter()
+								end
+							end
+						end
+					end
+				end
+			end
+		end
 	end
 	
 	return true
