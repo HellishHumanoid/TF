@@ -159,8 +159,10 @@ local function setupAntiAFK()
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- WORLD DETECTION LOGIC
+-- WORLD DETECTION LOGIC + WORLD CHANGE DETECTION
 -- ═══════════════════════════════════════════════════════════════════════════
+
+local currentWorld = nil
 
 local function detectWorld()
 	sendNotification("The Forge", "Detecting world...", 3)
@@ -191,6 +193,38 @@ local function detectWorld()
 	-- Unknown world
 	sendNotification("Detection Failed", "Unknown world or pickaxes not found!", 5)
 	return nil
+end
+
+-- ✅ NEW: Monitor for world changes
+local function setupWorldChangeDetection()
+	task.spawn(function()
+		while true do
+			task.wait(3) -- Check every 3 seconds
+			
+			local detectedWorld = detectWorld()
+			
+			-- If world changed, re-execute
+			if detectedWorld and detectedWorld ~= currentWorld and currentWorld ~= nil then
+				print("🌍 WORLD CHANGE DETECTED: " .. currentWorld .. " → " .. detectedWorld)
+				sendNotification("World Change!", "Re-executing script...", 3)
+				
+				task.wait(2)
+				
+				-- Re-execute the hub
+				pcall(function()
+					loadstring(game:HttpGet(SCRIPT_URL))()
+				end)
+				
+				break -- Stop this loop since we're re-executing
+			end
+			
+			-- Update current world
+			if detectedWorld and not currentWorld then
+				currentWorld = detectedWorld
+				print("✅ Initial world set: " .. currentWorld)
+			end
+		end
+	end)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -321,8 +355,12 @@ task.wait(3)
 local detectedWorld = detectWorld()
 
 if detectedWorld then
+	currentWorld = detectedWorld -- ✅ Set initial world
 	task.wait(1)
 	loadWorldScript(detectedWorld)
+	
+	-- ✅ Start monitoring for world changes
+	setupWorldChangeDetection()
 else
 	sendNotification("Manual Selection", "Retrying detection...", 5)
 	
@@ -330,8 +368,12 @@ else
 	task.wait(5)
 	local retryWorld = detectWorld()
 	if retryWorld then
+		currentWorld = retryWorld -- ✅ Set initial world
 		task.wait(1)
 		loadWorldScript(retryWorld)
+		
+		-- ✅ Start monitoring for world changes
+		setupWorldChangeDetection()
 	else
 		sendNotification("Failed", "Could not detect world!", 5)
 	end
