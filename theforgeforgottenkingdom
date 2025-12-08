@@ -4079,111 +4079,43 @@ local newMob = funcs.getClosestMob()
 local newMob = funcs.getClosestMob()
 
 if newMob then
--- ✅ RESET WHEN SWITCHING TO DIFFERENT MOB
-if newMob ~= config.lastTrackedMob then
-print("🔄 NEW MOB DETECTED: " .. newMob.Name)
+    -- ✅ RESET WHEN SWITCHING TO DIFFERENT MOB
+    if newMob ~= config.lastTrackedMob then
+        print("🔄 NEW MOB DETECTED: " .. newMob.Name)
 
-if config.farmingInLavaMode and config.savedFarmingPosition then
-print("🔄 Different mob - Resetting to " .. config.savedFarmingPosition)
-config.lockPosition = config.savedFarmingPosition
-config.savedFarmingPosition = nil
-config.farmingInLavaMode = false
+        if config.farmingInLavaMode and config.savedFarmingPosition then
+            print("🔄 Different mob - Resetting to " .. config.savedFarmingPosition)
+            config.lockPosition = config.savedFarmingPosition
+            config.savedFarmingPosition = nil
+            config.farmingInLavaMode = false
 
-local character = LocalPlayer.Character
-if character then
-local humanoid = character:FindFirstChildOfClass("Humanoid")
-if humanoid then
-config.farmingLastHealth = humanoid.Health
-end
-end
-end
-
-config.lastTrackedMob = newMob
-end
-
--- ✅ NEW: Reset idle hover timer when mob found
-config.idleHoverActive = false
-config.idleHoverTimer = 0
-else
-        -- ✅ NEW: No rock found - Start idle hover timer
-        if not config.idleHoverActive then
-            local currentTime = tick()
-
-            if config.idleHoverTimer == 0 then
-                config.idleHoverTimer = currentTime
-                print("⏰ No rocks found - Starting idle timer...")
-            end
-if (currentTime - config.idleHoverTimer) >= config.idleHoverDelay then
-    print("🚁 No rocks for " .. config.idleHoverDelay .. " seconds - Hovering to Position 2...")
-    config.idleHoverActive = true
-	end
-	
-     -- Clear ignored rocks when entering waiting mode
-    if #config.ignoredRocks > 0 then
-        print("🔄 Clearing " .. #config.ignoredRocks .. " ignored rocks (entering idle mode)")
-        config.ignoredRocks = {}
-    end
-end
-
-        -- ✅ NEW: If idle hover is active, periodically check for rocks
-        if config.idleHoverActive then
-            local currentTime = tick()
-            
-            -- Re-check for rocks every 3 seconds while in idle hover
-            if (currentTime - config.lastIdleRockCheckTime) >= config.idleHoverRetryInterval then
-                config.lastIdleRockCheckTime = currentTime
-                print("🔍 Re-checking for rocks while in waiting zone...")
-                
-                local foundRock = funcs.getClosestRock()
-                if foundRock then
-                    print("✅ ROCK FOUND! Exiting waiting zone...")
-                    config.idleHoverActive = false
-                    config.idleHoverTimer = 0
-                    
-                    -- Stop movement
-                    if config.bodyVelocity then
-                        config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                    end
-                    
-                    if Library then
-                        Library:Notify("✅ Rock found - Resuming mining", 2)
-                    end
-                    
-                    -- The next loop iteration will pick up the rock
-                    return
-                else
-                    print("⏳ Still no rocks available...")
-                end
-            end
-            
-            -- Continue hovering to position 2
             local character = LocalPlayer.Character
             if character then
-                local rootPart = character:FindFirstChild("HumanoidRootPart")
-                if rootPart then
-                    local distance = (rootPart.Position - HOVER_POSITION_2).Magnitude
-
-                    if distance > 10 then
-                        funcs.hoverToPosition(HOVER_POSITION_2, nil)
-                        return
-                    else
-                        if config.bodyVelocity then
-                            config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
-                        end
-                        return
-                    end
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    config.farmingLastHealth = humanoid.Health
                 end
             end
         end
+
+        config.lastTrackedMob = newMob
     end
-    return
+
+    -- ✅ FIX: Actually set the current mob!
+    config.currentMob = newMob
+    print("🎯 Locked onto mob: " .. newMob.Name)
+else
+    -- No mob found
+    config.currentMob = nil
+end
 end
 
+-- ✅ Move to and attack the mob
 if config.currentMob then
-local lockPos = funcs.getLockPosition(config.currentMob)
-if lockPos then
-funcs.hoverToMob(lockPos, config.currentMob)
-end
+    local lockPos = funcs.getLockPosition(config.currentMob)
+    if lockPos then
+        funcs.hoverToMob(lockPos, config.currentMob)
+    end
 end
 end)
 
