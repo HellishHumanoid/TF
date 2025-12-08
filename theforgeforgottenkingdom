@@ -897,22 +897,28 @@ local function getClosestRock()
 end
 
 local function makeRockTransparent(rock)
-if not rock then return end
+    if not rock then return end
 
-for _, descendant in pairs(rock:GetDescendants()) do
-if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
-descendant.Transparency = 0.7
-end
-end
+    for _, descendant in pairs(rock:GetDescendants()) do
+        if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+            descendant.Transparency = 0.7
+            -- ✅ Remove red color - reset to default white/gray
+            descendant.Color = Color3.fromRGB(163, 162, 165)  -- Default gray color
+            descendant.Material = Enum.Material.SmoothPlastic
+        end
+    end
 
-local rockTypeModel = rock.Parent
-if rockTypeModel then
-for _, descendant in pairs(rockTypeModel:GetDescendants()) do
-if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
-descendant.Transparency = 0.7
-end
-end
-end
+    local rockTypeModel = rock.Parent
+    if rockTypeModel then
+        for _, descendant in pairs(rockTypeModel:GetDescendants()) do
+            if descendant:IsA("BasePart") or descendant:IsA("MeshPart") then
+                descendant.Transparency = 0.7
+                -- ✅ Remove red color - reset to default white/gray
+                descendant.Color = Color3.fromRGB(163, 162, 165)  -- Default gray color
+                descendant.Material = Enum.Material.SmoothPlastic
+            end
+        end
+    end
 end
 
 -- Store functions globally
@@ -1205,45 +1211,184 @@ end
 -- ✅ NEW: Buyer NPC position for looking at
 local BUYER_NPC_POSITION = Vector3.new(-141.54, 21.24, -26.52)
 
+-- ✅ IMPROVED: More reliable seller interaction with better positioning and timing
 local function talkToSeller()
-local character = LocalPlayer.Character
-if not character then return false end
+    local character = LocalPlayer.Character
+    if not character then 
+        print("❌ No character found")
+        return false 
+    end
 
-local rootPart = character:FindFirstChild("HumanoidRootPart")
-if not rootPart then return false end
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then 
+        print("❌ No HumanoidRootPart found")
+        return false 
+    end
 
-	-- Save original position
-originalPosition = rootPart.CFrame
-print("💾 Saved original position: " .. tostring(originalPosition.Position))
+    -- Save original position
+    originalPosition = rootPart.CFrame
+    print("💾 Saved original position: " .. tostring(originalPosition.Position))
 
-	-- Teleport to seller
-rootPart.CFrame = CFrame.new(SELLER_POSITION)
-	task.wait(0.5)
-	task.wait(0.3)
-	
-	-- ✅ NEW: Make character look at the Buyer NPC
-	local lookAtCFrame = CFrame.new(SELLER_POSITION, BUYER_NPC_POSITION)
-	rootPart.CFrame = lookAtCFrame
-	print("👀 Looking at Buyer NPC")
-	task.wait(0.2)
+    -- ✅ STEP 1: Teleport to seller position
+    print("🚀 Teleporting to seller...")
+    rootPart.CFrame = CFrame.new(SELLER_POSITION)
+    task.wait(0.3)  -- Wait for teleport to stabilize
 
-	-- Fire proximity prompt
-if SELLER_PROXIMITY then
-fireproximityprompt(SELLER_PROXIMITY)
-task.wait(0.5)
-closeChat()
-task.wait(0)
+    -- ✅ STEP 2: Look at the Buyer NPC (more reliable)
+    local lookAtCFrame = CFrame.new(SELLER_POSITION, BUYER_NPC_POSITION)
+    rootPart.CFrame = lookAtCFrame
+    print("👀 Looking at Buyer NPC")
+    task.wait(0.2)
 
-		-- Teleport back to original position
-if originalPosition then
-rootPart.CFrame = originalPosition
-print("🔙 Teleported back to original position")
+    -- ✅ STEP 3: Move slightly closer to the NPC (improves proximity detection)
+    local directionToNPC = (BUYER_NPC_POSITION - SELLER_POSITION).Unit
+    local closePosition = SELLER_POSITION + (directionToNPC * 1.5)  -- Move 1.5 studs closer
+    rootPart.CFrame = CFrame.new(closePosition, BUYER_NPC_POSITION)
+    print("🔄 Moved closer to NPC")
+    task.wait(0.3)
+
+    -- ✅ STEP 4: Verify proximity prompt exists
+    if not SELLER_PROXIMITY then
+        print("❌ Seller proximity prompt not found!")
+        if originalPosition then
+            rootPart.CFrame = originalPosition
+        end
+        return false
+    end
+
+    -- ✅ STEP 5: Fire proximity prompt multiple times for reliability
+    print("🔔 Triggering proximity prompt...")
+    for i = 1, 3 do
+        fireproximityprompt(SELLER_PROXIMITY)
+        task.wait(0.1)
+    end
+    
+    task.wait(0.5)  -- Wait for dialogue to open
+
+    -- ✅ STEP 6: Close the dialogue
+    print("🔘 Starting autoclicker to close dialogue...")
+    closeChat()
+    task.wait(0.3)
+
+    -- ✅ STEP 7: Teleport back to original position
+    if originalPosition then
+        rootPart.CFrame = originalPosition
+        print("🔙 Teleported back to original position")
+    end
+
+    print("✅ Seller interaction complete!")
+    return true
 end
 
-return true
+-- ✅ IMPROVED: More aggressive autoclicker for closing dialogue
+local function closeChat()
+    task.wait(0.2)
+    print("🔘 Starting autoclicker at No button position: X=" .. NO_BUTTON_X .. ", Y=" .. NO_BUTTON_Y)
+    
+    -- Click multiple times with shorter intervals for better reliability
+    local clicks = 0
+    local maxClicks = 30  -- 30 clicks over 1.5 seconds
+    
+    for i = 1, maxClicks do
+        pcall(function()
+            VirtualInputManager:SendMouseButtonEvent(NO_BUTTON_X, NO_BUTTON_Y, 0, true, game, 1)
+            task.wait(0.01)
+            VirtualInputManager:SendMouseButtonEvent(NO_BUTTON_X, NO_BUTTON_Y, 0, false, game, 1)
+        end)
+        clicks = clicks + 1
+        task.wait(0.05)  -- 50ms between clicks
+    end
+    
+    print("✅ Autoclicker completed: " .. clicks .. " clicks")
 end
 
-return false
+-- ✅ NEW: Alternative method using workspace raycast to find NPC position dynamically
+local function findBuyerNPCPosition()
+    local buyerNPC = workspace:FindFirstChild("NPCs")
+    if buyerNPC then
+        local greedyCey = buyerNPC:FindFirstChild("Greedy Cey")
+        if greedyCey then
+            local npcRoot = greedyCey:FindFirstChild("HumanoidRootPart")
+            if npcRoot then
+                print("✅ Found Buyer NPC at: " .. tostring(npcRoot.Position))
+                return npcRoot.Position
+            end
+        end
+    end
+    
+    -- Fallback to hardcoded position
+    print("⚠️ Using fallback NPC position")
+    return BUYER_NPC_POSITION
+end
+
+-- ✅ IMPROVED: Version that dynamically finds NPC position
+local function talkToSellerDynamic()
+    local character = LocalPlayer.Character
+    if not character then 
+        print("❌ No character found")
+        return false 
+    end
+
+    local rootPart = character:FindFirstChild("HumanoidRootPart")
+    if not rootPart then 
+        print("❌ No HumanoidRootPart found")
+        return false 
+    end
+
+    -- Save original position
+    originalPosition = rootPart.CFrame
+    print("💾 Saved original position: " .. tostring(originalPosition.Position))
+
+    -- ✅ Find NPC dynamically
+    local npcPosition = findBuyerNPCPosition()
+
+    -- ✅ Teleport to seller position
+    print("🚀 Teleporting to seller...")
+    rootPart.CFrame = CFrame.new(SELLER_POSITION)
+    task.wait(0.3)
+
+    -- ✅ Look at the Buyer NPC
+    local lookAtCFrame = CFrame.new(SELLER_POSITION, npcPosition)
+    rootPart.CFrame = lookAtCFrame
+    print("👀 Looking at Buyer NPC")
+    task.wait(0.2)
+
+    -- ✅ Move closer
+    local directionToNPC = (npcPosition - SELLER_POSITION).Unit
+    local closePosition = SELLER_POSITION + (directionToNPC * 1.5)
+    rootPart.CFrame = CFrame.new(closePosition, npcPosition)
+    print("🔄 Moved closer to NPC")
+    task.wait(0.3)
+
+    -- ✅ Fire proximity prompt
+    if not SELLER_PROXIMITY then
+        print("❌ Seller proximity prompt not found!")
+        if originalPosition then
+            rootPart.CFrame = originalPosition
+        end
+        return false
+    end
+
+    print("🔔 Triggering proximity prompt...")
+    for i = 1, 3 do
+        fireproximityprompt(SELLER_PROXIMITY)
+        task.wait(0.1)
+    end
+    
+    task.wait(0.5)
+
+    -- ✅ Close dialogue
+    closeChat()
+    task.wait(0.3)
+
+    -- ✅ Return to original position
+    if originalPosition then
+        rootPart.CFrame = originalPosition
+        print("🔙 Teleported back to original position")
+    end
+
+    print("✅ Seller interaction complete!")
+    return true
 end
 
 local function getItemQuantity(itemName)
@@ -3376,15 +3521,123 @@ config.lastRockHPChangeTime = 0
 config.rockHPStagnationTimeout = 3  -- 3 seconds without HP change = stuck
 config.stuckCheckEnabled = false
 config.stuckInAboveMode = false
+config.aboveModeTimeout = 8  -- Time in Above mode before switching rocks
+config.aboveModeHPCheckTime = 0  -- When we started checking HP in Above mode
+config.aboveModeNoHitTimeout = 4  -- If no damage after 4 seconds in Above, switch rocks
 
 local function checkRockHPStagnation()
     if not config.miningEnabled then return end
     if not config.currentRock then return end
-    if config.defendingAgainstMob then return end
+    if config.defendingAgainstMob then 
+        -- ✅ Reset timers when in defense mode
+        config.stuckCheckEnabled = false
+        config.lastRockHP = nil
+        config.lastRockHPChangeTime = 0
+        config.aboveModeStartTime = nil
+        return 
+    end
     if not config.isLockedOn then return end
     
-    -- ✅ Only check when in Below position (not already in Above/lava mode)
-    if config.inLavaMode or config.miningAngle < 180 then return end
+    local currentTime = tick()
+    
+    -- ✅ If we're in Above mode, check if we're actually dealing damage
+    if config.inLavaMode or config.miningAngle < 180 then
+        if not config.aboveModeStartTime then
+            config.aboveModeStartTime = currentTime
+            config.aboveModeLastHP = currentHP
+            config.aboveModeHPCheckTime = currentTime
+            print("⏰ Started Above mode - Initial HP: " .. currentHP)
+        end
+        
+        local timeInAboveMode = currentTime - config.aboveModeStartTime
+        
+        if config.isLockedOn and timeInAboveMode >= 2 then
+            if not config.aboveModeHPCheckTime then
+                config.aboveModeHPCheckTime = currentTime
+                config.aboveModeLastHP = currentHP
+                print("✅ Locked onto rock in Above mode - Starting damage check (HP: " .. currentHP .. ")")
+            else
+                local timeSinceHPCheck = currentTime - config.aboveModeHPCheckTime
+                
+                if currentHP < config.aboveModeLastHP then
+                    config.aboveModeHPCheckTime = currentTime
+                    config.aboveModeLastHP = currentHP
+                    print("✅ Dealing damage from Above! HP: " .. currentHP)
+                else
+                    if timeSinceHPCheck >= config.aboveModeNoHitTimeout then
+                        print("═══════════════════════════════════════════════════════════")
+                        print("❌ NOT HITTING ROCK FROM ABOVE FOR " .. math.floor(timeSinceHPCheck) .. " SECONDS")
+                        print("   Current HP: " .. currentHP .. " (unchanged)")
+                        print("   SWITCHING TO NEW ROCK!")
+                        print("═══════════════════════════════════════════════════════════")
+                        
+                        table.insert(config.ignoredRocks, config.currentRock)
+                        
+                        config.currentRock = nil
+                        config.currentRockModel = nil
+                        config.currentRockId = nil
+                        config.lastRockDurability = nil
+                        config.isLockedOn = false
+                        
+                        config.inLavaMode = false
+                        config.stuckInAboveMode = false
+                        config.miningVerticalDistance = config.normalMiningDistance
+                        config.miningAngle = config.normalMiningAngle
+                        config.aboveModeStartTime = nil
+                        config.aboveModeHPCheckTime = nil
+                        config.aboveModeLastHP = nil
+                        
+                        config.stuckCheckEnabled = false
+                        config.lastRockHP = nil
+                        config.lastRockHPChangeTime = 0
+                        
+                        if Library then
+                            Library:Notify("❌ Can't hit from Above - New rock", 3)
+                        end
+                        
+                        return
+                    end
+                end
+            end
+        end
+        
+        if timeInAboveMode >= config.aboveModeTimeout then
+            print("═══════════════════════════════════════════════════════════")
+            print("⏱️ BEEN IN ABOVE MODE TOO LONG - SWITCHING ROCK!")
+            print("═══════════════════════════════════════════════════════════")
+            
+            table.insert(config.ignoredRocks, config.currentRock)
+            
+            config.currentRock = nil
+            config.currentRockModel = nil
+            config.currentRockId = nil
+            config.lastRockDurability = nil
+            config.isLockedOn = false
+            
+            config.inLavaMode = false
+            config.stuckInAboveMode = false
+            config.miningVerticalDistance = config.normalMiningDistance
+            config.miningAngle = config.normalMiningAngle
+            config.aboveModeStartTime = nil
+            config.aboveModeHPCheckTime = nil
+            config.aboveModeLastHP = nil
+            
+            config.stuckCheckEnabled = false
+            config.lastRockHP = nil
+            config.lastRockHPChangeTime = 0
+            
+            if Library then
+                Library:Notify("⏱️ Above mode timeout - Finding new rock", 3)
+            end
+            
+            return
+        end
+        
+        return
+    end
+    
+    -- Reset timer if not in Above mode
+    config.aboveModeStartTime = nil
     
     local rockTypeModel = config.currentRock.Parent
     if not rockTypeModel then return end
@@ -3392,32 +3645,31 @@ local function checkRockHPStagnation()
     local currentHP = rockTypeModel:GetAttribute("Health")
     if not currentHP then return end
     
-    local currentTime = tick()
-    
     -- ✅ Initialize tracking on first check
     if not config.stuckCheckEnabled then
         config.lastRockHP = currentHP
         config.lastRockHPChangeTime = currentTime
         config.stuckCheckEnabled = true
-        print("🔍 Started HP stagnation monitoring")
+        print("🔍 Started HP stagnation monitoring - Current HP: " .. currentHP)
         return
     end
     
-    -- ✅ If HP changed, reset timer
+    -- ✅ SIMPLE: If HP changed AT ALL, reset timer (YOU are hitting it)
     if currentHP ~= config.lastRockHP then
+        print("✅ Rock HP changed: " .. config.lastRockHP .. " → " .. currentHP .. " (YOU are hitting it)")
         config.lastRockHP = currentHP
         config.lastRockHPChangeTime = currentTime
         return
     end
     
-    -- ✅ If HP hasn't changed for 3 seconds = STUCK
+    -- ✅ If HP hasn't changed for X seconds = YOU are stuck/not hitting
     local timeSinceChange = currentTime - config.lastRockHPChangeTime
     
-    if timeSinceChange >= config.rockHPStagnationTimeout then
+    if timeSinceChange >= (config.rockHPStagnationTimeout or 3) then
         print("═══════════════════════════════════════════════════════════")
-        print("⚠️ ROCK HP STUCK FOR 3 SECONDS - SWITCHING TO ABOVE!")
+        print("⚠️ YOU STOPPED HITTING ROCK FOR " .. math.floor(timeSinceChange) .. " SECONDS")
         print("   Current HP: " .. currentHP)
-        print("   Time stuck: " .. math.floor(timeSinceChange) .. " seconds")
+        print("   SWITCHING TO ABOVE!")
         print("═══════════════════════════════════════════════════════════")
         
         -- ✅ Switch to Above position
@@ -3425,6 +3677,7 @@ local function checkRockHPStagnation()
         config.stuckInAboveMode = true
         config.miningVerticalDistance = 6
         config.miningAngle = 90
+        config.aboveModeStartTime = currentTime
         
         if config.currentRock then 
             config.currentRockModel = config.currentRock.Parent 
@@ -3435,7 +3688,7 @@ local function checkRockHPStagnation()
         config.lastRockHP = nil
         
         if Library then
-            Library:Notify("⚠️ Mining stuck - Switching to Above", 3)
+            Library:Notify("⚠️ Not hitting rock - Switching to Above", 3)
         end
         
         config.lavaCheckCooldown = true
@@ -4237,7 +4490,7 @@ if not rootPart then return end
 if not config.defendingAgainstMob then
     part7a.checkLavaDamage()
     part7a.checkCurrentRockHP()
-    part7a.checkRockHPStagnation()  -- ✅ NEW: Check if stuck
+    part7a.checkRockHPStagnation()  -- ✅ ADD THIS LINE
 end
 
 -- ✅ INSTANT ROCK CHECK - ONLY SKIP IF ROCK IS VERY CLOSE
