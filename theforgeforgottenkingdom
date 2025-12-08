@@ -510,7 +510,7 @@ Essence = {}
 -- ✅ NEW: DEFENSE SYSTEM CONFIG
 -- ═══════════════════════════════════════════════════════════════════════════
 miningDefenseEnabled = true,
-miningDefenseDistance = 10,  -- Detection range (10 studs)
+miningDefenseDistance = 20,  -- Detection range (20 studs)
 miningDefenseVerticalDistance = 6,  -- Vertical distance from mob
 defenseLockPosition = "Below",  -- Default to Below position
 defendingAgainstMob = nil,
@@ -639,22 +639,60 @@ return closestMob
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ✅ FIXED: IMPROVED OCCUPIED CHECK
+-- ✅ NEW: LASTHITPLAYER ATTRIBUTE CHECK SYSTEM
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local OCCUPIED_CHECK_DISTANCE = 15
 
 -- Track which rocks WE started mining
 config.rocksWeStarted = config.rocksWeStarted or {}
+config.rockClaimTimes = config.rockClaimTimes or {}  -- Track when we started hitting a rock
+config.rockClaimTimeout = 3  -- 3 seconds to confirm we're hitting the rock
 
 local function isOreOccupied(rock)
     if not config.avoidOccupied then return false end
     if not rock then return false end
 
     local rockId = tostring(rock)
-    if config.rocksWeStarted[rockId] then
-        print("✅ This is OUR rock - ignoring other players")
-        return false  -- This is OUR rock, other players can't steal it
+    local myUsername = LocalPlayer.Name
+
+    -- Get rock model
+    local rockTypeModel = rock.Parent
+    if not rockTypeModel then return false end
+
+    -- ✅ NEW: Check LastHitPlayer attribute FIRST
+    local lastHitPlayer = rockTypeModel:GetAttribute("LastHitPlayer")
+    
+    if lastHitPlayer then
+        -- Someone has hit this rock
+        if lastHitPlayer == myUsername then
+            -- WE are the last to hit it - SAFE!
+            print("✅ LastHitPlayer = " .. myUsername .. " (OUR ROCK)")
+            config.rocksWeStarted[rockId] = true
+            return false
+        else
+            -- Someone else hit it last
+            local currentHP = rockTypeModel:GetAttribute("Health")
+            local maxHP = rockTypeModel:GetAttribute("MaxHealth")
+            
+            if currentHP and maxHP and maxHP > 0 then
+                local hpPercentage = (currentHP / maxHP) * 100
+                
+                -- ✅ If rock is at 100% HP, it regenerated - SAFE to take
+                if hpPercentage >= 99 then
+                    print("✅ LastHitPlayer was: " .. lastHitPlayer .. " but rock regenerated (100% HP) - SAFE")
+                    return false
+                else
+                    -- Rock is damaged and someone else hit it - NOT SAFE
+                    print("⚠️ LastHitPlayer = " .. lastHitPlayer .. " (HP: " .. math.floor(hpPercentage) .. "%) - OCCUPIED")
+                    return true
+                end
+            end
+        end
+    else
+        -- No LastHitPlayer attribute - rock never touched - SAFE
+        print("✅ No LastHitPlayer attribute - Rock never touched - SAFE")
+        return false
     end
 
     -- Get rock position
@@ -670,22 +708,21 @@ local function isOreOccupied(rock)
     local myRootPart = character:FindFirstChild("HumanoidRootPart")
     if not myRootPart then return false end
 
-    -- ✅ IMPROVED: Check HP first - if it's below 100%, someone else started it
-    local rockTypeModel = rock.Parent
-    if rockTypeModel then
-        local currentHP = rockTypeModel:GetAttribute("Health")
-        local maxHP = rockTypeModel:GetAttribute("MaxHealth")
+    -- ✅ Check HP
+    local currentHP = rockTypeModel:GetAttribute("Health")
+    local maxHP = rockTypeModel:GetAttribute("MaxHealth")
+    
+    if currentHP and maxHP and maxHP > 0 then
+        local hpPercentage = (currentHP / maxHP) * 100
         
-        if currentHP and maxHP and maxHP > 0 then
-            -- ✅ If HP is ANY amount below 100%, someone else started it
-            if currentHP < maxHP then
-                print("⚠️ Rock already damaged - HP: " .. currentHP .. "/" .. maxHP .. " - SKIPPING")
-                return true
-            end
+        -- If HP is below 100% and no LastHitPlayer, someone is hitting it
+        if hpPercentage < 99 and not lastHitPlayer then
+            print("⚠️ Rock damaged but no LastHitPlayer - Someone is hitting it - SKIPPING")
+            return true
         end
     end
 
-    -- ✅ IMPROVED: Check for players actively mining (pickaxe equipped + close to rock)
+    -- ✅ Check for players actively mining (pickaxe equipped + close to rock)
     for _, player in pairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
 
@@ -695,9 +732,7 @@ local function isOreOccupied(rock)
             if otherRoot then
                 local distance = (otherRoot.Position - rockPos).Magnitude
 
-                -- ✅ If player is close to the rock
                 if distance <= OCCUPIED_CHECK_DISTANCE then
-                    -- ✅ MUST have pickaxe EQUIPPED (in character, not backpack)
                     local hasPickaxeEquipped = otherChar:FindFirstChild("Pickaxe")
 
                     if hasPickaxeEquipped then
@@ -792,7 +827,7 @@ local function getClosestRock()
 
     for _, islandFolder in pairs(rocksFolder:GetChildren()) do
         if islandFolder:IsA("Folder") then
-		            -- ✅ NEW: Zone filtering
+            -- ✅ Zone filtering
             if config.zoneFarmEnabled and config.selectedZone ~= "All Zones" then
                 if islandFolder.Name ~= config.selectedZone then
                     continue  -- Skip this zone
@@ -814,23 +849,35 @@ local function getClosestRock()
                                     if durabilityModel:IsA("Model") and tonumber(durabilityModel.Name) then
                                         if not isRockIgnored(durabilityModel) and isValidRock(durabilityModel) then
                                             
-                                            -- ✅ CHECK HP FIRST - Skip if already damaged
+                                            -- ✅ CHECK HP FIRST - Skip if already damaged (unless it's our rock)
                                             local rockTypeModel = durabilityModel.Parent
                                             local skipRock = false
+                                            local rockId = tostring(durabilityModel)
                                             
                                             if rockTypeModel then
                                                 local currentHP = rockTypeModel:GetAttribute("Health")
                                                 local maxHP = rockTypeModel:GetAttribute("MaxHealth")
                                                 
                                                 if currentHP and maxHP and maxHP > 0 then
-                                                    -- If HP is below 100%, someone else is mining it
-                                                    if currentHP < maxHP then
-                                                        local rockId = tostring(durabilityModel)
-                                                        -- UNLESS it's OUR rock
-                                                        if not config.rocksWeStarted[rockId] then
-                                                            skipRock = true
+                                                    local hpPercentage = (currentHP / maxHP) * 100
+                                                    
+                                                    -- If HP is below 100%
+                                                    if hpPercentage < 99 then
+                                                        -- ✅ Check LastHitPlayer attribute
+                                                        local lastHitPlayer = rockTypeModel:GetAttribute("LastHitPlayer")
+                                                        
+                                                        if lastHitPlayer and lastHitPlayer == LocalPlayer.Name then
+                                                            -- This is OUR rock!
+                                                            print("✅ Found OUR damaged rock: " .. rockTypeName .. " (" .. math.floor(hpPercentage) .. "% HP)")
+                                                            skipRock = false
                                                         else
-                                                            print("✅ Continuing OUR rock: " .. rockTypeName)
+                                                            -- Someone else's rock
+                                                            if lastHitPlayer then
+                                                                print("⏭️ Skipping " .. lastHitPlayer .. "'s rock: " .. rockTypeName)
+                                                            else
+                                                                print("⏭️ Skipping damaged rock: " .. rockTypeName)
+                                                            end
+                                                            skipRock = true
                                                         end
                                                     end
                                                 end
@@ -842,37 +889,8 @@ local function getClosestRock()
                                                     local distance = (rootPart.Position - positionPart.Position).Magnitude
 
                                                     if distance <= config.farmDistance then
-                                                        -- ✅ Check for players with pickaxe nearby
-                                                        local occupied = false
-                                                        local rockId = tostring(durabilityModel)
-                                                        
-                                                        -- Skip occupied check if it's OUR rock
-                                                        if not config.rocksWeStarted[rockId] and config.avoidOccupied then
-                                                            local rockPos = positionPart.Position
-                                                            
-                                                            for _, player in pairs(Players:GetPlayers()) do
-                                                                if player ~= LocalPlayer then
-                                                                    local otherChar = player.Character
-                                                                    if otherChar then
-                                                                        local otherRoot = otherChar:FindFirstChild("HumanoidRootPart")
-                                                                        if otherRoot then
-                                                                            local playerDist = (otherRoot.Position - rockPos).Magnitude
-                                                                            
-                                                                            if playerDist <= 15 then
-                                                                                local hasPickaxe = otherChar:FindFirstChild("Pickaxe")
-                                                                                if hasPickaxe then
-                                                                                    print("⏭️ Skipping rock near player: " .. player.Name)
-                                                                                    occupied = true
-                                                                                    break
-                                                                                end
-                                                                            end
-                                                                        end
-                                                                    end
-                                                                end
-                                                            end
-                                                        end
-                                                        
-                                                        if not occupied then
+                                                        -- ✅ Check if occupied using new system
+                                                        if not isOreOccupied(durabilityModel) then
                                                             if priority < highestPriority or (priority == highestPriority and distance < closestDistance) then
                                                                 closestRock = durabilityModel
                                                                 closestDistance = distance
@@ -2080,7 +2098,7 @@ local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local Window = Library:CreateWindow({
-	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.3.8",
+	Title = "The Forge by Rafso [literalh] | Forgotten Kingdom v1.4",
 Center = true,
 AutoShow = true,
 TabPadding = 8,
@@ -2873,15 +2891,6 @@ Default = true,
 Tooltip = 'Skip rocks in the goblin cave',
 Callback = function(Value)
 config.ignoreGoblinCave = Value
-end
-})
-
-MiningSettingsBox:AddToggle('AvoidOccupied', {
-Text = '[Broken]',
-Default = true,
-Tooltip = 'Skip rocks that other players are mining',
-Callback = function(Value)
-config.avoidOccupied = Value
 end
 })
 
@@ -4490,35 +4499,76 @@ if not rootPart then return end
 if not config.defendingAgainstMob then
     part7a.checkLavaDamage()
     part7a.checkCurrentRockHP()
-    part7a.checkRockHPStagnation()  -- ✅ ADD THIS LINE
-end
-
--- ✅ INSTANT ROCK CHECK - ONLY SKIP IF ROCK IS VERY CLOSE
-if config.hoverSequenceActive and config.currentHoverTarget < 3 then
-    local character = LocalPlayer.Character
-    if character then
-        local rootPart = character:FindFirstChild("HumanoidRootPart")
-        if rootPart then
-            local nearbyRock = funcs.getClosestRock()
+    part7a.checkRockHPStagnation()
+    
+    -- ✅ NEW: Check if we've claimed the rock after 3 seconds
+    if config.currentRock and config.currentRockId then
+        local claimStartTime = config.rockClaimTimes[config.currentRockId]
+        
+        if claimStartTime then
+            local timeSinceClaim = tick() - claimStartTime
             
-            if nearbyRock then
-                local rockPos = funcs.getRockPosition(nearbyRock)
-                if rockPos then
-                    local distance = (rootPart.Position - rockPos.Position).Magnitude
+            -- After 3 seconds, check if LastHitPlayer is us
+            if timeSinceClaim >= config.rockClaimTimeout then
+                local rockTypeModel = config.currentRock.Parent
+                
+                if rockTypeModel then
+                    local lastHitPlayer = rockTypeModel:GetAttribute("LastHitPlayer")
                     
-                    -- Only skip hover if rock is within 150 studs
-                    if distance <= 150 then
-                        print("🎯 ROCK NEARBY (" .. math.floor(distance) .. " studs) - Skipping hover sequence!")
-                        config.hoverSequenceActive = false
-                        config.currentHoverTarget = 3
+                    if lastHitPlayer == LocalPlayer.Name then
+                        -- ✅ SUCCESS! We're hitting the rock
+                        config.rocksWeStarted[config.currentRockId] = true
+                        config.rockClaimTimes[config.currentRockId] = nil
+                        print("✅ CONFIRMED: We are hitting the rock! LastHitPlayer = " .. LocalPlayer.Name)
+                    elseif lastHitPlayer and lastHitPlayer ~= LocalPlayer.Name then
+                        -- ❌ FAILED! Someone else is hitting it
+                        print("═══════════════════════════════════════════════════════════")
+                        print("❌ CLAIM FAILED: LastHitPlayer = " .. lastHitPlayer .. " (not us!)")
+                        print("   Someone else is hitting this rock - ABANDONING!")
+                        print("═══════════════════════════════════════════════════════════")
+                        
+                        -- Abandon this rock
+                        table.insert(config.ignoredRocks, config.currentRock)
+                        config.currentRock = nil
+                        config.currentRockModel = nil
+                        config.currentRockId = nil
+                        config.lastRockDurability = nil
+                        config.isLockedOn = false
+                        config.rockClaimTimes[config.currentRockId] = nil
                         
                         if config.bodyVelocity then
                             config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
                         end
                         
+                        if Library then
+                            Library:Notify("❌ Rock claimed by " .. lastHitPlayer, 2)
+                        end
+                        
                         return
                     else
-                        print("⏳ Rock is far (" .. math.floor(distance) .. " studs) - Continuing hover sequence")
+                        -- No LastHitPlayer yet after 3 seconds
+                        print("═══════════════════════════════════════════════════════════")
+                        print("⚠️ CLAIM TIMEOUT: No LastHitPlayer after 3 seconds")
+                        print("   Rock might be bugged or out of range - ABANDONING!")
+                        print("═══════════════════════════════════════════════════════════")
+                        
+                        table.insert(config.ignoredRocks, config.currentRock)
+                        config.currentRock = nil
+                        config.currentRockModel = nil
+                        config.currentRockId = nil
+                        config.lastRockDurability = nil
+                        config.isLockedOn = false
+                        config.rockClaimTimes[config.currentRockId] = nil
+                        
+                        if config.bodyVelocity then
+                            config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                        end
+                        
+                        if Library then
+                            Library:Notify("⚠️ Rock claim failed - Finding new rock", 2)
+                        end
+                        
+                        return
                     end
                 end
             end
@@ -4639,6 +4689,7 @@ end
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local currentTime = tick()
+
 -- ✅ FIXED: Using config values instead of local variables
 if not config.defendingAgainstMob and config.currentRock and (currentTime - config.lastDefenseCheckTime >= config.defenseCheckInterval) then
 config.lastDefenseCheckTime = currentTime
@@ -4953,9 +5004,9 @@ if not config.currentRock then
             return
         end
 
-        -- ✅ NEW: Mark this rock as OURS since we're starting to mine it
-        config.rocksWeStarted[newRockId] = true
-        print("✅ Claimed rock as OURS - Will not abandon if others approach")
+        -- ✅ NEW: Start tracking when we claim this rock
+        config.rockClaimTimes[newRockId] = tick()
+        print("⏰ Starting 3-second claim timer for rock...")
 
        config.currentRock = potentialRock
        config.currentRockModel = config.currentRock.Parent
