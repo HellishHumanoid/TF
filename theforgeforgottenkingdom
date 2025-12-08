@@ -2894,6 +2894,15 @@ config.ignoreGoblinCave = Value
 end
 })
 
+MiningSettingsBox:AddToggle('AvoidOccupied', {
+Text = '[Soon]',
+Default = false,
+Tooltip = 'Skip rocks that other players are mining',
+Callback = function(Value)
+config.avoidOccupied = Value
+end
+})
+
 -- ✅ NEW: ZONE FARMING UI
 MiningSettingsBox:AddDivider()
 MiningSettingsBox:AddLabel('Zone Farming:')
