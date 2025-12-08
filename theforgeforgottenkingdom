@@ -4113,13 +4113,17 @@ else
                 config.idleHoverTimer = currentTime
                 print("⏰ No rocks found - Starting idle timer...")
             end
-
-            if (currentTime - config.idleHoverTimer) >= config.idleHoverDelay then
-                print("🚁 No rocks for " .. config.idleHoverDelay .. " seconds - Hovering to Position 2...")
-                config.idleHoverActive = true
-                config.lastIdleRockCheckTime = currentTime
-            end
-        end
+if (currentTime - config.idleHoverTimer) >= config.idleHoverDelay then
+    print("🚁 No rocks for " .. config.idleHoverDelay .. " seconds - Hovering to Position 2...")
+    config.idleHoverActive = true
+	end
+	
+     -- Clear ignored rocks when entering waiting mode
+    if #config.ignoredRocks > 0 then
+        print("🔄 Clearing " .. #config.ignoredRocks .. " ignored rocks (entering idle mode)")
+        config.ignoredRocks = {}
+    end
+end
 
         -- ✅ NEW: If idle hover is active, periodically check for rocks
         if config.idleHoverActive then
@@ -4187,6 +4191,54 @@ end)
 -- MINING LOOP WITH IMPROVED DEFENSE SYSTEM (15 STUD DETECTION)
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ═══════════════════════════════════════════════════════════════════════════
+-- ✅ ROCK REGENERATION CLEANUP
+-- ═══════════════════════════════════════════════════════════════════════════
+
+config.lastIgnoredRocksCleanupTime = 0
+config.ignoredRocksCleanupInterval = 5
+
+local function cleanupIgnoredRocks()
+    if not config.miningEnabled then return end
+    
+    local currentTime = tick()
+    if (currentTime - config.lastIgnoredRocksCleanupTime) < config.ignoredRocksCleanupInterval then
+        return
+    end
+    
+    config.lastIgnoredRocksCleanupTime = currentTime
+    local rocksToRemove = {}
+    
+    for i, ignoredRock in ipairs(config.ignoredRocks) do
+        if ignoredRock and ignoredRock.Parent then
+            local rockTypeModel = ignoredRock.Parent
+            if rockTypeModel then
+                local currentHP = rockTypeModel:GetAttribute("Health")
+                local maxHP = rockTypeModel:GetAttribute("MaxHealth")
+                
+                if currentHP and maxHP then
+                    local hpPercentage = (currentHP / maxHP) * 100
+                    
+                    if hpPercentage >= 95 then
+                        table.insert(rocksToRemove, i)
+                        print("🔄 Rock regenerated: " .. rockTypeModel.Name)
+                    end
+                end
+            end
+        else
+            table.insert(rocksToRemove, i)
+        end
+    end
+    
+    for i = #rocksToRemove, 1, -1 do
+        table.remove(config.ignoredRocks, rocksToRemove[i])
+    end
+    
+    if #rocksToRemove > 0 then
+        print("✅ Removed " .. #rocksToRemove .. " regenerated rocks from ignored list")
+    end
+end
+
 local miningLoop = RunService.Heartbeat:Connect(function()
 if not config.miningEnabled or config.isRespawning then 
     if config.currentRock then
@@ -4209,6 +4261,8 @@ if not config.miningEnabled or config.isRespawning then
     config.lavaCheckCooldown = false
     return 
 end
+
+cleanupIgnoredRocks()
 
 -- ✅ ADD THIS DEBUG CHECK RIGHT HERE
 if config.currentRock then
@@ -4254,7 +4308,7 @@ if not config.defendingAgainstMob then
     part7a.checkRockHPStagnation()  -- ✅ NEW: Check if stuck
 end
 
--- ✅ INSTANT ROCK CHECK - BEFORE ANY HOVER LOGIC
+-- ✅ INSTANT ROCK CHECK - ONLY SKIP IF ROCK IS VERY CLOSE
 if config.hoverSequenceActive and config.currentHoverTarget < 3 then
     local character = LocalPlayer.Character
     if character then
@@ -4263,15 +4317,25 @@ if config.hoverSequenceActive and config.currentHoverTarget < 3 then
             local nearbyRock = funcs.getClosestRock()
             
             if nearbyRock then
-                print("🎯 ROCK DETECTED - Skipping hover sequence!")
-                config.hoverSequenceActive = false
-                config.currentHoverTarget = 3
-                
-                if config.bodyVelocity then
-                    config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                local rockPos = funcs.getRockPosition(nearbyRock)
+                if rockPos then
+                    local distance = (rootPart.Position - rockPos.Position).Magnitude
+                    
+                    -- Only skip hover if rock is within 150 studs
+                    if distance <= 150 then
+                        print("🎯 ROCK NEARBY (" .. math.floor(distance) .. " studs) - Skipping hover sequence!")
+                        config.hoverSequenceActive = false
+                        config.currentHoverTarget = 3
+                        
+                        if config.bodyVelocity then
+                            config.bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                        end
+                        
+                        return
+                    else
+                        print("⏳ Rock is far (" .. math.floor(distance) .. " studs) - Continuing hover sequence")
+                    end
                 end
-                
-                return
             end
         end
     end
