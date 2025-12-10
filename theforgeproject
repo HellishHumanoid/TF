@@ -1,5 +1,5 @@
 -- ============================================================================
--- LUNA UI AUTO-FARM SCRIPT (MULTI-MOB SELECTION)
+-- RAFSO V2 - AUTO-FARM & AUTO-MINE SCRIPT
 -- Place in: StarterPlayer > StarterPlayerScripts or StarterGui
 -- ============================================================================
 
@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 
 -- ============================================================================
 -- HIDE RESET COUNTDOWN GUI
@@ -41,22 +42,36 @@ local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-S
 -- ============================================================================
 -- CONFIGURATION
 -- ============================================================================
-local RESET_INTERVAL = 3 -- Seconds between resets
+local RESET_INTERVAL = 4 -- Seconds between resets
 
 -- Teleport positions
 local MERCHANT_POSITION = Vector3.new(-141.40, 21.56, -26.53)
-local FARM_START_POSITION = Vector3.new(-209.48, 20.94, -47.06)
+local FARM_START_POSITION = Vector3.new(133.96, 131.21, -49.05) -- Updated position
 local MERCHANT_NPC = workspace.Proximity["Greedy Cey"]
 local MERCHANT_PROMPT = workspace.Proximity["Greedy Cey"].ProximityPrompt
 
 local config = {
     autoFarmEnabled = false,
+    autoMineEnabled = false,
     selectedMobs = {},
+    selectedRocks = {},
+    selectedZones = {},
+    oreFilterEnabled = false, -- NEW: Toggle for ore filtering
+    selectedOreRarities = {
+        Mythical = true,
+        Legendary = true,
+        Epic = true,
+        Rare = true,
+        Uncommon = true,
+        Common = true
+    },
     lockDistance = 7,
+    miningDistance = 6,
+    healthThreshold = 100, -- Mine all rocks regardless of health
     clickDelay = 0.25,
     lastClickTime = 0,
     autoSellEnabled = false,
-    sellCooldown = 1.5,
+    sellCooldown = 5, -- Changed from 1.5 to 5 seconds
     lastSellTime = 0,
     selectedItems = {
         Common = {},
@@ -77,11 +92,77 @@ local mobList = {
     "Elite Deathaxe Skeleton",
     "Blight Pyromancer",
     "Deathaxe Skeleton",
-	"Elite Rogue Skeleton",
-	"Axe Skeleton",
-	"Skeleton Rogue",
-	"Bomber",
-	"Slime",
+    "Elite Rogue Skeleton",
+    "Axe Skeleton",
+    "Skeleton Rogue",
+    "Bomber",
+    "Slime",
+}
+
+-- Rock types list with priority
+local rockTypes = {
+    {name = "Volcanic Rock", enabled = false, priority = 1},
+    {name = "Earth Crystal", enabled = false, priority = 2},
+    {name = "Violet Crystal", enabled = false, priority = 3},
+    {name = "Crimson Crystal", enabled = false, priority = 4},
+    {name = "Light Crystal", enabled = false, priority = 5},
+    {name = "Cyan Crystal", enabled = false, priority = 6},
+    {name = "Basalt Vein", enabled = false, priority = 7},
+    {name = "Basalt Core", enabled = false, priority = 8},
+    {name = "Basalt Rock", enabled = false, priority = 9},
+}
+
+-- Zone list
+local zoneList = {
+    "Island2CaveDanger1",
+    "Island2CaveDanger2",
+    "Island2CaveDanger3",
+    "Island2CaveDanger4",
+    "Island2CaveDangerClosed",
+    "Island2CaveDeep",
+    "Island2CaveLavaClosed",
+    "Island2CaveMid",
+    "Island2CaveStart",
+    "Island2GoblinCave",
+    "Island2VolcanicDepths"
+}
+
+-- Manual Ore Rarity Configuration - ADD YOUR ORE NAMES HERE
+local oreRarityConfig = {
+    Mythical = {
+        -- Add mythical ore names here, example:
+        -- "Mythical Ore Name",
+    },
+    Legendary = {
+        -- Add legendary ore names here, example:
+        -- "Legendary Ore Name",
+    },
+    Epic = {
+        -- Add epic ore names here, example:
+        -- "Epic Ore Name",
+    },
+    Rare = {
+        -- Add rare ore names here, example:
+        -- "Rare Ore Name",
+    },
+    Uncommon = {
+        -- Add uncommon ore names here, example:
+        -- "Uncommon Ore Name",
+    },
+    Common = {
+        -- Add common ore names here, example:
+        -- "Common Ore Name",
+    }
+}
+
+-- Ore rarity priorities (lower = higher priority)
+local oreRarityPriority = {
+    Mythical = 1,
+    Legendary = 2,
+    Epic = 3,
+    Rare = 4,
+    Uncommon = 5,
+    Common = 6
 }
 
 -- Items by rarity for Auto-Sell
@@ -112,8 +193,22 @@ local currentTargetMob = nil
 local isWaitingForRespawn = false
 local frozenPosition = nil
 local lastPositionSwitch = 0
-local isAboveMob = false
+local isAboveMob = true -- Start from ABOVE (true = above, false = below)
 local hasVisitedMerchant = false
+local mineLoop = nil
+local currentTargetRock = nil
+local miningAutoClickerLoop = nil
+local lastRockHealth = nil
+local lastRockCheckTime = 0
+local isMiningFromAbove = true
+local autoSellLoop = nil -- Changed to nil initially
+local lastRockSearchTime = 0 -- NEW: Track last time we searched for rocks
+local isDefending = false -- NEW: Track if we're in defense mode
+local defendingMob = nil -- NEW: Track which mob we're defending against
+local rockBeforeDefense = nil -- NEW: Remember which rock we were mining
+local farmStartTime = 0 -- NEW: Track when auto-farm was started
+local canTeleportToMobs = false -- NEW: Track if 5.5 seconds have passed since farm start
+local noclipConnection = nil -- NEW: Track noclip connection for auto-mine
 
 -- ============================================================================
 -- AUTO-CLICKER FUNCTIONS
@@ -155,6 +250,44 @@ end
 -- ============================================================================
 
 -- Get player character and HumanoidRootPart
+-- Enable noclip for auto-mine
+local function enableNoclip()
+    if noclipConnection then return end -- Already enabled
+    
+    local char = player.Character
+    if not char then return end
+    
+    noclipConnection = RunService.Stepped:Connect(function()
+        if config.autoMineEnabled then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end)
+    
+    print("[Auto Mine] Noclip enabled")
+end
+
+-- Disable noclip for auto-mine
+local function disableNoclip()
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+        print("[Auto Mine] Noclip disabled")
+    end
+    
+    local char = player.Character
+    if char then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+
 local function getPlayerRefs()
     local char = player.Character
     if not char then return nil, nil end
@@ -313,16 +446,18 @@ local function maintainLock()
     end
 end
 
--- Lock player under mob (follows mob) - switches between above and below
+-- Lock player under mob (follows mob) - starts ABOVE, switches to BELOW if no hits
 local function lockUnderMob(mobHRP)
     local _, playerHRP = getPlayerRefs()
     if not playerHRP or not mobHRP then return end
     
-    -- Switch position every 0.5 seconds
+    -- Check if we should switch position (every 3 seconds without hitting)
     local currentTime = tick()
-    if currentTime - lastPositionSwitch >= 0.5 then
+    if currentTime - lastPositionSwitch >= 3 then
+        -- Switch position: ABOVE -> BELOW -> ABOVE -> etc
         isAboveMob = not isAboveMob
         lastPositionSwitch = currentTime
+        print("[Auto Farm] Switching position to:", isAboveMob and "ABOVE" or "BELOW")
     end
     
     local mobPos = mobHRP.Position
@@ -330,18 +465,21 @@ local function lockUnderMob(mobHRP)
     local lookCFrame
     
     if isAboveMob then
-        -- Position ABOVE mob (looking down)
-        offsetPos = Vector3.new(mobPos.X, mobPos.Y + config.lockDistance, mobPos.Z)
+        -- Position ABOVE mob (looking down) - distance 7 - DEFAULT STARTING POSITION
+        offsetPos = Vector3.new(mobPos.X, mobPos.Y + 7, mobPos.Z)
         lookCFrame = CFrame.new(offsetPos) * CFrame.Angles(math.rad(-90), 0, 0)
     else
-        -- Position BELOW mob (looking up)
-        offsetPos = Vector3.new(mobPos.X, mobPos.Y - config.lockDistance, mobPos.Z)
+        -- Position BELOW mob (looking up) - distance 8
+        offsetPos = Vector3.new(mobPos.X, mobPos.Y - 8, mobPos.Z)
         lookCFrame = CFrame.new(offsetPos) * CFrame.Angles(math.rad(90), 0, 0)
     end
     
+    -- LOCK TIGHTLY - set position every frame to follow mob exactly
     playerHRP.CFrame = lookCFrame
     playerHRP.Velocity = Vector3.new(0, 0, 0)
     playerHRP.RotVelocity = Vector3.new(0, 0, 0)
+    playerHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    playerHRP.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
 end
 
 -- ============================================================================
@@ -467,7 +605,31 @@ local function sellItems()
     
     if success then
         config.lastSellTime = currentTime
+        print("[Auto Sell] Successfully sold items")
     else
+        warn("[Auto Sell] Failed to sell items:", err)
+    end
+end
+
+-- Start auto-sell loop with 5 second intervals
+local function startAutoSellLoop()
+    if autoSellLoop then return end
+    
+    print("[Auto Sell] Starting auto-sell loop (5 second intervals)")
+    autoSellLoop = task.spawn(function()
+        while config.autoSellEnabled do
+            sellItems()
+            task.wait(5) -- Wait 5 seconds between sell attempts
+        end
+    end)
+end
+
+-- Stop auto-sell loop
+local function stopAutoSellLoop()
+    if autoSellLoop then
+        task.cancel(autoSellLoop)
+        autoSellLoop = nil
+        print("[Auto Sell] Stopped auto-sell loop")
     end
 end
 
@@ -490,18 +652,23 @@ local function resetCharacter()
     end
 end
 
--- Start auto-reset loop
+-- Start auto-reset loop (works for both Auto-Farm and Auto-Mine)
 local function startResetLoop()
     if resetLoop then return end
 
     resetLoop = task.spawn(function()
-        while config.autoFarmEnabled do
-            -- Spam reset
+        while config.autoFarmEnabled or config.autoMineEnabled do
+            -- Spam reset for whichever is enabled
             local success = pcall(function()
                 return ResetRF:InvokeServer()
             end)
             
             if success then
+                if config.autoFarmEnabled then
+                    print("[Auto Farm] Reset triggered")
+                elseif config.autoMineEnabled then
+                    print("[Auto Mine] Reset triggered")
+                end
             end
             
             task.wait(RESET_INTERVAL)
@@ -536,9 +703,8 @@ local function visitMerchant()
     
     print("[Merchant] Teleporting to merchant position...")
     hrp.CFrame = CFrame.new(MERCHANT_POSITION)
-    task.wait(1)
     
-    -- Spam E key for 2 seconds
+    -- Start spamming E immediately after teleport
     print("[Merchant] Spamming E for 2 seconds...")
     local VirtualInputManager = game:GetService("VirtualInputManager")
     local startTime = tick()
@@ -551,9 +717,9 @@ local function visitMerchant()
     
     task.wait(0.5)
     
-    -- Teleport to farm start position
-    print("[Merchant] Teleporting to farm start position...")
-    hrp.CFrame = CFrame.new(FARM_START_POSITION)
+    -- Teleport to new position after merchant
+    print("[Merchant] Teleporting to position after merchant...")
+    hrp.CFrame = CFrame.new(Vector3.new(-210.97, 20.94, -46.71))
     task.wait(2)
     
     hasVisitedMerchant = true
@@ -590,19 +756,19 @@ local function startAutoFarm()
     print("[Auto Farm] Starting reset loop...")
     startResetLoop()
     
-    -- Initial reset sequence with 5 second wait
-    print("[Auto Farm] Waiting 5 seconds before first reset...")
+    -- Initial reset sequence (FASTER)
+    print("[Auto Farm] Waiting 2 seconds before first reset...")
     local _, hrp = getPlayerRefs()
     if hrp then
         hrp.Anchored = true
         frozenPosition = hrp.Position
     end
     
-    task.wait(5) -- Wait 5 seconds
+    task.wait(2) -- Reduced from 5 to 2 seconds
     
     print("[Auto Farm] Resetting character...")
     resetCharacter()
-    task.wait(5) -- Wait for respawn
+    task.wait(2) -- Reduced from 5 to 2 seconds - faster respawn
     
     _, hrp = getPlayerRefs()
     if hrp then
@@ -618,6 +784,18 @@ local function startAutoFarm()
     
     print("[Auto Farm] Starting farm loop...")
     
+    -- Record when auto-farm started
+    farmStartTime = tick()
+    canTeleportToMobs = false
+    isAboveMob = true -- Start from ABOVE
+    
+    print("[Auto Farm] Staying at farm position for 1 second...")
+    
+    -- Wait 1 second at farm position before starting
+    task.wait(1)
+    
+    print("[Auto Farm] Waiting 5.5 seconds before teleporting to mobs...")
+    
     -- Start farm loop (runs every frame)
     local waitingAtY150 = false
     farmLoop = RunService.Heartbeat:Connect(function()
@@ -625,27 +803,49 @@ local function startAutoFarm()
             return 
         end
         
+        -- Check if 5.5 seconds have passed since farm started
+        if not canTeleportToMobs then
+            local timeSinceFarmStart = tick() - farmStartTime
+            if timeSinceFarmStart >= 5.5 then
+                canTeleportToMobs = true
+                print("[Auto Farm] ✅ 5.5 seconds passed - Now teleporting to mobs!")
+            end
+        end
+        
         -- Search for mobs
         local mob, mobHRP = findAnySelectedMob()
         
         if mob and mobHRP then
-            -- Mob found - lock under it
+            -- Mob found
             currentTargetMob = mob
-            waitingAtY150 = false
-            lockUnderMob(mobHRP)
+            
+            -- Only teleport if 5.5 seconds have passed since farm started
+            if canTeleportToMobs then
+                waitingAtY150 = false
+                lockUnderMob(mobHRP)
+            else
+                -- Still waiting - stay locked at farm start position
+                local _, hrp = getPlayerRefs()
+                if hrp then
+                    hrp.CFrame = CFrame.new(FARM_START_POSITION)
+                    hrp.Velocity = Vector3.new(0, 0, 0)
+                    hrp.RotVelocity = Vector3.new(0, 0, 0)
+                end
+            end
         else
-            -- No mobs found - go to Y=150 and wait
+            -- No mobs found - teleport to farm start position and stay locked
             currentTargetMob = nil
+            
             local _, hrp = getPlayerRefs()
             if hrp then
                 if not waitingAtY150 then
-                    local currentPos = hrp.Position
-                    hrp.CFrame = CFrame.new(currentPos.X, 150, currentPos.Z)
+                    -- Teleport to farm start position
+                    hrp.CFrame = CFrame.new(FARM_START_POSITION)
                     waitingAtY150 = true
+                    print("[Auto Farm] No mobs found - Waiting at farm start position...")
                 else
-                    -- Keep locked at Y=150
-                    local currentPos = hrp.Position
-                    hrp.CFrame = CFrame.new(currentPos.X, 150, currentPos.Z)
+                    -- Keep locked at farm start position
+                    hrp.CFrame = CFrame.new(FARM_START_POSITION)
                     hrp.Velocity = Vector3.new(0, 0, 0)
                     hrp.RotVelocity = Vector3.new(0, 0, 0)
                 end
@@ -662,6 +862,8 @@ end
 
 -- Stop auto-farm
 local function stopAutoFarm()
+    print("[Auto Farm] Stopping auto-farm immediately...")
+    
     -- Stop farm loop
     if farmLoop then
         farmLoop:Disconnect()
@@ -675,55 +877,689 @@ local function stopAutoFarm()
     currentTargetMob = nil
     frozenPosition = nil
     isWaitingForRespawn = false
+    farmStartTime = 0
+    canTeleportToMobs = false
+    isAboveMob = true -- Reset to ABOVE for next time
     
-    -- Unlock character
-    local _, hrp = getPlayerRefs()
+    -- IMMEDIATELY unlock character
+    local char, hrp = getPlayerRefs()
     if hrp then
         hrp.Anchored = false
         hrp.Velocity = Vector3.new(0, 0, 0)
         hrp.RotVelocity = Vector3.new(0, 0, 0)
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        print("[Auto Farm] Character unlocked instantly")
     end
     
     -- Stop auto-clicker
     stopAutoClicker()
+    
+    print("[Auto Farm] Auto-farm fully stopped!")
+end
+
+-- ============================================================================
+-- AUTO-MINE FUNCTIONS
+-- ============================================================================
+
+-- Equip pickaxe
+local function equipPickaxe()
+    if not config.autoMineEnabled then
+        return false
+    end
+    
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        local pickaxe = backpack:FindFirstChild("Pickaxe")
+        if pickaxe and pickaxe:IsA("Tool") then
+            local character = player.Character
+            if character then
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid:EquipTool(pickaxe)
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- Check if already equipped
+    local character = player.Character
+    if character and character:FindFirstChild("Pickaxe") then
+        return true
+    end
+    
+    return false
+end
+
+-- Start mining auto-clicker
+local function startMiningAutoClicker()
+    if miningAutoClickerLoop then return end
+    
+    miningAutoClickerLoop = RunService.Heartbeat:Connect(function()
+        if not config.autoMineEnabled then return end
+        
+        local currentTime = tick()
+        
+        if currentTime - config.lastClickTime >= config.clickDelay then
+            local success, err = pcall(function()
+                ToolActivated:InvokeServer("Pickaxe")
+            end)
+            
+            if not success then
+                warn("❌ [Mining Auto-Clicker] Error: " .. tostring(err))
+            end
+            
+            config.lastClickTime = currentTime
+        end
+    end)
+end
+
+-- Stop mining auto-clicker
+local function stopMiningAutoClicker()
+    if miningAutoClickerLoop then
+        miningAutoClickerLoop:Disconnect()
+        miningAutoClickerLoop = nil
+    end
+end
+
+-- Check if rock has any selected ores (when HP <= 43%)
+local function rockHasSelectedOres(rock)
+    print("[Auto Mine] 🔍 Checking rock for ores...")
+    print("[Auto Mine] Rock children count:", #rock:GetChildren())
+    
+    local foundOres = {}
+    
+    -- Look for Ore models inside the rock
+    for _, child in pairs(rock:GetChildren()) do
+        print("[Auto Mine] Checking child:", child.Name, "Type:", child.ClassName)
+        
+        if child:IsA("Model") and child.Name == "Ore" then
+            local oreName = child:GetAttribute("Name")
+            print("[Auto Mine] 📦 Found Ore model! Name attribute:", tostring(oreName))
+            
+            if oreName then
+                table.insert(foundOres, oreName)
+                
+                -- Check if this ore is in our selected items
+                for rarity, ores in pairs(config.selectedItems) do
+                    if rarity ~= "Rune" and rarity ~= "Essence" then -- Only check ore rarities
+                        for _, selectedOre in ipairs(ores) do
+                            if selectedOre == oreName then
+                                print("[Auto Mine] ✅ Found selected ore:", oreName, "- KEEPING ROCK!")
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    if #foundOres > 0 then
+        print("[Auto Mine] ❌ Found ores but none selected:", table.concat(foundOres, ", "))
+    else
+        print("[Auto Mine] ⚠️ No ore models found in rock yet")
+    end
+    
+    return false
+end
+
+-- Check if zone is selected
+local function isSelectedZone(zoneName)
+    return config.selectedZones[zoneName] == true
+end
+
+-- Get ore rarity from rock name using manual configuration
+local function getOreRarity(rockName)
+    -- Check each rarity category - use exact match
+    for _, oreName in ipairs(oreRarityConfig.Mythical) do
+        if rockName == oreName then return "Mythical" end
+    end
+    for _, oreName in ipairs(oreRarityConfig.Legendary) do
+        if rockName == oreName then return "Legendary" end
+    end
+    for _, oreName in ipairs(oreRarityConfig.Epic) do
+        if rockName == oreName then return "Epic" end
+    end
+    for _, oreName in ipairs(oreRarityConfig.Rare) do
+        if rockName == oreName then return "Rare" end
+    end
+    for _, oreName in ipairs(oreRarityConfig.Uncommon) do
+        if rockName == oreName then return "Uncommon" end
+    end
+    for _, oreName in ipairs(oreRarityConfig.Common) do
+        if rockName == oreName then return "Common" end
+    end
+    
+    -- If not found in any category, return Common as default
+    return "Common"
+end
+
+-- Check for hostile mobs near the current rock (within 20 studs)
+local function findNearbyHostileMob(rockPosition)
+    local living = Workspace:FindFirstChild("Living")
+    if not living then return nil, nil end
+    
+    for _, mob in pairs(living:GetChildren()) do
+        local mobHRP = mob:FindFirstChild("HumanoidRootPart")
+        local mobHumanoid = mob:FindFirstChild("Humanoid")
+        
+        if mobHRP and mobHumanoid and mobHumanoid.Health > 0 then
+            local distance = (mobHRP.Position - rockPosition).Magnitude
+            
+            if distance <= 20 then
+                print("[Defense] ⚠️ Hostile mob detected:", mob.Name, "Distance:", math.floor(distance), "studs")
+                return mob, mobHRP
+            end
+        end
+    end
+    
+    return nil, nil
+end
+
+-- Check if rock type is selected
+local function isSelectedRock(rockName)
+    for _, rockType in ipairs(rockTypes) do
+        if rockType.enabled and rockName == rockType.name then -- Exact match
+            return true
+        end
+    end
+    return false
+end
+
+-- Check if any rocks are selected at all
+local function hasAnyRocksSelected()
+    for _, rockType in ipairs(rockTypes) do
+        if rockType.enabled then
+            return true
+        end
+    end
+    return false
+end
+
+-- Get rock priority
+local function getRockPriority(rockName)
+    for _, rockType in ipairs(rockTypes) do
+        if rockName == rockType.name then -- Exact match
+            return rockType.priority
+        end
+    end
+    return 999
+end
+
+-- Find best rock to mine
+local function findBestRock()
+    local rocksFolder = Workspace:FindFirstChild("Rocks")
+    if not rocksFolder then 
+        print("[Auto Mine] Rocks folder not found in Workspace")
+        return nil, nil 
+    end
+    
+    local validRocks = {}
+    
+    -- Search through all zones
+    for _, zoneFolder in pairs(rocksFolder:GetChildren()) do
+        if zoneFolder:IsA("Folder") then
+            local zoneSelected = isSelectedZone(zoneFolder.Name)
+            
+            -- Search through SpawnLocation PARTS in this zone
+            for _, spawnLocation in pairs(zoneFolder:GetChildren()) do
+                if spawnLocation:IsA("BasePart") and spawnLocation.Name == "SpawnLocation" then
+                    -- Search for rock Models INSIDE the SpawnLocation part
+                    for _, rock in pairs(spawnLocation:GetChildren()) do
+                        if rock:IsA("Model") then
+                            
+                            if isSelectedRock(rock.Name) then
+                                local health = rock:GetAttribute("Health")
+                                local maxHealth = rock:GetAttribute("MaxHealth")
+                                
+                                if health and maxHealth and health > 0 then
+                                    local healthPercent = (health / maxHealth) * 100
+                                    local lastHitPlayer = rock:GetAttribute("LastHitPlayer")
+                                    
+                                    -- Skip rocks being mined by other players (unless at full health)
+                                    if lastHitPlayer and lastHitPlayer ~= player.Name and health < maxHealth then
+                                        -- Rock is being mined by another player - SKIP IT
+                                        print("[Auto Mine] ⏭️ Skipping rock being mined by:", lastHitPlayer)
+                                    else
+                                        -- Rock is either: (1) ours, (2) no one's, or (3) at full health
+                                        -- Check if rock is at threshold for ore spawning
+                                        if healthPercent <= config.healthThreshold then
+                                            -- Only check zone if at least one zone is selected
+                                            local zonesSelected = false
+                                            for _ in pairs(config.selectedZones) do
+                                                zonesSelected = true
+                                                break
+                                            end
+                                            
+                                            -- If zones are selected, check if this zone is selected
+                                            -- If no zones selected, accept all zones
+                                            if not zonesSelected or zoneSelected then
+                                                local rarity = getOreRarity(rock.Name)
+                                                
+                                                -- Check if this rarity is selected
+                                                if config.selectedOreRarities[rarity] then
+                                                    local rockPart = rock:FindFirstChild("Rock") or rock:FindFirstChild("Part") or rock:FindFirstChildWhichIsA("BasePart")
+                                                    
+                                                    if rockPart then
+                                                        print("[Auto Mine] ✅ Valid rock added:", rock.Name, "Zone:", zoneFolder.Name, "Rarity:", rarity, "Priority:", getRockPriority(rock.Name))
+                                                        table.insert(validRocks, {
+                                                            rock = rock,
+                                                            part = rockPart,
+                                                            name = rock.Name,
+                                                            zone = zoneFolder.Name,
+                                                            rarity = rarity,
+                                                            priority = getRockPriority(rock.Name),
+                                                            health = health,
+                                                            healthPercent = healthPercent
+                                                        })
+                                                    end
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    print("[Auto Mine] Total valid rocks found:", #validRocks)
+    
+    -- Sort by priority (rock type) and then by health percentage
+    table.sort(validRocks, function(a, b)
+        if a.priority == b.priority then
+            return a.healthPercent < b.healthPercent -- Lower health first
+        end
+        return a.priority < b.priority -- Higher priority first
+    end)
+    
+    if #validRocks > 0 then
+        print("[Auto Mine] 🎯 Best rock selected:", validRocks[1].name, "in zone:", validRocks[1].zone, "Health:", validRocks[1].healthPercent .. "%")
+        return validRocks[1].rock, validRocks[1].part
+    else
+        print("[Auto Mine] ⚠️ No valid rocks found")
+    end
+    
+    return nil, nil
+end
+
+-- Lock player at rock position (BELOW ONLY at 6 studs distance, 60 studs/second)
+local function lockAtRock(rockPart, rock)
+    local _, playerHRP = getPlayerRefs()
+    if not playerHRP or not rockPart then 
+        return 
+    end
+    
+    local rockPos = rockPart.Position
+    
+    -- ALWAYS position BELOW the rock - distance 6 studs
+    local targetPos = Vector3.new(rockPos.X, rockPos.Y - 6, rockPos.Z)
+    
+    -- Smooth hover towards target position at 60 studs/second
+    local currentPos = playerHRP.Position
+    local distance = (targetPos - currentPos).Magnitude
+    
+    -- Move towards target if not locked yet
+    if distance > 0.3 then -- Tighter lock threshold
+        local direction = (targetPos - currentPos).Unit
+        local moveSpeed = 60 -- 60 studs per second
+        local deltaTime = 1/60 -- Assume 60 FPS
+        local moveAmount = moveSpeed * deltaTime -- Distance to move this frame
+        
+        if moveAmount > distance then
+            moveAmount = distance -- Don't overshoot
+        end
+        
+        local newPos = currentPos + (direction * moveAmount)
+        playerHRP.CFrame = CFrame.new(newPos, rockPos) -- Look at rock
+        playerHRP.Velocity = Vector3.new(0, 0, 0)
+        playerHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        playerHRP.RotVelocity = Vector3.new(0, 0, 0)
+        playerHRP.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    else
+        -- LOCKED - maintain exact position and look at rock
+        playerHRP.CFrame = CFrame.new(targetPos, rockPos)
+        playerHRP.Velocity = Vector3.new(0, 0, 0)
+        playerHRP.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        playerHRP.RotVelocity = Vector3.new(0, 0, 0)
+        playerHRP.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+    end
+end
+
+-- Hover player smoothly to a position at specified speed (studs per second)
+local function hoverToPosition(targetPos, speed)
+    local char, hrp = getPlayerRefs()
+    if not hrp then return false end
+    
+    local startPos = hrp.Position
+    local distance = (targetPos - startPos).Magnitude
+    local duration = distance / speed
+    local startTime = tick()
+    
+    print("[Auto Mine] Hovering to position:", targetPos, "Distance:", math.floor(distance), "studs")
+    
+    while tick() - startTime < duration do
+        local char, hrp = getPlayerRefs()
+        if not hrp or not config.autoMineEnabled then return false end
+        
+        local elapsed = tick() - startTime
+        local alpha = elapsed / duration
+        
+        -- Smooth interpolation
+        local currentPos = startPos:Lerp(targetPos, alpha)
+        hrp.CFrame = CFrame.new(currentPos)
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        hrp.RotVelocity = Vector3.new(0, 0, 0)
+        
+        task.wait()
+    end
+    
+    -- Ensure we reach exact position
+    local char, hrp = getPlayerRefs()
+    if hrp then
+        hrp.CFrame = CFrame.new(targetPos)
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        hrp.RotVelocity = Vector3.new(0, 0, 0)
+    end
+    
+    return true
+end
+
+-- Start auto-mine
+local function startAutoMine()
+    if mineLoop then
+        stopAutoMine()
+        task.wait(0.5)
+    end
+    
+    -- Check if rocks are selected
+    local selectedCount = 0
+    for _, rockType in ipairs(rockTypes) do
+        if rockType.enabled then
+            selectedCount = selectedCount + 1
+        end
+    end
+    
+    if selectedCount == 0 then
+        warn("[Auto Mine] No rocks selected! Please select at least one rock type.")
+        config.autoMineEnabled = false
+        return
+    end
+    
+    print("[Auto Mine] Starting auto-mine (hover mode with noclip)...")
+    
+    -- Enable noclip
+    enableNoclip()
+    
+    -- Equip pickaxe
+    task.wait(0.5)
+    equipPickaxe()
+    
+    -- Check if we're already close to rocks - if so, skip initial hover
+    local shouldSkipInitialHover = false
+    local char, hrp = getPlayerRefs()
+    if hrp then
+        local currentPos = hrp.Position
+        local miningPosition = Vector3.new(55.92, 74.52, -45.26)
+        local distanceToMiningPos = (miningPosition - currentPos).Magnitude
+        
+        -- Try to find a rock nearby
+        local nearbyRock, nearbyRockPart = findBestRock()
+        
+        if nearbyRock and nearbyRockPart then
+            local rockPos = nearbyRockPart.Position
+            local distanceToRock = (rockPos - currentPos).Magnitude
+            
+            -- If closer to rock than to mining position, skip initial hover
+            if distanceToRock < distanceToMiningPos then
+                print("[Auto Mine] Already close to rocks! Skipping initial hover...")
+                print("[Auto Mine] Distance to rock:", math.floor(distanceToRock), "studs")
+                print("[Auto Mine] Distance to mining position:", math.floor(distanceToMiningPos), "studs")
+                print("[Auto Mine] Starting mine loop directly...")
+                shouldSkipInitialHover = true
+            end
+        end
+    end
+    
+    -- Only do initial hover if not skipping
+    if not shouldSkipInitialHover then
+        print("[Auto Mine] Hovering to mining position...")
+        
+        -- Phase 1: Hover to Y=85 first (speed 60)
+        local char, hrp = getPlayerRefs()
+        if hrp then
+            local currentPos = hrp.Position
+            local targetY85 = Vector3.new(currentPos.X, 85, currentPos.Z)
+            
+            local success = hoverToPosition(targetY85, 60) -- 60 studs per second
+            if not success then
+                warn("[Auto Mine] Hover cancelled")
+                config.autoMineEnabled = false
+                disableNoclip()
+                return
+            end
+        end
+        
+        task.wait(0.1)
+        
+        -- Phase 2: Hover to mining position (speed 60)
+        local miningPosition = Vector3.new(55.92, 74.52, -45.26)
+        local success = hoverToPosition(miningPosition, 60) -- 60 studs per second
+        
+        if not success then
+            warn("[Auto Mine] Hover cancelled")
+            config.autoMineEnabled = false
+            disableNoclip()
+            return
+        end
+    end
+    
+    print("[Auto Mine] Reached mining position! Starting mine loop...")
+    
+    -- Start mine loop
+    mineLoop = RunService.Heartbeat:Connect(function()
+        if not config.autoMineEnabled then return end
+        
+        -- Check if current rock should be abandoned
+        if currentTargetRock then
+            local health = currentTargetRock:GetAttribute("Health")
+            local maxHealth = currentTargetRock:GetAttribute("MaxHealth")
+            local lastHitPlayer = currentTargetRock:GetAttribute("LastHitPlayer")
+            
+            if not health or health <= 0 then
+                print("[Auto Mine] Current rock is dead, searching for new rock...")
+                currentTargetRock = nil
+                lastRockHealth = nil
+                lastRockCheckTime = 0
+                isMiningFromAbove = true
+            elseif health and maxHealth then
+                local healthPercent = (health / maxHealth) * 100
+                
+                -- Check if rock has regenerated (LastHitPlayer = me AND HP = 100%)
+                if lastHitPlayer == player.Name and healthPercent >= 100 then
+                    print("[Auto Mine] 🔄 Rock regenerated! Mining again...")
+                    lastRockHealth = nil
+                    lastRockCheckTime = 0
+                    isMiningFromAbove = true
+                    -- Reset ore check flag
+                    currentTargetRock:SetAttribute("OreChecked", nil)
+                -- ONLY check for ores if Ore Filter is ENABLED
+                elseif config.oreFilterEnabled and healthPercent <= 43 then
+                    -- Check if we've already checked this rock for ores
+                    if not currentTargetRock:GetAttribute("OreChecked") then
+                        print("[Auto Mine] ⚠️ Rock at", math.floor(healthPercent) .. "% HP - Checking for ores...")
+                        currentTargetRock:SetAttribute("OreChecked", true)
+                        
+                        -- Wait a tiny bit for ores to spawn
+                        task.wait(0.1)
+                        
+                        -- Check if rock has selected ores
+                        local hasOres = rockHasSelectedOres(currentTargetRock)
+                        
+                        if not hasOres then
+                            print("[Auto Mine] ⏭️ No selected ores found, SKIPPING ROCK!")
+                            currentTargetRock = nil
+                            lastRockHealth = nil
+                            lastRockCheckTime = 0
+                            isMiningFromAbove = true
+                        else
+                            print("[Auto Mine] ✅ Selected ore found! Mining to 0%...")
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Only search for rocks every 2 seconds to prevent FPS drops
+        local currentTime = tick()
+        if not currentTargetRock and (currentTime - lastRockSearchTime >= 2) then
+            lastRockSearchTime = currentTime
+            
+            -- Find best rock (will find a new one if current is dead)
+            local rock, rockPart = findBestRock()
+            
+            if rock and rockPart then
+                currentTargetRock = rock
+                lastRockHealth = nil
+                lastRockCheckTime = 0
+                isMiningFromAbove = true -- Always start from above
+                -- Remove any previous ore check flag
+                currentTargetRock:SetAttribute("OreChecked", nil)
+                print("[Auto Mine] 🎯 New target rock found:", rock.Name)
+            end
+        end
+        
+        -- If we have a target rock, lock at it
+        if currentTargetRock then
+            local rockPart = currentTargetRock:FindFirstChild("Rock") or currentTargetRock:FindFirstChild("Part") or currentTargetRock:FindFirstChildWhichIsA("BasePart")
+            if rockPart then
+                lockAtRock(rockPart, currentTargetRock)
+                
+                -- Only hit pickaxe when LOCKED on rock (within 0.3 studs of target)
+                local _, playerHRP = getPlayerRefs()
+                if playerHRP then
+                    local rockPos = rockPart.Position
+                    local targetPos = Vector3.new(rockPos.X, rockPos.Y - 6, rockPos.Z)
+                    local distance = (playerHRP.Position - targetPos).Magnitude
+                    
+                    if distance <= 0.3 then
+                        -- LOCKED - allow pickaxe hits
+                        if not miningAutoClickerLoop then
+                            startMiningAutoClicker()
+                        end
+                    else
+                        -- NOT LOCKED YET - stop pickaxe hits
+                        if miningAutoClickerLoop then
+                            stopMiningAutoClicker()
+                        end
+                    end
+                end
+            end
+        else
+            -- No target rock - stop mining and stay in place with zero velocity
+            if miningAutoClickerLoop then
+                stopMiningAutoClicker()
+            end
+            
+            local _, hrp = getPlayerRefs()
+            if hrp then
+                hrp.Velocity = Vector3.new(0, 0, 0)
+                hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                hrp.RotVelocity = Vector3.new(0, 0, 0)
+                hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+    end)
+    
+    print("[Auto Mine] Auto-mine fully activated!")
+end
+
+-- Stop auto-mine
+local function stopAutoMine()
+    print("[Auto Mine] Stopping auto-mine immediately...")
+    
+    -- Force stop all loops immediately
+    if mineLoop then
+        mineLoop:Disconnect()
+        mineLoop = nil
+        print("[Auto Mine] Mine loop disconnected")
+    end
+    
+    if miningAutoClickerLoop then
+        miningAutoClickerLoop:Disconnect()
+        miningAutoClickerLoop = nil
+        print("[Auto Mine] Mining auto-clicker disconnected")
+    end
+    
+    -- Disable noclip
+    disableNoclip()
+    
+    -- Clear all state variables
+    currentTargetRock = nil
+    lastRockHealth = nil
+    lastRockCheckTime = 0
+    isDefending = false
+    defendingMob = nil
+    rockBeforeDefense = nil
+    
+    -- Unlock character immediately
+    local char, hrp = getPlayerRefs()
+    if hrp then
+        hrp.Anchored = false
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        hrp.RotVelocity = Vector3.new(0, 0, 0)
+        print("[Auto Mine] Character unlocked")
+    end
+    
+    -- Unequip tools
+    if char then
+        local humanoid = char:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid:UnequipTools()
+            print("[Auto Mine] Tools unequipped")
+        end
+    end
+    
+    print("[Auto Mine] Auto-mine fully stopped!")
 end
 
 -- ============================================================================
 -- CHARACTER RESPAWN HANDLER
 -- ============================================================================
 player.CharacterAdded:Connect(function(char)
-    if not config.autoFarmEnabled then return end
-	-- Keep weapon equipped
-	equipWeapon()
-
-	-- Auto-hit with weapon
-	autoHit()
-    
     local hrp = char:WaitForChild("HumanoidRootPart")
     task.wait(0.5)
-	-- Re-equip weapon after respawn
-	equipWeapon()
+    
+    if config.autoFarmEnabled then
+        -- Keep weapon equipped
+        equipWeapon()
+        -- Auto-hit with weapon
+        autoHit()
+        -- Re-equip weapon after respawn
+        equipWeapon()
+    end
+    
+    if config.autoMineEnabled then
+        -- Re-equip pickaxe after respawn
+        equipPickaxe()
+    end
     
     isWaitingForRespawn = false
     frozenPosition = nil
-    
-end)
-
--- ============================================================================
--- STANDALONE AUTO-SELL LOOP (runs independently)
--- ============================================================================
-local autoSellLoop = RunService.Heartbeat:Connect(function()
-    -- This runs every frame, regardless of farming/mining state
-    sellItems()
 end)
 
 -- ============================================================================
 -- UI CREATION
 -- ============================================================================
 
--- Create farm window
+-- Create main window
 local window = Luna:CreateWindow({
-    Name = "Rafso The Forge",
+    Name = "Rafso V2",
     LogoID = "0",
     LoadingEnabled = true,
     LoadingTitle = "Loading Script",
@@ -732,21 +1568,29 @@ local window = Luna:CreateWindow({
 })
 
 local mainTab = window:CreateTab({
-    Name = "Farm"
+    Name = "Main"
+})
+
+local autoMineTab = window:CreateTab({
+    Name = "Auto Mine"
 })
 
 local autoSellTab = window:CreateTab({
     Name = "Auto Sell"
 })
 
+local settingsTab = window:CreateTab({
+    Name = "Settings"
+})
+
 -- ============================================================================
--- AUTO FEATURES SECTION
+-- AUTO FEATURES SECTION (MAIN TAB)
 -- ============================================================================
-local section1 = mainTab:CreateSection("Farm Features")
+local section1 = mainTab:CreateSection("Auto Features")
 
 section1:CreateToggle({
     Name = "Auto Farm",
-    Description = "Auto-Farm selected Mobs [Do not walk]",
+    Description = "Auto-Farm selected Mobs [Don't Walk]",
     Default = false,
     Callback = function(value)
         config.autoFarmEnabled = value
@@ -759,7 +1603,7 @@ section1:CreateToggle({
 })
 
 -- ============================================================================
--- MOB SELECTION SECTION
+-- MOB SELECTION SECTION (MAIN TAB)
 -- ============================================================================
 local section2 = mainTab:CreateSection("Mob Selection")
 
@@ -785,16 +1629,215 @@ for _, mobName in ipairs(mobList) do
 end
 
 -- ============================================================================
+-- AUTO-MINE SECTION
+-- ============================================================================
+local mineSection1 = autoMineTab:CreateSection("Auto Mine")
+
+mineSection1:CreateToggle({
+    Name = "Auto Mine",
+    Description = "Auto-Mine selected Rocks",
+    Default = false,
+    Callback = function(value)
+        config.autoMineEnabled = value
+        if value then
+            startAutoMine()
+        else
+            stopAutoMine()
+        end
+    end
+})
+
+-- ============================================================================
+-- ROCK TYPE SELECTION (Priority order)
+-- ============================================================================
+local rockSection = autoMineTab:CreateSection("Rocks")
+
+for _, rockType in ipairs(rockTypes) do
+    rockSection:CreateToggle({
+        Name = rockType.name .. " Priority " .. rockType.priority .. "",
+        Default = false,
+        Callback = function(value)
+            rockType.enabled = value
+        end
+    })
+end
+
+-- ============================================================================
+-- ZONE SELECTION (Optional - filter by zone)
+-- ============================================================================
+local zoneSection = autoMineTab:CreateSection("Zone Filter")
+
+for _, zoneName in ipairs(zoneList) do
+    zoneSection:CreateToggle({
+        Name = zoneName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                config.selectedZones[zoneName] = true
+            else
+                config.selectedZones[zoneName] = nil
+            end
+        end
+    })
+end
+
+-- ============================================================================
+-- ORE FILTER SECTION
+-- ============================================================================
+local oreFilterToggleSection = autoMineTab:CreateSection("Ore Filter [Being Reworked]")
+
+oreFilterToggleSection:CreateToggle({
+    Name = "Enable Ore Filter",
+    Description = "Only mine rocks that contain selected ores (checks at 43% HP)",
+    Default = false,
+    Callback = function(value)
+        config.oreFilterEnabled = value
+        print("[Ore Filter] Ore filter", value and "ENABLED" or "DISABLED")
+    end
+})
+
+-- Common Ores
+local commonOreSection = autoMineTab:CreateSection("Common Ores")
+for _, oreName in ipairs(ItemsByRarity.Common) do
+    commonOreSection:CreateToggle({
+        Name = oreName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Common, oreName)
+            else
+                for i, name in ipairs(config.selectedItems.Common) do
+                    if name == oreName then
+                        table.remove(config.selectedItems.Common, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Uncommon Ores
+local uncommonOreSection = autoMineTab:CreateSection("Uncommon Ores")
+for _, oreName in ipairs(ItemsByRarity.Uncommon) do
+    uncommonOreSection:CreateToggle({
+        Name = oreName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Uncommon, oreName)
+            else
+                for i, name in ipairs(config.selectedItems.Uncommon) do
+                    if name == oreName then
+                        table.remove(config.selectedItems.Uncommon, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Rare Ores
+local rareOreSection = autoMineTab:CreateSection("Rare Ores")
+for _, oreName in ipairs(ItemsByRarity.Rare) do
+    rareOreSection:CreateToggle({
+        Name = oreName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Rare, oreName)
+            else
+                for i, name in ipairs(config.selectedItems.Rare) do
+                    if name == oreName then
+                        table.remove(config.selectedItems.Rare, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Epic Ores
+local epicOreSection = autoMineTab:CreateSection("Epic Ores")
+for _, oreName in ipairs(ItemsByRarity.Epic) do
+    epicOreSection:CreateToggle({
+        Name = oreName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Epic, oreName)
+            else
+                for i, name in ipairs(config.selectedItems.Epic) do
+                    if name == oreName then
+                        table.remove(config.selectedItems.Epic, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Legendary Ores
+local legendaryOreSection = autoMineTab:CreateSection("Legendary Ores")
+for _, oreName in ipairs(ItemsByRarity.Legendary) do
+    legendaryOreSection:CreateToggle({
+        Name = oreName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Legendary, oreName)
+            else
+                for i, name in ipairs(config.selectedItems.Legendary) do
+                    if name == oreName then
+                        table.remove(config.selectedItems.Legendary, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Mythical Ores
+local mythicalOreSection = autoMineTab:CreateSection("Mythical Ores")
+for _, oreName in ipairs(ItemsByRarity.Mythical) do
+    mythicalOreSection:CreateToggle({
+        Name = oreName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Mythical, oreName)
+            else
+                for i, name in ipairs(config.selectedItems.Mythical) do
+                    if name == oreName then
+                        table.remove(config.selectedItems.Mythical, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- ============================================================================
 -- AUTO-SELL SECTION (Now in separate tab)
 -- ============================================================================
-local section3 = autoSellTab:CreateSection("Sell Features")
+local section3 = autoSellTab:CreateSection("Auto Sell")
 
 section3:CreateToggle({
     Name = "Auto Sell",
-    Description = "Automatically sell selected items",
+    Description = "Automatically sell selected Items [Every 5 seconds]",
     Default = false,
     Callback = function(value)
         config.autoSellEnabled = value
+        if value then
+            startAutoSellLoop()
+        else
+            stopAutoSellLoop()
+        end
     end
 })
 
@@ -966,18 +2009,33 @@ for _, itemName in ipairs(ItemsByRarity.Essence) do
     })
 end
 
-local settingsTab = window:CreateTab({
-    Name = "Settings"
-})
-
 -- ============================================================================
 -- SETTINGS TAB
 -- ============================================================================
-local settingsSection = settingsTab:CreateSection("Script Settings")
+
+-- ============================================================================
+-- SCRIPT CONTROLS SECTION
+-- ============================================================================
+local settingsSection = settingsTab:CreateSection("Script Controls")
+
+settingsSection:CreateToggle({
+    Name = "Anti-AFK",
+    Description = "You won't be kicked for being AFK",
+    Default = false,
+    Callback = function(value)
+        if value then
+            startResetLoop()
+            print("[Anti-AFK] Reset loop started")
+        else
+            stopResetLoop()
+            print("[Anti-AFK] Reset loop stopped")
+        end
+    end
+})
 
 settingsSection:CreateButton({
     Name = "Destroy GUI",
-    Description = "Completely removes the script and GUI",
+    Description = "Removes UI and Functions",
     Callback = function()
         print("[Settings] Destroying GUI...")
         
@@ -987,15 +2045,27 @@ settingsSection:CreateButton({
             stopAutoFarm()
         end
         
-        -- Disconnect all loops
-        if autoSellLoop then
-            autoSellLoop:Disconnect()
-            autoSellLoop = nil
+        -- Stop auto-mine if running
+        if config.autoMineEnabled then
+            config.autoMineEnabled = false
+            stopAutoMine()
         end
         
+        -- Stop auto-sell loop
+        if config.autoSellEnabled then
+            config.autoSellEnabled = false
+            stopAutoSellLoop()
+        end
+        
+        -- Disconnect all loops
         if farmLoop then
             farmLoop:Disconnect()
             farmLoop = nil
+        end
+        
+        if mineLoop then
+            mineLoop:Disconnect()
+            mineLoop = nil
         end
         
         if resetLoop then
@@ -1008,9 +2078,15 @@ settingsSection:CreateButton({
             autoClickerLoop = nil
         end
         
+        if miningAutoClickerLoop then
+            miningAutoClickerLoop:Disconnect()
+            miningAutoClickerLoop = nil
+        end
+        
         -- Reset all state variables
         hasVisitedMerchant = false
         currentTargetMob = nil
+        currentTargetRock = nil
         isWaitingForRespawn = false
         frozenPosition = nil
         
@@ -1022,24 +2098,59 @@ settingsSection:CreateButton({
             hrp.RotVelocity = Vector3.new(0, 0, 0)
         end
         
-        -- Find and destroy only Luna UI
-        for _, gui in pairs(player.PlayerGui:GetChildren()) do
-            if gui.Name == "Luna" or gui.Name:find("Luna") then
-                gui:Destroy()
-                print("[Settings] Destroyed Luna GUI:", gui.Name)
+        -- Remove Luna camera blur
+        pcall(function()
+            local lunaBlur = workspace.Camera:FindFirstChild("LunaBlur")
+            if lunaBlur then
+                lunaBlur:Destroy()
+                print("[Settings] Destroyed LunaBlur")
             end
-        end
+        end)
         
-        -- Also check CoreGui
+        -- SAFE CLEANUP - Only remove Luna-specific items
         local CoreGui = game:GetService("CoreGui")
-        for _, gui in pairs(CoreGui:GetChildren()) do
-            if gui.Name == "Luna" or gui.Name:find("Luna") then
+        
+        -- Remove known Luna modules by name
+        local lunaModules = {"18624", "38444", "6480", "209541", "302847", "35628", "2555281"}
+        for _, moduleName in pairs(lunaModules) do
+            pcall(function()
+                local module = CoreGui:FindFirstChild(moduleName)
+                if module then
+                    module:Destroy()
+                    print("[Settings] Destroyed Luna module:", moduleName)
+                end
+            end)
+        end
+        
+        -- Remove Luna-specific items only (not all loadstring items)
+        local itemsToDestroy = {}
+        for _, item in pairs(CoreGui:GetDescendants()) do
+            pcall(function()
+                if item.Name:find("Luna") then
+                    table.insert(itemsToDestroy, item)
+                end
+            end)
+        end
+        
+        for _, item in pairs(itemsToDestroy) do
+            pcall(function()
+                item:Destroy()
+                print("[Settings] Destroyed Luna item:", item.Name)
+            end)
+        end
+        
+        -- Remove Luna from PlayerGui
+        for _, gui in pairs(player.PlayerGui:GetChildren()) do
+            if gui.Name:find("Luna") then
                 gui:Destroy()
-                print("[Settings] Destroyed Luna GUI from CoreGui:", gui.Name)
+                print("[Settings] Destroyed Luna GUI from PlayerGui:", gui.Name)
             end
         end
         
-        print("[Settings] Script completely cleaned up!")
+        print("[Settings] ====================================")
+        print("[Settings] Script completely destroyed!")
+        print("[Settings] All loops stopped and UI removed.")
+        print("[Settings] ====================================")
     end
 })
 
