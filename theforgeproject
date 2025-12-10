@@ -1,0 +1,1054 @@
+-- ============================================================================
+-- LUNA UI AUTO-FARM SCRIPT (MULTI-MOB SELECTION)
+-- Place in: StarterPlayer > StarterPlayerScripts or StarterGui
+-- ============================================================================
+
+-- ============================================================================
+-- SERVICES
+-- ============================================================================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+-- ============================================================================
+-- HIDE RESET COUNTDOWN GUI
+-- ============================================================================
+task.spawn(function()
+    local function getNil(name, class)
+        for _, v in next, getnilinstances() do
+            if v.ClassName == class and v.Name == name then
+                return v
+            end
+        end
+    end
+    
+    local resetCountdown = getNil("ResetCountdown", "BillboardGui")
+    if resetCountdown then
+        resetCountdown.Enabled = false
+        print("[GUI] Reset Countdown hidden")
+    end
+end)
+
+-- ============================================================================
+-- VARIABLES
+-- ============================================================================
+local player = Players.LocalPlayer
+
+-- Load Luna UI Library
+local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/main/source.lua"))()
+
+-- ============================================================================
+-- CONFIGURATION
+-- ============================================================================
+local RESET_INTERVAL = 3 -- Seconds between resets
+
+-- Teleport positions
+local MERCHANT_POSITION = Vector3.new(-141.40, 21.56, -26.53)
+local FARM_START_POSITION = Vector3.new(-209.48, 20.94, -47.06)
+local MERCHANT_NPC = workspace.Proximity["Greedy Cey"]
+local MERCHANT_PROMPT = workspace.Proximity["Greedy Cey"].ProximityPrompt
+
+local config = {
+    autoFarmEnabled = false,
+    selectedMobs = {},
+    lockDistance = 7,
+    clickDelay = 0.25,
+    lastClickTime = 0,
+    autoSellEnabled = false,
+    sellCooldown = 1.5,
+    lastSellTime = 0,
+    selectedItems = {
+        Common = {},
+        Uncommon = {},
+        Rare = {},
+        Epic = {},
+        Legendary = {},
+        Mythical = {},
+        Rune = {},
+        Essence = {}
+    }
+}
+
+-- Mob list - ADD MORE MOBS HERE
+local mobList = {
+    "Reaper",
+    "Blazing Slime",
+    "Elite Deathaxe Skeleton",
+    "Blight Pyromancer",
+    "Deathaxe Skeleton",
+	"Elite Rogue Skeleton",
+	"Axe Skeleton",
+	"Skeleton Rogue",
+	"Bomber",
+	"Slime",
+}
+
+-- Items by rarity for Auto-Sell
+local ItemsByRarity = {
+    Common = {"Stone", "Sand Stone", "Copper", "Iron", "Cardboardite"},
+    Uncommon = {"Cobalt", "Titanium", "Lapis Lazuli", "Tin", "Silver", "Gold", "Bananite"},
+    Rare = {"Volcanic Rock", "Quartz", "Amethyst", "Boneite", "Dark Boneite", "Topaz", "Diamond", "Sapphire", "Mushroomite", "Platinum"},
+    Epic = {"Aite", "Slimite", "Poopite", "Cuprite", "Obsidian", "Emerald", "Ruby", "Rivalite"},
+    Legendary = {"Uranium", "Mythril", "Eye Ore", "Fireite", "Magmaite", "Lightite", "Rainbow Crystal"},
+    Mythical = {"Demonite", "Darkryte", "Arcane Crystal"},
+    Rune = {"Frost Speck", "Venom Crumb", "Blast Chip", "Miner Shard", "Flame Spark", "Drain Edge", "Briar Notch", "Ward Patch", "Rot Stich", "Chill Dust", "Rage Mark"},
+    Essence = {"Tiny Essence", "Small Essence", "Medium Essence", "Large Essence", "Greater Essence", "Epic Essence", "Superior Essence"}
+}
+
+-- ============================================================================
+-- REMOTE FUNCTIONS
+-- ============================================================================
+local ResetRF = ReplicatedStorage.Shared.Packages.Knit.Services.CharacterService.RF.Reset
+local ToolActivated = ReplicatedStorage.Shared.Packages.Knit.Services.ToolService.RF.ToolActivated
+
+-- ============================================================================
+-- STATE VARIABLES
+-- ============================================================================
+local farmLoop = nil
+local resetLoop = nil
+local autoClickerLoop = nil
+local currentTargetMob = nil
+local isWaitingForRespawn = false
+local frozenPosition = nil
+local lastPositionSwitch = 0
+local isAboveMob = false
+local hasVisitedMerchant = false
+
+-- ============================================================================
+-- AUTO-CLICKER FUNCTIONS
+-- ============================================================================
+
+local function startAutoClicker()
+    if autoClickerLoop then return end
+    
+    
+    autoClickerLoop = RunService.Heartbeat:Connect(function()
+        if not config.autoFarmEnabled then return end
+        
+        local currentTime = tick()
+        
+        if currentTime - config.lastClickTime >= config.clickDelay then
+            local success, err = pcall(function()
+                ToolActivated:InvokeServer("Weapon")
+            end)
+            
+            if not success then
+                warn("❌ [Auto-Clicker] Error: " .. tostring(err))
+            end
+            
+            config.lastClickTime = currentTime
+        end
+    end)
+end
+
+
+local function stopAutoClicker()
+    if autoClickerLoop then
+        autoClickerLoop:Disconnect()
+        autoClickerLoop = nil
+    end
+end
+
+-- ============================================================================
+-- UTILITY FUNCTIONS
+-- ============================================================================
+
+-- Get player character and HumanoidRootPart
+local function getPlayerRefs()
+    local char = player.Character
+    if not char then return nil, nil end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    return char, hrp
+end
+
+-- Check if a mob name matches any selected pattern
+local function isSelectedMob(mobName)
+    for selectedPattern, _ in pairs(config.selectedMobs) do
+        -- Pattern: "Axe Skeleton" matches "Axe Skeleton7717"
+        local pattern = "^" .. selectedPattern .. "%d*$"
+        if string.match(mobName, pattern) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Automatically equips weapon when auto-farm is on
+local function equipWeapon()
+    -- Only equip if auto-farm is enabled
+    if not config.autoFarmEnabled then
+        return false
+    end
+    
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        local weapon = backpack:FindFirstChild("Weapon")
+        if weapon and weapon:IsA("Tool") then
+            local character = player.Character
+            if character then
+                local humanoid = character:FindFirstChild("Humanoid")
+                if humanoid then
+                    humanoid:EquipTool(weapon)
+                    return true
+                end
+            end
+        end
+    end
+    
+    -- Check if already equipped
+    local character = player.Character
+    if character and character:FindFirstChild("Weapon") then
+        return true
+    end
+    
+    return false
+end
+
+local lastHitTime = 0
+
+local function autoHit()
+    if not config.autoFarmEnabled then return end
+    
+    local character = player.Character
+    if not character then return end
+    
+    local weapon = character:FindFirstChild("Weapon")
+    if not weapon or not weapon:IsA("Tool") then return end
+    
+    local currentTime = tick()
+    if currentTime - lastHitTime < 0.3 then return end
+    lastHitTime = currentTime
+    
+    pcall(function()
+        -- Re-equip to trigger attack
+        local humanoid = character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid:UnequipTools()
+            task.wait(0.05)
+            humanoid:EquipTool(weapon)
+        end
+    end)
+end
+
+
+-- ============================================================================
+-- MOB DETECTION
+-- ============================================================================
+
+-- Get priority of a mob based on its position in mobList
+local function getMobPriority(mobName)
+    for i, selectedPattern in ipairs(mobList) do
+        -- Check if this mob matches the pattern
+        local pattern = "^" .. selectedPattern .. "%d*$"
+        if string.match(mobName, pattern) then
+            return i -- Lower number = higher priority
+        end
+    end
+    return 999 -- Very low priority if not found
+end
+
+-- Find highest priority alive mob from selected list
+local function findAnySelectedMob()
+    local living = Workspace:FindFirstChild("Living")
+    if not living then 
+        return nil, nil 
+    end
+    
+    local validMobs = {}
+    
+    -- Search all mobs in Living folder
+    for _, mob in pairs(living:GetChildren()) do
+        local mobName = mob.Name
+        
+        if isSelectedMob(mobName) then
+            local mobHRP = mob:FindFirstChild("HumanoidRootPart")
+            local mobHumanoid = mob:FindFirstChild("Humanoid")
+            
+            -- Only target alive mobs
+            if mobHRP and mobHumanoid and mobHumanoid.Health > 0 then
+                table.insert(validMobs, {
+                    mob = mob, 
+                    hrp = mobHRP, 
+                    name = mobName,
+                    priority = getMobPriority(mobName)
+                })
+            end
+        end
+    end
+    
+    -- Sort by priority (lower number = higher priority)
+    table.sort(validMobs, function(a, b)
+        return a.priority < b.priority
+    end)
+    
+    -- Return highest priority mob (first in sorted list)
+    if #validMobs > 0 then
+        return validMobs[1].mob, validMobs[1].hrp
+    end
+    
+    return nil, nil
+end
+
+-- ============================================================================
+-- POSITION LOCKING FUNCTIONS
+-- ============================================================================
+
+-- Lock player at current position
+local function lockPlayer()
+    local _, hrp = getPlayerRefs()
+    if hrp then
+        frozenPosition = hrp.Position
+    end
+end
+
+-- Maintain spawn lock (keeps player frozen)
+local function maintainLock()
+    local _, hrp = getPlayerRefs()
+    if hrp and frozenPosition then
+        local currentRotation = hrp.CFrame - hrp.CFrame.Position
+        hrp.CFrame = CFrame.new(frozenPosition) * currentRotation
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        hrp.RotVelocity = Vector3.new(0, 0, 0)
+    end
+end
+
+-- Lock player under mob (follows mob) - switches between above and below
+local function lockUnderMob(mobHRP)
+    local _, playerHRP = getPlayerRefs()
+    if not playerHRP or not mobHRP then return end
+    
+    -- Switch position every 0.5 seconds
+    local currentTime = tick()
+    if currentTime - lastPositionSwitch >= 0.5 then
+        isAboveMob = not isAboveMob
+        lastPositionSwitch = currentTime
+    end
+    
+    local mobPos = mobHRP.Position
+    local offsetPos
+    local lookCFrame
+    
+    if isAboveMob then
+        -- Position ABOVE mob (looking down)
+        offsetPos = Vector3.new(mobPos.X, mobPos.Y + config.lockDistance, mobPos.Z)
+        lookCFrame = CFrame.new(offsetPos) * CFrame.Angles(math.rad(-90), 0, 0)
+    else
+        -- Position BELOW mob (looking up)
+        offsetPos = Vector3.new(mobPos.X, mobPos.Y - config.lockDistance, mobPos.Z)
+        lookCFrame = CFrame.new(offsetPos) * CFrame.Angles(math.rad(90), 0, 0)
+    end
+    
+    playerHRP.CFrame = lookCFrame
+    playerHRP.Velocity = Vector3.new(0, 0, 0)
+    playerHRP.RotVelocity = Vector3.new(0, 0, 0)
+end
+
+-- ============================================================================
+-- AUTO-SELL FUNCTIONS
+-- ============================================================================
+
+local SELLER_POSITION = Vector3.new(-141.95, 21.30, -27.09)
+local BUYER_NPC_POSITION = Vector3.new(-141.54, 21.24, -26.52)
+
+local function getItemQuantity(itemName)
+    local success, quantity = pcall(function()
+        local playerGui = player:WaitForChild("PlayerGui", 2)
+        if not playerGui then return 0 end
+        
+        local menu = playerGui:FindFirstChild("Menu")
+        if not menu then return 0 end
+        
+        local stash = menu:FindFirstChild("Frame", true)
+        if stash then
+            stash = stash:FindFirstChild("Frame", true)
+            if stash then
+                stash = stash:FindFirstChild("Menus", true)
+                if stash then
+                    stash = stash:FindFirstChild("Stash", true)
+                    if stash then
+                        stash = stash:FindFirstChild("Background", true)
+                        if stash then
+                            for _, itemFolder in pairs(stash:GetChildren()) do
+                                if itemFolder:IsA("Folder") or itemFolder:IsA("Frame") then
+                                    local main = itemFolder:FindFirstChild("Main")
+                                    if main and itemFolder.Name == itemName then
+                                        local quantityLabel = main:FindFirstChild("Quantity")
+                                        if quantityLabel and quantityLabel:IsA("TextLabel") then
+                                            local number = tonumber(string.match(quantityLabel.Text, "%d+"))
+                                            return number or 0
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return 0
+    end)
+    return success and quantity or 0
+end
+
+local function sellItems()
+    if not config.autoSellEnabled then 
+        return 
+    end
+    
+    local currentTime = tick()
+    if currentTime - config.lastSellTime < config.sellCooldown then
+        return
+    end
+    
+    local itemsToSell = {}
+    
+    -- Collect non-rune items
+    for rarity, items in pairs(config.selectedItems) do
+        if rarity ~= "Rune" then
+            for _, itemName in ipairs(items) do
+                local quantity = getItemQuantity(itemName)
+                if quantity > 0 then
+                    itemsToSell[itemName] = quantity
+                end
+            end
+        end
+    end
+    
+    -- Collect rune items (they use UUIDs)
+    local playerGui = player:WaitForChild("PlayerGui", 2)
+    if playerGui then
+        local menu = playerGui:FindFirstChild("Menu")
+        if menu then
+            local stash = menu:FindFirstChild("Frame", true)
+            if stash then
+                stash = stash:FindFirstChild("Frame", true)
+                if stash then
+                    stash = stash:FindFirstChild("Menus", true)
+                    if stash then
+                        stash = stash:FindFirstChild("Stash", true)
+                        if stash then
+                            stash = stash:FindFirstChild("Background", true)
+                            if stash then
+                                for _, itemFolder in pairs(stash:GetChildren()) do
+                                    local main = itemFolder:FindFirstChild("Main")
+                                    if main then
+                                        local itemNameLabel = main:FindFirstChild("ItemName")
+                                        if itemNameLabel and itemNameLabel:IsA("TextLabel") then
+                                            local itemName = itemNameLabel.Text
+                                            for _, selectedRuneName in ipairs(config.selectedItems.Rune) do
+                                                if itemName == selectedRuneName then
+                                                    itemsToSell[itemFolder.Name] = 1
+                                                    break
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    if next(itemsToSell) == nil then 
+        return 
+    end
+    
+    -- Use the simpler RunCommand method
+    local RS = game:GetService("ReplicatedStorage")
+    local RunCommand = RS:WaitForChild("Shared", 10):WaitForChild("Packages", 10):WaitForChild("Knit", 10):WaitForChild("Services", 10):WaitForChild("DialogueService", 10):WaitForChild("RF", 10):WaitForChild("RunCommand", 10)
+    
+    local success, err = pcall(function()
+        RunCommand:InvokeServer("SellConfirm", {Basket = itemsToSell})
+    end)
+    
+    if success then
+        config.lastSellTime = currentTime
+    else
+    end
+end
+
+-- ============================================================================
+-- RESET FUNCTIONS
+-- ============================================================================
+
+-- Reset character using Knit
+local function resetCharacter()
+    local success, result = pcall(function()
+        return ResetRF:InvokeServer()
+    end)
+    
+    if success then
+        isWaitingForRespawn = true
+        return true
+    else
+        warn("[Auto Farm] Failed to reset:", result)
+        return false
+    end
+end
+
+-- Start auto-reset loop
+local function startResetLoop()
+    if resetLoop then return end
+
+    resetLoop = task.spawn(function()
+        while config.autoFarmEnabled do
+            -- Spam reset
+            local success = pcall(function()
+                return ResetRF:InvokeServer()
+            end)
+            
+            if success then
+            end
+            
+            task.wait(RESET_INTERVAL)
+        end
+    end)
+end
+
+-- Stop reset loop
+local function stopResetLoop()
+    if resetLoop then
+        task.cancel(resetLoop)
+        resetLoop = nil
+    end
+end
+
+-- ============================================================================
+-- AUTO-FARM FUNCTIONS
+-- ============================================================================
+
+-- Teleport to merchant and interact
+local function visitMerchant()
+    if hasVisitedMerchant then 
+        print("[Merchant] Already visited, skipping...")
+        return
+    end
+    
+    local _, hrp = getPlayerRefs()
+    if not hrp then 
+        warn("[Merchant] Could not get HumanoidRootPart")
+        return 
+    end
+    
+    print("[Merchant] Teleporting to merchant position...")
+    hrp.CFrame = CFrame.new(MERCHANT_POSITION)
+    task.wait(1)
+    
+    -- Spam E key for 2 seconds
+    print("[Merchant] Spamming E for 2 seconds...")
+    local VirtualInputManager = game:GetService("VirtualInputManager")
+    local startTime = tick()
+    while tick() - startTime < 2 do
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.01)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        task.wait(0.01)
+    end
+    
+    task.wait(0.5)
+    
+    -- Teleport to farm start position
+    print("[Merchant] Teleporting to farm start position...")
+    hrp.CFrame = CFrame.new(FARM_START_POSITION)
+    task.wait(2)
+    
+    hasVisitedMerchant = true
+    print("[Merchant] Merchant visit completed!")
+end
+
+-- Start auto-farm
+local function startAutoFarm()
+    -- Stop existing farm first
+    if farmLoop then
+        stopAutoFarm()
+        task.wait(0.5)
+    end
+    
+    -- Check if mobs are selected
+    local selectedCount = 0
+    for _ in pairs(config.selectedMobs) do
+        selectedCount = selectedCount + 1
+    end
+    
+    if selectedCount == 0 then
+        warn("[Auto Farm] No mobs selected! Please select at least one mob.")
+        config.autoFarmEnabled = false
+        return
+    end
+
+    print("[Auto Farm] Starting auto-farm sequence...")
+    
+    -- Equip weapon at start
+    task.wait(0.5)
+    equipWeapon()
+    
+    -- Start the reset loop FIRST
+    print("[Auto Farm] Starting reset loop...")
+    startResetLoop()
+    
+    -- Initial reset sequence with 5 second wait
+    print("[Auto Farm] Waiting 5 seconds before first reset...")
+    local _, hrp = getPlayerRefs()
+    if hrp then
+        hrp.Anchored = true
+        frozenPosition = hrp.Position
+    end
+    
+    task.wait(5) -- Wait 5 seconds
+    
+    print("[Auto Farm] Resetting character...")
+    resetCharacter()
+    task.wait(5) -- Wait for respawn
+    
+    _, hrp = getPlayerRefs()
+    if hrp then
+        hrp.Anchored = false
+    end
+    
+    isWaitingForRespawn = false
+    frozenPosition = nil
+    
+    -- NOW visit the merchant (only once)
+    print("[Auto Farm] Visiting merchant...")
+    visitMerchant()
+    
+    print("[Auto Farm] Starting farm loop...")
+    
+    -- Start farm loop (runs every frame)
+    local waitingAtY150 = false
+    farmLoop = RunService.Heartbeat:Connect(function()
+        if not config.autoFarmEnabled then 
+            return 
+        end
+        
+        -- Search for mobs
+        local mob, mobHRP = findAnySelectedMob()
+        
+        if mob and mobHRP then
+            -- Mob found - lock under it
+            currentTargetMob = mob
+            waitingAtY150 = false
+            lockUnderMob(mobHRP)
+        else
+            -- No mobs found - go to Y=150 and wait
+            currentTargetMob = nil
+            local _, hrp = getPlayerRefs()
+            if hrp then
+                if not waitingAtY150 then
+                    local currentPos = hrp.Position
+                    hrp.CFrame = CFrame.new(currentPos.X, 150, currentPos.Z)
+                    waitingAtY150 = true
+                else
+                    -- Keep locked at Y=150
+                    local currentPos = hrp.Position
+                    hrp.CFrame = CFrame.new(currentPos.X, 150, currentPos.Z)
+                    hrp.Velocity = Vector3.new(0, 0, 0)
+                    hrp.RotVelocity = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+    end)
+    
+    -- Start auto-clicker
+    print("[Auto Farm] Starting auto-clicker...")
+    startAutoClicker()
+    
+    print("[Auto Farm] Auto-farm fully activated!")
+end
+
+-- Stop auto-farm
+local function stopAutoFarm()
+    -- Stop farm loop
+    if farmLoop then
+        farmLoop:Disconnect()
+        farmLoop = nil
+    end
+    
+    -- Stop reset loop
+    stopResetLoop()
+    
+    -- Clear states
+    currentTargetMob = nil
+    frozenPosition = nil
+    isWaitingForRespawn = false
+    
+    -- Unlock character
+    local _, hrp = getPlayerRefs()
+    if hrp then
+        hrp.Anchored = false
+        hrp.Velocity = Vector3.new(0, 0, 0)
+        hrp.RotVelocity = Vector3.new(0, 0, 0)
+    end
+    
+    -- Stop auto-clicker
+    stopAutoClicker()
+end
+
+-- ============================================================================
+-- CHARACTER RESPAWN HANDLER
+-- ============================================================================
+player.CharacterAdded:Connect(function(char)
+    if not config.autoFarmEnabled then return end
+	-- Keep weapon equipped
+	equipWeapon()
+
+	-- Auto-hit with weapon
+	autoHit()
+    
+    local hrp = char:WaitForChild("HumanoidRootPart")
+    task.wait(0.5)
+	-- Re-equip weapon after respawn
+	equipWeapon()
+    
+    isWaitingForRespawn = false
+    frozenPosition = nil
+    
+end)
+
+-- ============================================================================
+-- STANDALONE AUTO-SELL LOOP (runs independently)
+-- ============================================================================
+local autoSellLoop = RunService.Heartbeat:Connect(function()
+    -- This runs every frame, regardless of farming/mining state
+    sellItems()
+end)
+
+-- ============================================================================
+-- UI CREATION
+-- ============================================================================
+
+-- Create farm window
+local window = Luna:CreateWindow({
+    Name = "Rafso The Forge",
+    LogoID = "0",
+    LoadingEnabled = true,
+    LoadingTitle = "Loading Script",
+    LoadingSubtitle = "Please wait...",
+    KeySystem = false
+})
+
+local mainTab = window:CreateTab({
+    Name = "Farm"
+})
+
+local autoSellTab = window:CreateTab({
+    Name = "Auto Sell"
+})
+
+-- ============================================================================
+-- AUTO FEATURES SECTION
+-- ============================================================================
+local section1 = mainTab:CreateSection("Farm Features")
+
+section1:CreateToggle({
+    Name = "Auto Farm",
+    Description = "Auto-Farm selected Mobs [Do not walk]",
+    Default = false,
+    Callback = function(value)
+        config.autoFarmEnabled = value
+        if value then
+            startAutoFarm()
+        else
+            stopAutoFarm()
+        end
+    end
+})
+
+-- ============================================================================
+-- MOB SELECTION SECTION
+-- ============================================================================
+local section2 = mainTab:CreateSection("Mob Selection")
+
+-- Create toggle for each mob
+for _, mobName in ipairs(mobList) do
+    section2:CreateToggle({
+        Name = mobName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                config.selectedMobs[mobName] = true
+            else
+                config.selectedMobs[mobName] = nil
+            end
+            
+            -- Count selected mobs
+            local count = 0
+            for _ in pairs(config.selectedMobs) do
+                count = count + 1
+            end
+        end
+    })
+end
+
+-- ============================================================================
+-- AUTO-SELL SECTION (Now in separate tab)
+-- ============================================================================
+local section3 = autoSellTab:CreateSection("Sell Features")
+
+section3:CreateToggle({
+    Name = "Auto Sell",
+    Description = "Automatically sell selected items",
+    Default = false,
+    Callback = function(value)
+        config.autoSellEnabled = value
+    end
+})
+
+-- Common Items
+local commonSection = autoSellTab:CreateSection("Common Items")
+for _, itemName in ipairs(ItemsByRarity.Common) do
+    commonSection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Common, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Common) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Common, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Uncommon Items
+local uncommonSection = autoSellTab:CreateSection("Uncommon Items")
+for _, itemName in ipairs(ItemsByRarity.Uncommon) do
+    uncommonSection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Uncommon, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Uncommon) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Uncommon, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Rare Items
+local rareSection = autoSellTab:CreateSection("Rare Items")
+for _, itemName in ipairs(ItemsByRarity.Rare) do
+    rareSection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Rare, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Rare) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Rare, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Epic Items
+local epicSection = autoSellTab:CreateSection("Epic Items")
+for _, itemName in ipairs(ItemsByRarity.Epic) do
+    epicSection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Epic, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Epic) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Epic, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Legendary Items
+local legendarySection = autoSellTab:CreateSection("Legendary Items")
+for _, itemName in ipairs(ItemsByRarity.Legendary) do
+    legendarySection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Legendary, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Legendary) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Legendary, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Mythical Items
+local mythicalSection = autoSellTab:CreateSection("Mythical Items")
+for _, itemName in ipairs(ItemsByRarity.Mythical) do
+    mythicalSection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Mythical, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Mythical) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Mythical, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Rune Items
+local runeSection = autoSellTab:CreateSection("Rune Items")
+for _, itemName in ipairs(ItemsByRarity.Rune) do
+    runeSection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Rune, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Rune) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Rune, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+-- Essence Items
+local essenceSection = autoSellTab:CreateSection("Essence Items")
+for _, itemName in ipairs(ItemsByRarity.Essence) do
+    essenceSection:CreateToggle({
+        Name = itemName,
+        Default = false,
+        Callback = function(value)
+            if value then
+                table.insert(config.selectedItems.Essence, itemName)
+            else
+                for i, name in ipairs(config.selectedItems.Essence) do
+                    if name == itemName then
+                        table.remove(config.selectedItems.Essence, i)
+                        break
+                    end
+                end
+            end
+        end
+    })
+end
+
+local settingsTab = window:CreateTab({
+    Name = "Settings"
+})
+
+-- ============================================================================
+-- SETTINGS TAB
+-- ============================================================================
+local settingsSection = settingsTab:CreateSection("Script Settings")
+
+settingsSection:CreateButton({
+    Name = "Destroy GUI",
+    Description = "Completely removes the script and GUI",
+    Callback = function()
+        print("[Settings] Destroying GUI...")
+        
+        -- Stop auto-farm if running
+        if config.autoFarmEnabled then
+            config.autoFarmEnabled = false
+            stopAutoFarm()
+        end
+        
+        -- Disconnect all loops
+        if autoSellLoop then
+            autoSellLoop:Disconnect()
+            autoSellLoop = nil
+        end
+        
+        if farmLoop then
+            farmLoop:Disconnect()
+            farmLoop = nil
+        end
+        
+        if resetLoop then
+            task.cancel(resetLoop)
+            resetLoop = nil
+        end
+        
+        if autoClickerLoop then
+            autoClickerLoop:Disconnect()
+            autoClickerLoop = nil
+        end
+        
+        -- Reset all state variables
+        hasVisitedMerchant = false
+        currentTargetMob = nil
+        isWaitingForRespawn = false
+        frozenPosition = nil
+        
+        -- Unlock character
+        local _, hrp = getPlayerRefs()
+        if hrp then
+            hrp.Anchored = false
+            hrp.Velocity = Vector3.new(0, 0, 0)
+            hrp.RotVelocity = Vector3.new(0, 0, 0)
+        end
+        
+        -- Find and destroy only Luna UI
+        for _, gui in pairs(player.PlayerGui:GetChildren()) do
+            if gui.Name == "Luna" or gui.Name:find("Luna") then
+                gui:Destroy()
+                print("[Settings] Destroyed Luna GUI:", gui.Name)
+            end
+        end
+        
+        -- Also check CoreGui
+        local CoreGui = game:GetService("CoreGui")
+        for _, gui in pairs(CoreGui:GetChildren()) do
+            if gui.Name == "Luna" or gui.Name:find("Luna") then
+                gui:Destroy()
+                print("[Settings] Destroyed Luna GUI from CoreGui:", gui.Name)
+            end
+        end
+        
+        print("[Settings] Script completely cleaned up!")
+    end
+})
+
+-- ============================================================================
+-- INITIALIZATION
+-- ============================================================================
+
+-- Visit merchant once on script load
+task.spawn(function()
+    task.wait(0.1) -- Wait for character to fully load
+    visitMerchant()
+end)
