@@ -1376,16 +1376,21 @@ local function startAutoMine()
                 currentTargetRock = nil
                 lastRockHealth = nil
                 lastRockCheckTime = 0
-                isMiningFromAbove = true
             elseif health and maxHealth then
                 local healthPercent = (health / maxHealth) * 100
                 
+                -- CHECK IF SOMEONE ELSE IS MINING THIS ROCK
+                if lastHitPlayer and lastHitPlayer ~= player.Name and healthPercent < 100 then
+                    print("[Auto Mine] ⚠️ Someone else started mining this rock:", lastHitPlayer)
+                    print("[Auto Mine] Abandoning rock and finding a new one...")
+                    currentTargetRock = nil
+                    lastRockHealth = nil
+                    lastRockCheckTime = 0
                 -- Check if rock has regenerated (LastHitPlayer = me AND HP = 100%)
-                if lastHitPlayer == player.Name and healthPercent >= 100 then
+                elseif lastHitPlayer == player.Name and healthPercent >= 100 then
                     print("[Auto Mine] 🔄 Rock regenerated! Mining again...")
                     lastRockHealth = nil
                     lastRockCheckTime = 0
-                    isMiningFromAbove = true
                     -- Reset ore check flag
                     currentTargetRock:SetAttribute("OreChecked", nil)
                 -- ONLY check for ores if Ore Filter is ENABLED
@@ -1406,7 +1411,6 @@ local function startAutoMine()
                             currentTargetRock = nil
                             lastRockHealth = nil
                             lastRockCheckTime = 0
-                            isMiningFromAbove = true
                         else
                             print("[Auto Mine] ✅ Selected ore found! Mining to 0%...")
                         end
@@ -1590,7 +1594,7 @@ local section1 = mainTab:CreateSection("Auto Features")
 
 section1:CreateToggle({
     Name = "Auto Farm",
-    Description = "Auto-Farm selected Mobs [Don't Walk]",
+    Description = "Auto-Farm selected Mobs [Do not walk]",
     Default = false,
     Callback = function(value)
         config.autoFarmEnabled = value
@@ -1635,7 +1639,7 @@ local mineSection1 = autoMineTab:CreateSection("Auto Mine")
 
 mineSection1:CreateToggle({
     Name = "Auto Mine",
-    Description = "Auto-Mine selected Rocks",
+    Description = "Automatically mine rocks in selected zones",
     Default = false,
     Callback = function(value)
         config.autoMineEnabled = value
@@ -1650,11 +1654,11 @@ mineSection1:CreateToggle({
 -- ============================================================================
 -- ROCK TYPE SELECTION (Priority order)
 -- ============================================================================
-local rockSection = autoMineTab:CreateSection("Rocks")
+local rockSection = autoMineTab:CreateSection("Rock Types (Priority Order)")
 
 for _, rockType in ipairs(rockTypes) do
     rockSection:CreateToggle({
-        Name = rockType.name .. " Priority " .. rockType.priority .. "",
+        Name = rockType.name .. " (Priority: " .. rockType.priority .. ")",
         Default = false,
         Callback = function(value)
             rockType.enabled = value
@@ -1665,7 +1669,7 @@ end
 -- ============================================================================
 -- ZONE SELECTION (Optional - filter by zone)
 -- ============================================================================
-local zoneSection = autoMineTab:CreateSection("Zone Filter")
+local zoneSection = autoMineTab:CreateSection("Zone Filter (Optional)")
 
 for _, zoneName in ipairs(zoneList) do
     zoneSection:CreateToggle({
@@ -1684,7 +1688,7 @@ end
 -- ============================================================================
 -- ORE FILTER SECTION
 -- ============================================================================
-local oreFilterToggleSection = autoMineTab:CreateSection("Ore Filter [Being Reworked]")
+local oreFilterToggleSection = autoMineTab:CreateSection("Ore Filter")
 
 oreFilterToggleSection:CreateToggle({
     Name = "Enable Ore Filter",
@@ -1829,7 +1833,7 @@ local section3 = autoSellTab:CreateSection("Auto Sell")
 
 section3:CreateToggle({
     Name = "Auto Sell",
-    Description = "Automatically sell selected Items [Every 5 seconds]",
+    Description = "Automatically sell selected items (every 5 seconds)",
     Default = false,
     Callback = function(value)
         config.autoSellEnabled = value
@@ -2019,8 +2023,8 @@ end
 local settingsSection = settingsTab:CreateSection("Script Controls")
 
 settingsSection:CreateToggle({
-    Name = "Anti-AFK",
-    Description = "You won't be kicked for being AFK",
+    Name = "Anti-AFK (Reset Spam)",
+    Description = "Spam resets every 4 seconds to prevent AFK kick",
     Default = false,
     Callback = function(value)
         if value then
@@ -2035,7 +2039,7 @@ settingsSection:CreateToggle({
 
 settingsSection:CreateButton({
     Name = "Destroy GUI",
-    Description = "Removes UI and Functions",
+    Description = "Completely removes the script and GUI",
     Callback = function()
         print("[Settings] Destroying GUI...")
         
