@@ -1,25 +1,44 @@
--- Auto-execute on server hop (like Infinite Yield)
-if not _G.DrivingEmpireAutoExecute then
-    _G.DrivingEmpireAutoExecute = true
-    _G.DrivingEmpireScriptSource = game:HttpGet(getgenv().DrivingEmpireScriptURL or "YOUR_SCRIPT_URL_HERE")
-end
+local scriptURL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom"
 
--- Queue re-execution on teleport
-game:GetService("TeleportService").TeleportInitFailed:Connect(function(player, teleportResult, errorMessage)
-    if teleportResult == Enum.TeleportResult.Flooded then
-        wait(2)
+-- Try multiple methods for different executors
+local function setupAutoExecute()
+    -- Method 1: queue_on_teleport (Synapse, Script-Ware, etc.)
+    local queueonteleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
+    
+    if queueonteleport then
+        queueonteleport([[
+            repeat task.wait() until game:IsLoaded()
+            task.wait(2)
+            loadstring(game:HttpGet(']]..scriptURL..[['))()
+        ]])
+        return true
     end
-end)
+    
+    -- Method 2: Auto-execute folder (Xeno and others)
+    if writefile and isfolder and makefolder then
+        local autoexecPath = "autoexec/DrivingEmpireAutofarm.lua"
+        
+        -- Create autoexec folder if it doesn't exist
+        if not isfolder("autoexec") then
+            makefolder("autoexec")
+        end
+        
+        -- Write the auto-execute script
+        local autoexecScript = [[
+repeat task.wait() until game:IsLoaded()
+task.wait(2)
 
-local TeleportService = game:GetService("TeleportService")
-local queueonteleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
-
-if queueonteleport then
-    queueonteleport([[
-        repeat wait() until game:IsLoaded()
-        wait(1)
-        loadstring(game:HttpGet('https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/YOUR_SCRIPT.lua'))()
-    ]])
+-- Check if we're in the right game
+if game.PlaceId == ]]..game.PlaceId..[[ then
+    loadstring(game:HttpGet(']]..scriptURL..[['))()
+end
+]]
+        
+        writefile(autoexecPath, autoexecScript)
+        return true
+    end
+    
+    return false
 end
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -627,33 +646,27 @@ local SellButton = MainTab:CreateButton({
 local ServerHopButton = MainTab:CreateButton({
    Name = "Server Hop",
    Callback = function()
-       StatusLabel:Set("Status: Finding new server...")
+       StatusLabel:Set("Status: Setting up auto-execute...")
+       
+       -- Setup auto-execute before hopping
+       local success = setupAutoExecute()
+       
+       if success then
+           StatusLabel:Set("Status: Auto-execute configured! Finding new server...")
+       else
+           StatusLabel:Set("Status: Auto-execute not available. Finding new server...")
+       end
+       
+       task.wait(0.5)
        
        local TeleportService = game:GetService("TeleportService")
        local HttpService = game:GetService("HttpService")
-       
-       -- Queue the script to re-execute on the new server
-       local queueonteleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
-       
-       if queueonteleport then
-           queueonteleport([[
-               repeat wait() until game:IsLoaded()
-               wait(2)
-               -- Re-execute the script
-               loadstring(game:HttpGet('https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/YOUR_SCRIPT.lua'))()
-           ]])
-           StatusLabel:Set("Status: Auto-execute queued for new server!")
-       else
-           StatusLabel:Set("Status: Auto-execute not supported by your executor")
-       end
-       
-       wait(0.5)
        
        local placeId = game.PlaceId
        local currentJobId = game.JobId
        
        -- Get list of servers
-       local success, errorMsg = pcall(function()
+       local serverSuccess, errorMsg = pcall(function()
            local servers = {}
            local cursor = ""
            local attempts = 0
@@ -695,7 +708,7 @@ local ServerHopButton = MainTab:CreateButton({
            end
        end)
        
-       if not success then
+       if not serverSuccess then
            warn("Server hop error:", errorMsg)
            StatusLabel:Set("Status: Server hop failed! Trying alternative method...")
            
