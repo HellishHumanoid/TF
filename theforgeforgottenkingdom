@@ -46,90 +46,108 @@ end
 -- Auto-click Play button function
 local function autoClickPlay()
     task.spawn(function()
-        print("Waiting for Play button...")
+        print("[AUTO-CLICK] Waiting for Play button...")
         
         -- Wait for the LoadingUI to exist
         local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+        print("[AUTO-CLICK] PlayerGui found")
+        
         local loadingUI = playerGui:WaitForChild("LoadingUI", 30)
         
         if not loadingUI then
-            warn("LoadingUI not found!")
+            warn("[AUTO-CLICK] LoadingUI not found!")
             return
         end
+        print("[AUTO-CLICK] LoadingUI found")
         
         -- Wait for the Play button
         local menu = loadingUI:WaitForChild("Menu", 10)
         if not menu then
-            warn("Menu not found!")
+            warn("[AUTO-CLICK] Menu not found!")
             return
         end
+        print("[AUTO-CLICK] Menu found")
         
         local main = menu:WaitForChild("Main", 10)
         if not main then
-            warn("Main not found!")
+            warn("[AUTO-CLICK] Main not found!")
             return
         end
+        print("[AUTO-CLICK] Main found")
         
         local playButton = main:WaitForChild("Play", 10)
         if not playButton then
-            warn("Play button not found!")
+            warn("[AUTO-CLICK] Play button not found!")
             return
         end
+        print("[AUTO-CLICK] Play button found!")
+        print("[AUTO-CLICK] Button class:", playButton.ClassName)
+        print("[AUTO-CLICK] Button visible:", playButton.Visible)
         
         -- Wait a moment for UI to fully load
-        task.wait(0.5)
+        task.wait(1)
         
-        -- Check if button is visible and enabled
-        if playButton.Visible then
-            print("Play button found! Clicking...")
+        -- Check if button is a TextButton or ImageButton
+        if playButton:IsA("TextButton") or playButton:IsA("ImageButton") then
+            print("[AUTO-CLICK] Attempting to click Play button...")
             
-            -- Method 1: Try getconnections and fire (works without focus)
-            local clicked = false
-            pcall(function()
-                if getconnections then
-                    for _, connection in pairs(getconnections(playButton.MouseButton1Click)) do
+            local success = false
+            
+            -- Method 1: Use mouse1click if available (works without focus)
+            if mouse1click then
+                pcall(function()
+                    mouse1click()
+                    print("[AUTO-CLICK] Method 1: mouse1click - Attempted")
+                    success = true
+                end)
+            end
+            
+            -- Method 2: Fire Activated signal
+            if not success then
+                pcall(function()
+                    playButton.Activated:Fire()
+                    print("[AUTO-CLICK] Method 2: Activated signal - Fired")
+                    success = true
+                end)
+            end
+            
+            -- Method 3: Try getconnections with MouseButton1Click
+            if not success and getconnections then
+                pcall(function()
+                    local connections = getconnections(playButton.MouseButton1Click)
+                    print("[AUTO-CLICK] Found", #connections, "connections for MouseButton1Click")
+                    for i, connection in pairs(connections) do
+                        print("[AUTO-CLICK] Firing connection", i)
                         connection:Fire()
-                        clicked = true
                     end
-                end
-            end)
-            
-            -- Method 2: Try firesignal (works without focus)
-            if not clicked then
-                pcall(function()
-                    if firesignal then
-                        firesignal(playButton.MouseButton1Click)
-                        clicked = true
-                    end
+                    success = true
                 end)
             end
             
-            -- Method 3: Try fireconnection for each connection (works without focus)
-            if not clicked then
+            -- Method 4: Try firesignal
+            if not success and firesignal then
                 pcall(function()
-                    if getconnections and fireconnection then
-                        for _, connection in pairs(getconnections(playButton.MouseButton1Click)) do
-                            fireconnection(connection)
-                            clicked = true
-                        end
-                    end
+                    firesignal(playButton.MouseButton1Click)
+                    print("[AUTO-CLICK] Method 4: firesignal - Fired")
+                    success = true
                 end)
             end
             
-            -- Method 4: Direct GuiButton1Down/Up events (works without focus)
-            if not clicked then
+            -- Method 5: Manually set the button's properties and fire
+            if not success then
                 pcall(function()
-                    if firesignal then
-                        firesignal(playButton.MouseButton1Down, playButton.AbsolutePosition)
-                        task.wait(0.05)
-                        firesignal(playButton.MouseButton1Up, playButton.AbsolutePosition)
-                        clicked = true
-                    end
+                    -- Simulate press
+                    playButton.MouseButton1Down:Fire()
+                    task.wait(0.1)
+                    playButton.MouseButton1Up:Fire()
+                    playButton.MouseButton1Click:Fire()
+                    print("[AUTO-CLICK] Method 5: Manual event firing - Attempted")
+                    success = true
                 end)
             end
             
-            -- Method 5: Try mouse click simulation (requires focus but as fallback)
-            if not clicked then
+            -- Method 6: VirtualInputManager (requires focus)
+            if not success then
                 pcall(function()
                     local VIM = game:GetService("VirtualInputManager")
                     local buttonPos = playButton.AbsolutePosition
@@ -137,17 +155,18 @@ local function autoClickPlay()
                     local centerX = buttonPos.X + (buttonSize.X / 2)
                     local centerY = buttonPos.Y + (buttonSize.Y / 2)
                     
+                    print("[AUTO-CLICK] Method 6: VIM at position", centerX, centerY)
                     VIM:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
                     task.wait(0.1)
                     VIM:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
-                    clicked = true
+                    success = true
                 end)
             end
             
-            if clicked then
-                print("Play button clicked successfully! Waiting 5 seconds before starting autofarm...")
+            if success then
+                print("[AUTO-CLICK] ✓ Play button clicked! Waiting 5 seconds...")
             else
-                warn("All click methods failed!")
+                warn("[AUTO-CLICK] ✗ All click methods failed!")
             end
             
             -- Wait 5 seconds before enabling autofarm
@@ -155,11 +174,14 @@ local function autoClickPlay()
             
             -- Auto-enable the autofarm toggle
             if AutoATMToggle then
-                print("Auto-starting autofarm...")
+                print("[AUTO-CLICK] Auto-starting autofarm...")
                 AutoATMToggle:Set(true)
+            else
+                warn("[AUTO-CLICK] AutoATMToggle not found!")
             end
         else
-            warn("Play button not visible!")
+            warn("[AUTO-CLICK] Play button is not a TextButton or ImageButton!")
+            warn("[AUTO-CLICK] Button type:", playButton.ClassName)
         end
     end)
 end
