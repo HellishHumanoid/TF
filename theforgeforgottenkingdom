@@ -43,149 +43,6 @@ end
     return false
 end
 
--- Auto-click Play button function
-local function autoClickPlay()
-    task.spawn(function()
-        print("[AUTO-CLICK] Waiting for Play button...")
-        
-        -- Wait for the LoadingUI to exist
-        local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-        print("[AUTO-CLICK] PlayerGui found")
-        
-        local loadingUI = playerGui:WaitForChild("LoadingUI", 30)
-        
-        if not loadingUI then
-            warn("[AUTO-CLICK] LoadingUI not found!")
-            return
-        end
-        print("[AUTO-CLICK] LoadingUI found")
-        
-        -- Wait for the Play button
-        local menu = loadingUI:WaitForChild("Menu", 10)
-        if not menu then
-            warn("[AUTO-CLICK] Menu not found!")
-            return
-        end
-        print("[AUTO-CLICK] Menu found")
-        
-        local main = menu:WaitForChild("Main", 10)
-        if not main then
-            warn("[AUTO-CLICK] Main not found!")
-            return
-        end
-        print("[AUTO-CLICK] Main found")
-        
-        local playButton = main:WaitForChild("Play", 10)
-        if not playButton then
-            warn("[AUTO-CLICK] Play button not found!")
-            return
-        end
-        print("[AUTO-CLICK] Play button found!")
-        print("[AUTO-CLICK] Button class:", playButton.ClassName)
-        print("[AUTO-CLICK] Button visible:", playButton.Visible)
-        
-        -- Wait a moment for UI to fully load
-        task.wait(1)
-        
-        -- Check if button is a TextButton or ImageButton
-        if playButton:IsA("TextButton") or playButton:IsA("ImageButton") then
-            print("[AUTO-CLICK] Attempting to click Play button...")
-            
-            local success = false
-            
-            -- Method 1: Use mouse1click if available (works without focus)
-            if mouse1click then
-                pcall(function()
-                    mouse1click()
-                    print("[AUTO-CLICK] Method 1: mouse1click - Attempted")
-                    success = true
-                end)
-            end
-            
-            -- Method 2: Fire Activated signal
-            if not success then
-                pcall(function()
-                    playButton.Activated:Fire()
-                    print("[AUTO-CLICK] Method 2: Activated signal - Fired")
-                    success = true
-                end)
-            end
-            
-            -- Method 3: Try getconnections with MouseButton1Click
-            if not success and getconnections then
-                pcall(function()
-                    local connections = getconnections(playButton.MouseButton1Click)
-                    print("[AUTO-CLICK] Found", #connections, "connections for MouseButton1Click")
-                    for i, connection in pairs(connections) do
-                        print("[AUTO-CLICK] Firing connection", i)
-                        connection:Fire()
-                    end
-                    success = true
-                end)
-            end
-            
-            -- Method 4: Try firesignal
-            if not success and firesignal then
-                pcall(function()
-                    firesignal(playButton.MouseButton1Click)
-                    print("[AUTO-CLICK] Method 4: firesignal - Fired")
-                    success = true
-                end)
-            end
-            
-            -- Method 5: Manually set the button's properties and fire
-            if not success then
-                pcall(function()
-                    -- Simulate press
-                    playButton.MouseButton1Down:Fire()
-                    task.wait(0.1)
-                    playButton.MouseButton1Up:Fire()
-                    playButton.MouseButton1Click:Fire()
-                    print("[AUTO-CLICK] Method 5: Manual event firing - Attempted")
-                    success = true
-                end)
-            end
-            
-            -- Method 6: VirtualInputManager (requires focus)
-            if not success then
-                pcall(function()
-                    local VIM = game:GetService("VirtualInputManager")
-                    local buttonPos = playButton.AbsolutePosition
-                    local buttonSize = playButton.AbsoluteSize
-                    local centerX = buttonPos.X + (buttonSize.X / 2)
-                    local centerY = buttonPos.Y + (buttonSize.Y / 2)
-                    
-                    print("[AUTO-CLICK] Method 6: VIM at position", centerX, centerY)
-                    VIM:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
-                    task.wait(0.1)
-                    VIM:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
-                    success = true
-                end)
-            end
-            
-            if success then
-                print("[AUTO-CLICK] ✓ Play button clicked! Waiting 5 seconds...")
-            else
-                warn("[AUTO-CLICK] ✗ All click methods failed!")
-            end
-            
-            -- Wait 5 seconds before enabling autofarm
-            task.wait(5)
-            
-            -- Auto-enable the autofarm toggle
-            if AutoATMToggle then
-                print("[AUTO-CLICK] Auto-starting autofarm...")
-                AutoATMToggle:Set(true)
-            else
-                warn("[AUTO-CLICK] AutoATMToggle not found!")
-            end
-        else
-            warn("[AUTO-CLICK] Play button is not a TextButton or ImageButton!")
-            warn("[AUTO-CLICK] Button type:", playButton.ClassName)
-        end
-    end)
-end
-
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
@@ -403,10 +260,16 @@ local isRunning = false
 local atmProcessed = 0
 local atmSkipped = 0
 
+-- Auto Server Hop variables
+local autoServerHopEnabled = false
+local serverHopInterval = 3600 -- 60 minutes in seconds (1 hour)
+local lastServerHopTime = tick()
+
 -- Status Label
 local StatusLabel = MainTab:CreateLabel("Status: Idle")
 local ProgressLabel = MainTab:CreateLabel("Progress: 0/48 ATMs processed")
 local SellTimerLabel = MainTab:CreateLabel("Next Sell: 10:00")
+local ServerHopTimerLabel = MainTab:CreateLabel("Next Server Hop: --:--")
 
 -- Function to update sell timer display
 local function updateSellTimer()
@@ -426,6 +289,27 @@ local function updateSellTimer()
             task.wait(1)
         end
         SellTimerLabel:Set("Next Sell: --:--")
+    end)
+end
+
+-- Function to update server hop timer display
+local function updateServerHopTimer()
+    task.spawn(function()
+        while autoServerHopEnabled and autoATMEnabled do
+            local timeElapsed = tick() - lastServerHopTime
+            local timeRemaining = serverHopInterval - timeElapsed
+            
+            if timeRemaining > 0 then
+                local minutes = math.floor(timeRemaining / 60)
+                local seconds = math.floor(timeRemaining % 60)
+                ServerHopTimerLabel:Set(string.format("Next Server Hop: %02d:%02d", minutes, seconds))
+            else
+                ServerHopTimerLabel:Set("Next Server Hop: READY")
+            end
+            
+            task.wait(1)
+        end
+        ServerHopTimerLabel:Set("Next Server Hop: --:--")
     end)
 end
 
@@ -592,6 +476,11 @@ local function runAutoATM()
     -- Reset sell timer on start
     lastSellTime = tick()
     
+    -- Reset server hop timer on start
+    if autoServerHopEnabled then
+        lastServerHopTime = tick()
+    end
+    
     -- Setup death detection
     setupDeathDetection()
     
@@ -600,6 +489,11 @@ local function runAutoATM()
     
     -- Start sell timer display
     updateSellTimer()
+    
+    -- Start server hop timer display if enabled
+    if autoServerHopEnabled then
+        updateServerHopTimer()
+    end
     
     -- Loop infinitely for overnight farming
     while autoATMEnabled do
@@ -622,6 +516,64 @@ local function runAutoATM()
             local currentTime = tick()
             if (currentTime - lastSellTime) >= sellInterval then
                 performSell() -- This will COMPLETELY STOP and teleport 3 times to sell
+            end
+            
+            -- CHECK IF IT'S TIME TO SERVER HOP (if auto server hop is enabled)
+            if autoServerHopEnabled and (currentTime - lastServerHopTime) >= serverHopInterval then
+                StatusLabel:Set("Status: ⏰ TIME TO SERVER HOP!")
+                
+                -- Setup auto-execute
+                setupAutoExecute()
+                
+                task.wait(1)
+                
+                -- Perform server hop
+                local TeleportService = game:GetService("TeleportService")
+                local HttpService = game:GetService("HttpService")
+                
+                local placeId = game.PlaceId
+                local currentJobId = game.JobId
+                
+                StatusLabel:Set("Status: Finding new server...")
+                
+                pcall(function()
+                    local servers = {}
+                    local cursor = ""
+                    local attempts = 0
+                    local maxAttempts = 3
+                    
+                    repeat
+                        local url = string.format(
+                            "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100",
+                            placeId
+                        )
+                        
+                        if cursor ~= "" then
+                            url = url .. "&cursor=" .. cursor
+                        end
+                        
+                        local response = game:HttpGet(url)
+                        local data = HttpService:JSONDecode(response)
+                        
+                        for _, server in pairs(data.data) do
+                            if server.playing < server.maxPlayers and server.id ~= currentJobId then
+                                table.insert(servers, server.id)
+                            end
+                        end
+                        
+                        cursor = data.nextPageCursor or ""
+                        attempts = attempts + 1
+                    until cursor == "" or attempts >= maxAttempts
+                    
+                    if #servers > 0 then
+                        local randomServer = servers[math.random(1, #servers)]
+                        StatusLabel:Set("Status: Teleporting to new server...")
+                        TeleportService:TeleportToPlaceInstance(placeId, randomServer, player)
+                    else
+                        StatusLabel:Set("Status: No servers found, teleporting anyway...")
+                        TeleportService:Teleport(placeId, player)
+                    end
+                end)
             end
             
             StatusLabel:Set(string.format("Status: Checking ATM %d/48...", i))
@@ -772,6 +724,29 @@ local AutoATMToggle = MainTab:CreateToggle({
    end,
 })
 
+-- Auto Server Hop Toggle
+local AutoServerHopToggle = MainTab:CreateToggle({
+   Name = "Auto Server Hop (60 min)",
+   CurrentValue = false,
+   Flag = "AutoServerHopToggle",
+   Callback = function(Value)
+       autoServerHopEnabled = Value
+       
+       if Value then
+           lastServerHopTime = tick()
+           StatusLabel:Set("Status: Auto Server Hop enabled! Will hop every 60 minutes.")
+           
+           -- Start the timer display
+           if autoATMEnabled then
+               updateServerHopTimer()
+           end
+       else
+           StatusLabel:Set("Status: Auto Server Hop disabled")
+           ServerHopTimerLabel:Set("Next Server Hop: --:--")
+       end
+   end,
+})
+
 -- Manual Sell Button (from your original script)
 local SellButton = MainTab:CreateButton({
    Name = "Manual Sell [35.000+]",
@@ -789,7 +764,7 @@ local SellButton = MainTab:CreateButton({
 
 -- Server Hop Button
 local ServerHopButton = MainTab:CreateButton({
-   Name = "Server Hop",
+   Name = "Manual Server Hop",
    Callback = function()
        StatusLabel:Set("Status: Setting up auto-execute...")
        
@@ -864,8 +839,5 @@ local ServerHopButton = MainTab:CreateButton({
        end
    end,
 })
-
--- Start auto-click Play button
-autoClickPlay()
 
 Rayfield:LoadConfiguration()
