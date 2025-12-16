@@ -1,3 +1,5 @@
+-- Auto-execute on server hop (Xeno Compatible)
+-- Save script to file and auto-execute
 local scriptURL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom"
 
 -- Try multiple methods for different executors
@@ -39,6 +41,127 @@ end
     end
     
     return false
+end
+
+-- Auto-click Play button function
+local function autoClickPlay()
+    task.spawn(function()
+        print("Waiting for Play button...")
+        
+        -- Wait for the LoadingUI to exist
+        local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+        local loadingUI = playerGui:WaitForChild("LoadingUI", 30)
+        
+        if not loadingUI then
+            warn("LoadingUI not found!")
+            return
+        end
+        
+        -- Wait for the Play button
+        local menu = loadingUI:WaitForChild("Menu", 10)
+        if not menu then
+            warn("Menu not found!")
+            return
+        end
+        
+        local main = menu:WaitForChild("Main", 10)
+        if not main then
+            warn("Main not found!")
+            return
+        end
+        
+        local playButton = main:WaitForChild("Play", 10)
+        if not playButton then
+            warn("Play button not found!")
+            return
+        end
+        
+        -- Wait a moment for UI to fully load
+        task.wait(0.5)
+        
+        -- Check if button is visible and enabled
+        if playButton.Visible then
+            print("Play button found! Clicking...")
+            
+            -- Method 1: Try getconnections and fire (works without focus)
+            local clicked = false
+            pcall(function()
+                if getconnections then
+                    for _, connection in pairs(getconnections(playButton.MouseButton1Click)) do
+                        connection:Fire()
+                        clicked = true
+                    end
+                end
+            end)
+            
+            -- Method 2: Try firesignal (works without focus)
+            if not clicked then
+                pcall(function()
+                    if firesignal then
+                        firesignal(playButton.MouseButton1Click)
+                        clicked = true
+                    end
+                end)
+            end
+            
+            -- Method 3: Try fireconnection for each connection (works without focus)
+            if not clicked then
+                pcall(function()
+                    if getconnections and fireconnection then
+                        for _, connection in pairs(getconnections(playButton.MouseButton1Click)) do
+                            fireconnection(connection)
+                            clicked = true
+                        end
+                    end
+                end)
+            end
+            
+            -- Method 4: Direct GuiButton1Down/Up events (works without focus)
+            if not clicked then
+                pcall(function()
+                    if firesignal then
+                        firesignal(playButton.MouseButton1Down, playButton.AbsolutePosition)
+                        task.wait(0.05)
+                        firesignal(playButton.MouseButton1Up, playButton.AbsolutePosition)
+                        clicked = true
+                    end
+                end)
+            end
+            
+            -- Method 5: Try mouse click simulation (requires focus but as fallback)
+            if not clicked then
+                pcall(function()
+                    local VIM = game:GetService("VirtualInputManager")
+                    local buttonPos = playButton.AbsolutePosition
+                    local buttonSize = playButton.AbsoluteSize
+                    local centerX = buttonPos.X + (buttonSize.X / 2)
+                    local centerY = buttonPos.Y + (buttonSize.Y / 2)
+                    
+                    VIM:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+                    task.wait(0.1)
+                    VIM:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+                    clicked = true
+                end)
+            end
+            
+            if clicked then
+                print("Play button clicked successfully! Waiting 5 seconds before starting autofarm...")
+            else
+                warn("All click methods failed!")
+            end
+            
+            -- Wait 5 seconds before enabling autofarm
+            task.wait(5)
+            
+            -- Auto-enable the autofarm toggle
+            if AutoATMToggle then
+                print("Auto-starting autofarm...")
+                AutoATMToggle:Set(true)
+            end
+        else
+            warn("Play button not visible!")
+        end
+    end)
 end
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -719,5 +842,8 @@ local ServerHopButton = MainTab:CreateButton({
        end
    end,
 })
+
+-- Start auto-click Play button
+autoClickPlay()
 
 Rayfield:LoadConfiguration()
