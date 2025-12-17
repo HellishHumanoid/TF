@@ -59,52 +59,80 @@ local function handleLoadingUI()
                         
                         print("Character looking down, ready for autofarming!")
                         
-                        -- CLOSE NAVIGATION UI - Multiple attempts with different methods
-                        task.wait(2) -- Wait longer for Navigation UI to fully appear
-                        
-                        local navigationUI = playerGui:FindFirstChild("NavigationUI")
-                        if navigationUI then
-                            print("Found NavigationUI, attempting to close...")
+                        -- CLOSE NAVIGATION UI - NUCLEAR OPTION
+                        task.spawn(function()
+                            task.wait(3) -- Wait for UI to load
                             
-                            -- Method 1: Try to find and click close button
-                            local function findAndClickClose()
-                                -- Search recursively for close button
-                                for _, descendant in pairs(navigationUI:GetDescendants()) do
-                                    if descendant:IsA("GuiButton") then
-                                        local name = descendant.Name:lower()
-                                        if name:find("close") or name:find("x") or name:find("exit") then
-                                            print("Found close button:", descendant.Name)
-                                            GuiService.SelectedObject = descendant
-                                            task.wait(0.1)
-                                            VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-                                            task.wait(0.1)
-                                            VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
-                                            return true
-                                        end
+                            -- List of possible UI names to destroy
+                            local uiNamesToDestroy = {
+                                "NavigationUI",
+                                "Navigation",
+                                "NavUI",
+                                "TutorialUI",
+                                "Tutorial",
+                                "GuideUI",
+                                "Guide"
+                            }
+                            
+                            print("=== STARTING UI DESTRUCTION ===")
+                            
+                            -- Method 1: Find and destroy by name
+                            for _, uiName in pairs(uiNamesToDestroy) do
+                                local ui = playerGui:FindFirstChild(uiName)
+                                if ui then
+                                    print("Found UI:", uiName)
+                                    pcall(function()
+                                        ui.Enabled = false
+                                        ui:Destroy()
+                                        print("Destroyed:", uiName)
+                                    end)
+                                end
+                            end
+                            
+                            -- Method 2: Find ANY UI with "nav" or "guide" in the name
+                            for _, gui in pairs(playerGui:GetChildren()) do
+                                local nameLower = gui.Name:lower()
+                                if nameLower:find("nav") or nameLower:find("guide") or nameLower:find("tutorial") then
+                                    print("Found suspected navigation UI:", gui.Name)
+                                    pcall(function()
+                                        gui.Enabled = false
+                                        gui:Destroy()
+                                        print("Destroyed:", gui.Name)
+                                    end)
+                                end
+                            end
+                            
+                            -- Method 3: Print ALL GUIs so you can see what's there
+                            print("=== ALL PLAYER GUIs ===")
+                            for _, gui in pairs(playerGui:GetChildren()) do
+                                print("GUI Found:", gui.Name, "Enabled:", gui.Enabled or "N/A")
+                            end
+                            print("=== END GUI LIST ===")
+                            
+                            -- Method 4: Continuous monitoring loop
+                            while task.wait(2) do
+                                for _, uiName in pairs(uiNamesToDestroy) do
+                                    local ui = playerGui:FindFirstChild(uiName)
+                                    if ui then
+                                        pcall(function()
+                                            ui.Enabled = false
+                                            ui:Destroy()
+                                        end)
                                     end
                                 end
-                                return false
+                                
+                                -- Also check for any nav-related UI
+                                for _, gui in pairs(playerGui:GetChildren()) do
+                                    local nameLower = gui.Name:lower()
+                                    if nameLower:find("nav") or nameLower:find("guide") or nameLower:find("tutorial") then
+                                        pcall(function()
+                                            gui.Enabled = false
+                                            gui:Destroy()
+                                        end)
+                                    end
+                                end
                             end
-                            
-                            local closed = findAndClickClose()
-                            
-                            if closed then
-                                print("Navigation UI closed via button!")
-                            else
-                                -- Method 2: Just disable it directly
-                                navigationUI.Enabled = false
-                                print("Navigation UI disabled directly!")
-                            end
-                            
-                            -- Method 3: Destroy it as backup (aggressive)
-                            task.wait(0.5)
-                            if navigationUI and navigationUI.Parent then
-                                navigationUI:Destroy()
-                                print("Navigation UI destroyed!")
-                            end
-                        else
-                            print("NavigationUI not found")
-                        end
+                        end)
                     end
                 end
             end
