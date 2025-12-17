@@ -18,13 +18,7 @@ local GuiService = game:GetService("GuiService")
 task.spawn(function()
     print("=== NAVIGATION UI KILLER STARTED ===")
     
-    local function killNavigationUI()
-        -- Try pressing ESC
-        local VIM = game:GetService("VirtualInputManager")
-        VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
-        task.wait(0.05)
-        VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
-    end
+    local playerGui = player:WaitForChild("PlayerGui")
     
     local function checkAndDestroyUI(gui)
         if gui and gui:IsA("ScreenGui") then
@@ -58,8 +52,6 @@ task.spawn(function()
     end
     
     -- Monitor PlayerGui for new UI being added
-    local playerGui = player:WaitForChild("PlayerGui")
-    
     playerGui.ChildAdded:Connect(function(gui)
         task.wait(0.5) -- Wait for it to fully load
         print("New UI detected:", gui.Name)
@@ -68,15 +60,9 @@ task.spawn(function()
         end
     end)
     
-    -- Continuous monitoring loop
-    while task.wait(1) do
-        -- Press ESC periodically
-        killNavigationUI()
-        
-        -- Check all existing UIs
-        for _, gui in pairs(playerGui:GetChildren()) do
-            checkAndDestroyUI(gui)
-        end
+    -- Check existing UIs once
+    for _, gui in pairs(playerGui:GetChildren()) do
+        checkAndDestroyUI(gui)
     end
 end)
 
@@ -125,14 +111,12 @@ local function handleLoadingUI()
                         
                         print("Character looking down, ready for autofarming!")
                         
-                        -- Press ESC multiple times after loading
-                        print("Pressing ESC to close any popups...")
-                        for i = 1, 5 do
-                            VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
-                            task.wait(0.1)
-                            VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
-                            task.wait(0.3)
-                        end
+                        -- Press ESC once to close any popups
+                        print("Pressing ESC to close Navigation UI...")
+                        VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+                        task.wait(0.1)
+                        VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
+                        print("ESC pressed once")
                     end
                 end
             end
@@ -145,15 +129,47 @@ handleLoadingUI()
 
 -- AUTO-EXECUTE ON SERVER JOIN (for Xeno Executor)
 -- This will automatically run when you join a new server
+local TeleportService = game:GetService("TeleportService")
+
+-- Method 1: Using syn.queue_on_teleport
+if syn and syn.queue_on_teleport then
+    syn.queue_on_teleport([[
+        repeat task.wait() until game:IsLoaded()
+        task.wait(3)
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
+    ]])
+    print("Auto-execute set up with syn.queue_on_teleport")
+elseif queue_on_teleport then
+    -- Method 2: Using regular queue_on_teleport
+    queue_on_teleport([[
+        repeat task.wait() until game:IsLoaded()
+        task.wait(3)
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
+    ]])
+    print("Auto-execute set up with queue_on_teleport")
+else
+    print("WARNING: queue_on_teleport not available - auto-execute disabled")
+end
+
+-- Method 3: Backup using LocalPlayer.OnTeleport (may not work on all executors)
 player.OnTeleport:Connect(function(State)
     if State == Enum.TeleportState.Started then
         print("Teleporting to new server...")
-        -- Queue the script to run again after teleport (Xeno uses syn.queue_on_teleport)
-        syn.queue_on_teleport([[
-            repeat task.wait() until game:IsLoaded()
-            wait(2)
-            loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
-        ]])
+        pcall(function()
+            if syn and syn.queue_on_teleport then
+                syn.queue_on_teleport([[
+                    repeat task.wait() until game:IsLoaded()
+                    task.wait(3)
+                    loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
+                ]])
+            elseif queue_on_teleport then
+                queue_on_teleport([[
+                    repeat task.wait() until game:IsLoaded()
+                    task.wait(3)
+                    loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
+                ]])
+            end
+        end)
     end
 end)
 
