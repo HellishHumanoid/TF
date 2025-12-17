@@ -14,6 +14,72 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local GuiService = game:GetService("GuiService")
 
+-- START MONITORING FOR NAVIGATION UI IMMEDIATELY
+task.spawn(function()
+    print("=== NAVIGATION UI KILLER STARTED ===")
+    
+    local function killNavigationUI()
+        -- Try pressing ESC
+        local VIM = game:GetService("VirtualInputManager")
+        VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+        task.wait(0.05)
+        VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
+    end
+    
+    local function checkAndDestroyUI(gui)
+        if gui and gui:IsA("ScreenGui") then
+            local nameLower = gui.Name:lower()
+            -- Check if it contains navigation-related keywords
+            if nameLower:find("nav") or nameLower:find("guide") or nameLower:find("tutorial") or nameLower:find("waypoint") then
+                print("Found suspected navigation UI:", gui.Name)
+                pcall(function()
+                    gui.Enabled = false
+                end)
+                pcall(function()
+                    gui:Destroy()
+                end)
+                return true
+            end
+            
+            -- Check if it has navigation-related children
+            for _, child in pairs(gui:GetDescendants()) do
+                local childNameLower = child.Name:lower()
+                if childNameLower:find("nav") or childNameLower:find("waypoint") or childNameLower:find("guide") then
+                    print("Found navigation element in", gui.Name, ":", child.Name)
+                    pcall(function()
+                        gui.Enabled = false
+                        gui:Destroy()
+                    end)
+                    return true
+                end
+            end
+        end
+        return false
+    end
+    
+    -- Monitor PlayerGui for new UI being added
+    local playerGui = player:WaitForChild("PlayerGui")
+    
+    playerGui.ChildAdded:Connect(function(gui)
+        task.wait(0.5) -- Wait for it to fully load
+        print("New UI detected:", gui.Name)
+        if checkAndDestroyUI(gui) then
+            print("Destroyed new navigation UI:", gui.Name)
+        end
+    end)
+    
+    -- Continuous monitoring loop
+    while task.wait(1) do
+        -- Press ESC periodically
+        killNavigationUI()
+        
+        -- Check all existing UIs
+        for _, gui in pairs(playerGui:GetChildren()) do
+            checkAndDestroyUI(gui)
+        end
+    end
+end)
+
 local function handleLoadingUI()
     task.spawn(function()
         -- Wait for LoadingUI to exist
@@ -59,86 +125,14 @@ local function handleLoadingUI()
                         
                         print("Character looking down, ready for autofarming!")
                         
-                        -- CLOSE NAVIGATION UI - Search EVERYWHERE
-                        task.spawn(function()
-                            task.wait(3) -- Wait for UI to load
-                            
-                            local CoreGui = game:GetService("CoreGui")
-                            local StarterGui = game:GetService("StarterGui")
-                            
-                            print("=== SEARCHING FOR NAVIGATION UI ===")
-                            
-                            -- Search in PlayerGui
-                            print("--- PlayerGui Contents ---")
-                            for _, gui in pairs(playerGui:GetChildren()) do
-                                print("PlayerGui:", gui.Name, "Enabled:", gui.Enabled or "N/A")
-                                
-                                -- Check descendants too
-                                for _, child in pairs(gui:GetDescendants()) do
-                                    if child.Name:lower():find("nav") or child.Name:lower():find("guide") then
-                                        print("  Found nav element:", child.Name, "in", gui.Name)
-                                    end
-                                end
-                            end
-                            
-                            -- Search in CoreGui
-                            print("--- CoreGui Contents ---")
-                            pcall(function()
-                                for _, gui in pairs(CoreGui:GetChildren()) do
-                                    print("CoreGui:", gui.Name)
-                                    
-                                    -- Check descendants
-                                    for _, child in pairs(gui:GetDescendants()) do
-                                        if child.Name:lower():find("nav") or child.Name:lower():find("guide") then
-                                            print("  Found nav element:", child.Name, "in", gui.Name)
-                                        end
-                                    end
-                                end
-                            end)
-                            
-                            print("=== END SEARCH ===")
-                            
-                            -- Method 1: Press ESC key to close any open UI
-                            print("Pressing ESC to close UI...")
-                            for i = 1, 3 do
-                                VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
-                                task.wait(0.1)
-                                VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
-                                task.wait(0.5)
-                            end
-                            print("ESC pressed 3 times")
-                            
-                            -- Method 2: Try to disable TopBarPlus / vRP navigation
-                            pcall(function()
-                                if game:GetService("CoreGui"):FindFirstChild("TopBarApp") then
-                                    game:GetService("CoreGui").TopBarApp.Enabled = false
-                                end
-                            end)
-                            
-                            -- Method 3: Continuous monitoring - press ESC every 10 seconds
-                            task.spawn(function()
-                                while task.wait(10) do
-                                    VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
-                                    task.wait(0.1)
-                                    VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
-                                end
-                            end)
-                            
-                            -- Method 4: Search and destroy any navigation UI
-                            while task.wait(2) do
-                                -- Check PlayerGui
-                                for _, gui in pairs(playerGui:GetChildren()) do
-                                    local nameLower = gui.Name:lower()
-                                    if nameLower:find("nav") or nameLower:find("guide") or nameLower:find("tutorial") then
-                                        pcall(function()
-                                            gui.Enabled = false
-                                            gui:Destroy()
-                                            print("Destroyed UI:", gui.Name)
-                                        end)
-                                    end
-                                end
-                            end
-                        end)
+                        -- Press ESC multiple times after loading
+                        print("Pressing ESC to close any popups...")
+                        for i = 1, 5 do
+                            VIM:SendKeyEvent(true, Enum.KeyCode.Escape, false, game)
+                            task.wait(0.1)
+                            VIM:SendKeyEvent(false, Enum.KeyCode.Escape, false, game)
+                            task.wait(0.3)
+                        end
                     end
                 end
             end
