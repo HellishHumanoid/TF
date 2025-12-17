@@ -1,49 +1,132 @@
--- Auto-execute on server hop (Xeno Compatible)
--- Save script to file and auto-execute
-local scriptURL = "https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom"
-
--- Try multiple methods for different executors
-local function setupAutoExecute()
-    -- Method 1: queue_on_teleport (Synapse, Script-Ware, etc.)
-    local queueonteleport = queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport)
-    
-    if queueonteleport then
-        queueonteleport([[
-            repeat task.wait() until game:IsLoaded()
-            task.wait(2)
-            loadstring(game:HttpGet(']]..scriptURL..[['))()
-        ]])
-        return true
-    end
-    
-    -- Method 2: Auto-execute folder (Xeno and others)
-    if writefile and isfolder and makefolder then
-        local autoexecPath = "autoexec/DrivingEmpireAutofarm.lua"
-        
-        -- Create autoexec folder if it doesn't exist
-        if not isfolder("autoexec") then
-            makefolder("autoexec")
-        end
-        
-        -- Write the auto-execute script
-        local autoexecScript = [[
-repeat task.wait() until game:IsLoaded()
-task.wait(2)
-
--- Check if we're in the right game
-if game.PlaceId == ]]..game.PlaceId..[[ then
-    loadstring(game:HttpGet(']]..scriptURL..[['))()
-end
-]]
-        
-        writefile(autoexecPath, autoexecScript)
-        return true
-    end
-    
-    return false
-end
-
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- DELETE BOATS DEALERSHIP FOLDER IMMEDIATELY
+local success, err = pcall(function()
+    local boatsFolder = game:GetService("Workspace").Game.Dealerships.Dealerships:FindFirstChild("Boats")
+    if boatsFolder then
+        boatsFolder:Destroy()
+        print("Boats folder deleted successfully!")
+    end
+end)
+
+-- HANDLE LOADING UI - Auto-click Play button, look down, and close Navigation UI
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local GuiService = game:GetService("GuiService")
+
+local function handleLoadingUI()
+    task.spawn(function()
+        -- Wait for LoadingUI to exist
+        local playerGui = player:WaitForChild("PlayerGui")
+        local loadingUI = playerGui:WaitForChild("LoadingUI", 10)
+        
+        if loadingUI then
+            local playButton = loadingUI:FindFirstChild("Menu")
+            if playButton then
+                playButton = playButton:FindFirstChild("Main")
+                if playButton then
+                    playButton = playButton:FindFirstChild("Play")
+                    
+                    if playButton and playButton:IsA("GuiButton") then
+                        -- Use GuiService to select the button
+                        GuiService.SelectedObject = playButton
+                        task.wait(0.2)
+                        
+                        -- Press Enter to activate it
+                        local VIM = game:GetService("VirtualInputManager")
+                        VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                        task.wait(0.1)
+                        VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+                        
+                        print("Play button clicked!")
+                        
+                        -- Wait 3 seconds
+                        task.wait(3)
+                        
+                        -- Make character look down
+                        local character = player.Character or player.CharacterAdded:Wait()
+                        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+                        local camera = workspace.CurrentCamera
+                        
+                        -- Set camera to look down
+                        camera.CameraType = Enum.CameraType.Scriptable
+                        camera.CFrame = CFrame.new(humanoidRootPart.Position + Vector3.new(0, 5, 0), humanoidRootPart.Position - Vector3.new(0, 10, 0))
+                        
+                        task.wait(0.5)
+                        
+                        -- Reset camera back to player control
+                        camera.CameraType = Enum.CameraType.Custom
+                        
+                        print("Character looking down, ready for autofarming!")
+                        
+                        -- CLOSE NAVIGATION UI - Multiple attempts with different methods
+                        task.wait(2) -- Wait longer for Navigation UI to fully appear
+                        
+                        local navigationUI = playerGui:FindFirstChild("NavigationUI")
+                        if navigationUI then
+                            print("Found NavigationUI, attempting to close...")
+                            
+                            -- Method 1: Try to find and click close button
+                            local function findAndClickClose()
+                                -- Search recursively for close button
+                                for _, descendant in pairs(navigationUI:GetDescendants()) do
+                                    if descendant:IsA("GuiButton") then
+                                        local name = descendant.Name:lower()
+                                        if name:find("close") or name:find("x") or name:find("exit") then
+                                            print("Found close button:", descendant.Name)
+                                            GuiService.SelectedObject = descendant
+                                            task.wait(0.1)
+                                            VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+                                            task.wait(0.1)
+                                            VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+                                            return true
+                                        end
+                                    end
+                                end
+                                return false
+                            end
+                            
+                            local closed = findAndClickClose()
+                            
+                            if closed then
+                                print("Navigation UI closed via button!")
+                            else
+                                -- Method 2: Just disable it directly
+                                navigationUI.Enabled = false
+                                print("Navigation UI disabled directly!")
+                            end
+                            
+                            -- Method 3: Destroy it as backup (aggressive)
+                            task.wait(0.5)
+                            if navigationUI and navigationUI.Parent then
+                                navigationUI:Destroy()
+                                print("Navigation UI destroyed!")
+                            end
+                        else
+                            print("NavigationUI not found")
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Start the loading UI handler
+handleLoadingUI()
+
+-- AUTO-EXECUTE ON SERVER JOIN (for Xeno Executor)
+-- This will automatically run when you join a new server
+player.OnTeleport:Connect(function(State)
+    if State == Enum.TeleportState.Started then
+        print("Teleporting to new server...")
+        -- Queue the script to run again after teleport
+        queue_on_teleport([[
+            repeat task.wait() until game:IsLoaded()
+            loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
+        ]])
+    end
+end)
 
 local Window = Rayfield:CreateWindow({
    Name = "Rafso Driving Empire",
@@ -64,9 +147,7 @@ local Window = Rayfield:CreateWindow({
 
 local MainTab = Window:CreateTab("Main", 4483362458)
 
-local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local humanoid = character:WaitForChild("Humanoid")
@@ -260,16 +341,10 @@ local isRunning = false
 local atmProcessed = 0
 local atmSkipped = 0
 
--- Auto Server Hop variables
-local autoServerHopEnabled = false
-local serverHopInterval = 3600 -- 60 minutes in seconds (1 hour)
-local lastServerHopTime = tick()
-
 -- Status Label
 local StatusLabel = MainTab:CreateLabel("Status: Idle")
 local ProgressLabel = MainTab:CreateLabel("Progress: 0/48 ATMs processed")
 local SellTimerLabel = MainTab:CreateLabel("Next Sell: 10:00")
-local ServerHopTimerLabel = MainTab:CreateLabel("Next Server Hop: --:--")
 
 -- Function to update sell timer display
 local function updateSellTimer()
@@ -289,27 +364,6 @@ local function updateSellTimer()
             task.wait(1)
         end
         SellTimerLabel:Set("Next Sell: --:--")
-    end)
-end
-
--- Function to update server hop timer display
-local function updateServerHopTimer()
-    task.spawn(function()
-        while autoServerHopEnabled and autoATMEnabled do
-            local timeElapsed = tick() - lastServerHopTime
-            local timeRemaining = serverHopInterval - timeElapsed
-            
-            if timeRemaining > 0 then
-                local minutes = math.floor(timeRemaining / 60)
-                local seconds = math.floor(timeRemaining % 60)
-                ServerHopTimerLabel:Set(string.format("Next Server Hop: %02d:%02d", minutes, seconds))
-            else
-                ServerHopTimerLabel:Set("Next Server Hop: READY")
-            end
-            
-            task.wait(1)
-        end
-        ServerHopTimerLabel:Set("Next Server Hop: --:--")
     end)
 end
 
@@ -476,11 +530,6 @@ local function runAutoATM()
     -- Reset sell timer on start
     lastSellTime = tick()
     
-    -- Reset server hop timer on start
-    if autoServerHopEnabled then
-        lastServerHopTime = tick()
-    end
-    
     -- Setup death detection
     setupDeathDetection()
     
@@ -489,11 +538,6 @@ local function runAutoATM()
     
     -- Start sell timer display
     updateSellTimer()
-    
-    -- Start server hop timer display if enabled
-    if autoServerHopEnabled then
-        updateServerHopTimer()
-    end
     
     -- Loop infinitely for overnight farming
     while autoATMEnabled do
@@ -516,64 +560,6 @@ local function runAutoATM()
             local currentTime = tick()
             if (currentTime - lastSellTime) >= sellInterval then
                 performSell() -- This will COMPLETELY STOP and teleport 3 times to sell
-            end
-            
-            -- CHECK IF IT'S TIME TO SERVER HOP (if auto server hop is enabled)
-            if autoServerHopEnabled and (currentTime - lastServerHopTime) >= serverHopInterval then
-                StatusLabel:Set("Status: ⏰ TIME TO SERVER HOP!")
-                
-                -- Setup auto-execute
-                setupAutoExecute()
-                
-                task.wait(1)
-                
-                -- Perform server hop
-                local TeleportService = game:GetService("TeleportService")
-                local HttpService = game:GetService("HttpService")
-                
-                local placeId = game.PlaceId
-                local currentJobId = game.JobId
-                
-                StatusLabel:Set("Status: Finding new server...")
-                
-                pcall(function()
-                    local servers = {}
-                    local cursor = ""
-                    local attempts = 0
-                    local maxAttempts = 3
-                    
-                    repeat
-                        local url = string.format(
-                            "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100",
-                            placeId
-                        )
-                        
-                        if cursor ~= "" then
-                            url = url .. "&cursor=" .. cursor
-                        end
-                        
-                        local response = game:HttpGet(url)
-                        local data = HttpService:JSONDecode(response)
-                        
-                        for _, server in pairs(data.data) do
-                            if server.playing < server.maxPlayers and server.id ~= currentJobId then
-                                table.insert(servers, server.id)
-                            end
-                        end
-                        
-                        cursor = data.nextPageCursor or ""
-                        attempts = attempts + 1
-                    until cursor == "" or attempts >= maxAttempts
-                    
-                    if #servers > 0 then
-                        local randomServer = servers[math.random(1, #servers)]
-                        StatusLabel:Set("Status: Teleporting to new server...")
-                        TeleportService:TeleportToPlaceInstance(placeId, randomServer, player)
-                    else
-                        StatusLabel:Set("Status: No servers found, teleporting anyway...")
-                        TeleportService:Teleport(placeId, player)
-                    end
-                end)
             end
             
             StatusLabel:Set(string.format("Status: Checking ATM %d/48...", i))
@@ -612,10 +598,17 @@ local function runAutoATM()
                 continue
             end
             
-            -- Valid ATM found! Unfreeze character now
-            StatusLabel:Set(string.format("Status: ATM %d - Valid ATM found!", i))
+            -- Valid ATM found! Freeze for 0.2 seconds first
+            StatusLabel:Set(string.format("Status: ATM %d - Valid ATM found! Freezing...", i))
             
-            -- Completely unfreeze character
+            -- Freeze character at teleport position
+            freezeCharacter(true)
+            
+            -- Wait 0.2 seconds while frozen
+            task.wait(0.2)
+            
+            -- Now unfreeze character
+            StatusLabel:Set(string.format("Status: ATM %d - Unfreezing and interacting...", i))
             completelyUnfreezeCharacter()
             
             -- Wait 0.1 seconds after unfreezing before triggering
@@ -666,7 +659,7 @@ local function runAutoATM()
                 break
             end
             
-            task.wait(3)
+            task.wait(5)
             
             -- Add extra wait before next ATM to prevent death
             StatusLabel:Set(string.format("Status: ATM %d - Waiting before next ATM...", i))
@@ -699,6 +692,9 @@ local function runAutoATM()
     isRunning = false
 end
 
+-- Base location coordinate (spawn point)
+local baseLocation = Vector3.new(-773, 25, -1283) -- Adjust this to your desired base location
+
 -- Toggle
 local AutoATMToggle = MainTab:CreateToggle({
    Name = "Autofarm [LOOK DOWN]",
@@ -711,38 +707,17 @@ local AutoATMToggle = MainTab:CreateToggle({
            StatusLabel:Set("Status: Autofarm Enabled with Auto Sell every 10 minutes!")
            task.spawn(runAutoATM)
        else
-           StatusLabel:Set("Status: Autofarm Disabled - Stopping and teleporting...")
+           StatusLabel:Set("Status: Autofarm Disabled - Stopping...")
            disableFloat()
            disableAutoUnequip()
            completelyUnfreezeCharacter()
            
-           -- Teleport to specified location when turning off
-           task.wait(0.2) -- Small delay to ensure everything stops
-           properTeleport(Vector3.new(-2541,15,4032))
-           StatusLabel:Set("Status: Autofarm Stopped - Teleported to base")
-       end
-   end,
-})
-
--- Auto Server Hop Toggle
-local AutoServerHopToggle = MainTab:CreateToggle({
-   Name = "Auto Server Hop (60 min)",
-   CurrentValue = false,
-   Flag = "AutoServerHopToggle",
-   Callback = function(Value)
-       autoServerHopEnabled = Value
-       
-       if Value then
-           lastServerHopTime = tick()
-           StatusLabel:Set("Status: Auto Server Hop enabled! Will hop every 60 minutes.")
+           -- Teleport to base
+           StatusLabel:Set("Status: Teleporting to base...")
+           task.wait(0.5)
+           properTeleport(baseLocation)
            
-           -- Start the timer display
-           if autoATMEnabled then
-               updateServerHopTimer()
-           end
-       else
-           StatusLabel:Set("Status: Auto Server Hop disabled")
-           ServerHopTimerLabel:Set("Next Server Hop: --:--")
+           StatusLabel:Set("Status: Autofarm Stopped - Returned to base")
        end
    end,
 })
@@ -761,83 +736,4 @@ local SellButton = MainTab:CreateButton({
        StatusLabel:Set("Status: Teleported to sell location!")
    end,
 })
-
--- Server Hop Button
-local ServerHopButton = MainTab:CreateButton({
-   Name = "Manual Server Hop",
-   Callback = function()
-       StatusLabel:Set("Status: Setting up auto-execute...")
-       
-       -- Setup auto-execute before hopping
-       local success = setupAutoExecute()
-       
-       if success then
-           StatusLabel:Set("Status: Auto-execute configured! Finding new server...")
-       else
-           StatusLabel:Set("Status: Auto-execute not available. Finding new server...")
-       end
-       
-       task.wait(0.5)
-       
-       local TeleportService = game:GetService("TeleportService")
-       local HttpService = game:GetService("HttpService")
-       
-       local placeId = game.PlaceId
-       local currentJobId = game.JobId
-       
-       -- Get list of servers
-       local serverSuccess, errorMsg = pcall(function()
-           local servers = {}
-           local cursor = ""
-           local attempts = 0
-           local maxAttempts = 3
-           
-           repeat
-               local url = string.format(
-                   "https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100",
-                   placeId
-               )
-               
-               if cursor ~= "" then
-                   url = url .. "&cursor=" .. cursor
-               end
-               
-               local response = game:HttpGet(url)
-               local data = HttpService:JSONDecode(response)
-               
-               for _, server in pairs(data.data) do
-                   -- Find servers that aren't full and aren't the current server
-                   if server.playing < server.maxPlayers and server.id ~= currentJobId then
-                       table.insert(servers, server.id)
-                   end
-               end
-               
-               cursor = data.nextPageCursor or ""
-               attempts = attempts + 1
-           until cursor == "" or attempts >= maxAttempts
-           
-           if #servers > 0 then
-               -- Pick a random server from the list
-               local randomServer = servers[math.random(1, #servers)]
-               StatusLabel:Set("Status: Teleporting to new server...")
-               TeleportService:TeleportToPlaceInstance(placeId, randomServer, player)
-           else
-               -- No servers found, just teleport to a new instance
-               StatusLabel:Set("Status: No servers found, teleporting anyway...")
-               TeleportService:Teleport(placeId, player)
-           end
-       end)
-       
-       if not serverSuccess then
-           warn("Server hop error:", errorMsg)
-           StatusLabel:Set("Status: Server hop failed! Trying alternative method...")
-           
-           -- Fallback: Just teleport to the place without specifying server
-           pcall(function()
-               TeleportService:Teleport(game.PlaceId, player)
-           end)
-       end
-   end,
-})
-
 Rayfield:LoadConfiguration()
