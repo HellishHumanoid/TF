@@ -123,7 +123,7 @@ player.OnTeleport:Connect(function(State)
         -- Queue the script to run again after teleport
         queue_on_teleport([[
             repeat task.wait() until game:IsLoaded()
-            loadstring(game:HttpGet('https://raw.githubusercontent.com/HellishHumanoid/TF/refs/heads/main/theforgeforgottenkingdom'))()
+            loadstring(game:HttpGet('YOUR_SCRIPT_URL_HERE'))()
         ]])
     end
 end)
@@ -736,4 +736,5 @@ local SellButton = MainTab:CreateButton({
        StatusLabel:Set("Status: Teleported to sell location!")
    end,
 })
+
 Rayfield:LoadConfiguration()
